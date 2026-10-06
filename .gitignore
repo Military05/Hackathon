@@ -1,4 +1,28 @@
-.DS_Store
-node_modules/
+# Local configuration and secrets
 .env
+.env.*
+!.env.example
 *.log
+
+# OS and editor state
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Typical dependency/cache/build folders; adapt after choosing the stack
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+coverage/
+build/
+dist/
+target/
+
+# Personal data, generated exports and temporary files
+data/local/
+tmp/
