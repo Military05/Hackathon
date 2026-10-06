@@ -1,0 +1,71 @@
+<div id="enterprise-dispatch" aria-label="Пример панелей мониторинга предприятия">
+<style>
+#enterprise-dispatch{--ed-bg:light-dark(#f4f6f9,#151b24);--ed-surface:light-dark(#ffffff,#202936);--ed-text:light-dark(#192638,#ecf1f8);--ed-muted:light-dark(#596a7c,#b1bed0);--ed-line:light-dark(#d9e1eb,#3a4759);--ed-blue:light-dark(#2159ae,#93beff);--ed-red:light-dark(#a92e39,#ffadb4);--ed-red-bg:light-dark(#fff0f1,#41252d);--ed-green:light-dark(#216c4d,#9de0bc);color:var(--ed-text);background:var(--ed-bg);border:1px solid var(--ed-line);border-radius:14px;font-family:system-ui,sans-serif;font-size:14px;line-height:1.5;overflow-wrap:anywhere}
+#enterprise-dispatch *{box-sizing:border-box}
+#enterprise-dispatch .ed-header{padding:20px 120px 16px 20px;border-bottom:1px solid var(--ed-line)}
+#enterprise-dispatch .ed-title{font-size:20px;font-weight:600;margin:0}
+#enterprise-dispatch .ed-sub{color:var(--ed-muted);font-size:12px;margin:4px 0 0}
+#enterprise-dispatch .ed-sites{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:16px 20px}
+#enterprise-dispatch button{font:inherit;color:inherit;background:var(--ed-surface);border:1px solid var(--ed-line);border-radius:10px;padding:12px;text-align:left;min-height:44px}
+#enterprise-dispatch button[aria-pressed="true"]{border-color:var(--ed-blue);box-shadow:inset 0 0 0 1px var(--ed-blue)}
+#enterprise-dispatch .ed-site-name{display:block;font-weight:600}
+#enterprise-dispatch .ed-count{display:block;font-size:12px;color:var(--ed-red);margin-top:6px}
+#enterprise-dispatch .ed-ok{color:var(--ed-green)}
+#enterprise-dispatch .ed-body{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:16px;padding:0 20px 20px;align-items:start}
+#enterprise-dispatch .ed-section{padding:16px;background:var(--ed-surface);border:1px solid var(--ed-line);border-radius:12px;min-width:0}
+#enterprise-dispatch .ed-label{margin:0 0 12px;font-size:16px;font-weight:600}
+#enterprise-dispatch .ed-event{display:block;width:100%;margin-bottom:10px}
+#enterprise-dispatch .ed-event small{display:block;color:var(--ed-muted);margin-top:4px}
+#enterprise-dispatch .ed-status{display:inline-block;color:var(--ed-red);background:var(--ed-red-bg);padding:2px 8px;border-radius:6px;font-size:12px;margin-bottom:10px}
+#enterprise-dispatch .ed-copy{margin:0 0 12px}
+#enterprise-dispatch .ed-meta{color:var(--ed-muted);font-size:12px}
+#enterprise-dispatch .ed-evidence{padding-top:12px;border-top:1px solid var(--ed-line)}
+#enterprise-dispatch .ed-action{background:var(--ed-blue);color:light-dark(#ffffff,#14263d);border-color:var(--ed-blue);text-align:center}
+#enterprise-dispatch .ed-footer{padding:12px 20px;border-top:1px solid var(--ed-line);color:var(--ed-muted);font-size:12px}
+#enterprise-dispatch [hidden]{display:none!important}
+@media(max-width:600px){#enterprise-dispatch .ed-sites{grid-template-columns:repeat(2,minmax(0,1fr));padding:12px}#enterprise-dispatch .ed-body{grid-template-columns:1fr;padding:0 12px 12px}#enterprise-dispatch .ed-header{padding-left:12px}#enterprise-dispatch .ed-footer{padding:12px}}
+</style>
+<header class="ed-header"><p class="ed-title">Диспетчер предприятия</p><p class="ed-sub">Демонстрационные данные · один ассистент для всех участков</p></header>
+<nav class="ed-sites" aria-label="Участки предприятия">
+<button type="button" class="cursor-interaction" data-site="O1" aria-pressed="true"><span class="ed-site-name">Главный офис</span><span class="ed-count">1 открытое происшествие</span></button>
+<button type="button" class="cursor-interaction" data-site="W1" aria-pressed="false"><span class="ed-site-name">Склад сырья</span><span class="ed-count">2 открытых происшествия</span></button>
+<button type="button" class="cursor-interaction" data-site="W2" aria-pressed="false"><span class="ed-site-name">Склад продукции</span><span class="ed-count ed-ok">Открытых происшествий нет</span></button>
+<button type="button" class="cursor-interaction" data-site="P1" aria-pressed="false"><span class="ed-site-name">Сборочный цех</span><span class="ed-count">1 открытое происшествие</span></button>
+<button type="button" class="cursor-interaction" data-site="G1" aria-pressed="false"><span class="ed-site-name">КПП</span><span class="ed-count ed-ok">Открытых происшествий нет</span></button>
+<button type="button" class="cursor-interaction" data-site="Z1" aria-pressed="false"><span class="ed-site-name">Дороги и зоны</span><span class="ed-count">1 открытое происшествие</span></button>
+</nav>
+<main class="ed-body">
+<section class="ed-section"><p class="ed-label" data-section>Главный офис</p><div data-events></div></section>
+<section class="ed-section" aria-live="polite"><div data-details></div></section>
+</main>
+<footer class="ed-footer">Тревоги создаёт сервер · анализ привязан к происшествию · подтверждает и закрывает оператор</footer>
+<script>
+(()=>{
+const root=document.getElementById('enterprise-dispatch');
+const sites={O1:'Главный офис',W1:'Склад сырья',W2:'Склад продукции',P1:'Сборочный цех',G1:'КПП',Z1:'Дороги и зоны'};
+const incidents=[
+{id:'INC-101',site:'O1',title:'Проход без допуска',time:'12:30',actor:'Сотрудник U1',source:'ACCESS-O1 · EVT-101',fact:'Датчик зарегистрировал вход U1 в офис O1. В таблице разрешений действующего допуска U1 в O1 нет.',suggestion:'Проверить проход и актуальность допуска сотрудника.',policy:'Допуски v1'},
+{id:'INC-102',site:'W1',title:'Въезд машины в запрещённую зону',time:'12:32',actor:'Машина V2',source:'POS-V2 · EVT-102, EVT-103',fact:'Координаты V2 находятся внутри зоны разгрузки Z2 склада W1. Для V2 доступ в Z2 отсутствует.',suggestion:'Проверить движение V2 и связаться с ответственным за транспорт.',policy:'Зоны и разрешения v1'},
+{id:'INC-103',site:'W1',title:'Датчик перестал передавать данные',time:'12:33',actor:'Датчик HB-W1',source:'HB-W1 · EVT-104 · проверка сервера 12:33:06',fact:'Последний heartbeat принят в 12:33:00. На момент проверки прошло 6 секунд при пороге 5 секунд. Причина отсутствия сообщений неизвестна.',suggestion:'Проверить питание датчика и канал связи.',policy:'Правило heartbeat v1'},
+{id:'INC-104',site:'P1',title:'Проход без допуска',time:'12:35',actor:'Сотрудник U3',source:'ACCESS-P1 · EVT-105',fact:'Зарегистрирован вход U3 в цех P1. Действующий допуск U3 в P1 отсутствует.',suggestion:'Проверить проход и полномочия сотрудника.',policy:'Допуски v1'},
+{id:'INC-105',site:'Z1',title:'Необычное движение транспорта',time:'12:36',actor:'Машина V3',source:'POS-V3 · EVT-110…EVT-119 · OBS-7',fact:'Модель движения отметила окно V3 как необычное. Оценка превышает настроенный порог; это сигнал модели, причина движения не установлена.',suggestion:'Просмотреть маршрут и уточнить ситуацию у водителя.',policy:'Модель movement-v1'}
+];
+const saved=window.openai?.widgetState?.modelContent;
+let selectedSite=Object.hasOwn(sites,saved?.site)?saved.site:'O1';
+let selectedIncident=incidents.find(x=>x.site===selectedSite&&x.id===saved?.incident)?.id||incidents.find(x=>x.site===selectedSite)?.id||null;
+const shown=new Set();
+function save(){window.openai?.setWidgetState?.({modelContent:{site:selectedSite,incident:selectedIncident},privateContent:null})?.catch(()=>{});}
+function render(){
+root.querySelectorAll('[data-site]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.site===selectedSite)));
+root.querySelector('[data-section]').textContent=sites[selectedSite];
+const list=incidents.filter(x=>x.site===selectedSite);
+root.querySelector('[data-events]').innerHTML=list.length?list.map(x=>`<button type="button" class="ed-event cursor-interaction" data-incident="${x.id}" aria-pressed="${x.id===selectedIncident}">${x.title}<small>${x.time} · ${x.actor} · ${x.id}</small></button>`).join(''):'<p class="ed-copy ed-ok">Открытых происшествий нет</p><p class="ed-meta">История доступна в журнале участка.</p>';
+const incident=list.find(x=>x.id===selectedIncident);
+root.querySelector('[data-details]').innerHTML=incident?`<span class="ed-status">Открыто · ${incident.id}</span><p class="ed-label">${incident.title}</p><p class="ed-meta">${incident.actor} · ${incident.time}</p><p class="ed-copy">${shown.has(incident.id)?'Пример объяснения ассистента':'Исходные факты'}</p><p class="ed-copy">${incident.fact}</p>${shown.has(incident.id)?`<p class="ed-copy"><strong>Рекомендация:</strong> ${incident.suggestion}</p><p class="ed-meta">Гипотезы о причине не подтверждены.</p>`:'<button type="button" class="ed-action cursor-interaction" data-analyze>Показать пример анализа</button>'}<p class="ed-meta ed-evidence">Основание: ${incident.source}<br>${incident.policy}</p>`:'<p class="ed-label">Ассистент</p><p class="ed-copy">Выберите происшествие на участке с тревогой.</p>';
+}
+root.addEventListener('click',e=>{const site=e.target.closest('[data-site]');const incident=e.target.closest('[data-incident]');if(site){selectedSite=site.dataset.site;selectedIncident=incidents.find(x=>x.site===selectedSite)?.id||null;render();save();}else if(incident){selectedIncident=incident.dataset.incident;render();save();}else if(e.target.closest('[data-analyze]')){shown.add(selectedIncident);render();save();}});
+window.addEventListener('openai:set_globals',e=>{const s=e.detail?.globals?.widgetState?.modelContent;if(!s||!Object.hasOwn(sites,s.site))return;selectedSite=s.site;selectedIncident=incidents.find(x=>x.site===selectedSite&&x.id===s.incident)?.id||incidents.find(x=>x.site===selectedSite)?.id||null;render();});
+render();
+})();
+</script>
+</div>
