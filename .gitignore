@@ -10,7 +10,7 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Typical dependency/cache/build folders; adapt after choosing the stack
+# Dependency/cache/build folders
 node_modules/
 .venv/
 venv/
@@ -26,3 +26,9 @@ target/
 # Personal data, generated exports and temporary files
 data/local/
 tmp/
+
+# Local demo data and trained/runtime artifacts
+runtime/
+data/generated/
+artifacts/local/
+models/local/
