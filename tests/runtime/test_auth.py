@@ -1,4 +1,5 @@
 """Real default-on authentication and SQLite security acceptance."""
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -103,6 +104,21 @@ class AuthAcceptance(unittest.TestCase):
             self.assertEqual(raised.exception.code, "invalid_password")
         encoded = password_hash("a" * 15)
         self.assertTrue(password_matches("a" * 15, encoded))
+
+    def test_json_unpaired_surrogates_rejected_without_server_error(self):
+        for field, code in (("password", "invalid_password"), ("name", "invalid_name")):
+            body = {"username": "unicode.user", "name": "Корректное имя", "password": "Correct-password-2026"}
+            body[field] = chr(0xD800) * 15
+            response = self.client.post("/api/auth/register", content=json.dumps(body),
+                                        headers={"Content-Type": "application/json"})
+            self.assertEqual(response.status_code, 422, response.text)
+            self.assertEqual(response.json()["code"], code)
+        login = {"username": "dispatcher.one", "password": chr(0xD800) * 15}
+        response = self.client.post("/api/auth/login", content=json.dumps(login),
+                                    headers={"Content-Type": "application/json"})
+        self.assertEqual(response.status_code, 401, response.text)
+        self.assertEqual(response.json()["code"], "invalid_credentials")
+        self.assertFalse(password_matches(chr(0xD800), password_hash("Correct-password-2026")))
 
     def test_session_identity_overrides_header_and_url(self):
         headers, _ = self.login()
