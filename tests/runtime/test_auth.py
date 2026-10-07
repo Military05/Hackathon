@@ -130,6 +130,29 @@ class AuthAcceptance(unittest.TestCase):
         self.assertTrue(next(p for p in profiles if p["operator_id"] == "dispatcher-1")["operator_ready"])
         self.assertFalse(next(p for p in profiles if p["operator_id"] == "dispatcher-3")["operator_ready"])
 
+    def test_optional_expected_user_blocks_stale_tab_before_reads_writes_and_logout(self):
+        self.login()
+        headers, _ = self.login(admin=True)
+        stale = {**headers, "X-Expected-User": self.dispatcher["id"]}
+        body = {"session_id": "stale-tab", "availability": "ready"}
+        self.assertEqual(self.client.get("/api/assets", headers=stale).status_code, 409)
+        blocked = self.client.post("/api/operator-presence", json=body, headers=stale)
+        self.assertEqual(blocked.status_code, 409, blocked.text)
+        self.assertEqual(blocked.json()["code"], "session_identity_changed")
+        self.assertEqual(self.client.post("/api/auth/logout", json={}, headers=stale).status_code, 409)
+        self.assertEqual(self.client.get("/api/auth/me").json()["user"]["id"], self.admin["id"])
+        matching = {**headers, "X-Expected-User": self.admin["id"]}
+        self.assertEqual(self.client.get("/api/assets", headers=matching).status_code, 200)
+        accepted = self.client.post("/api/operator-presence", json=body, headers=matching)
+        self.assertEqual(accepted.status_code, 200, accepted.text)
+        self.assertEqual(accepted.json()["operator_id"], "dispatcher-3")
+        switch = self.client.post("/api/auth/login", json={"username": "dispatcher.one", "password": "Dispatcher-password-2026"},
+                                  headers={"X-Expected-User": self.admin["id"]})
+        self.assertEqual(switch.status_code, 200, switch.text)
+        registration = self.client.post("/api/auth/register", json={"username": "another", "name": "Заявка", "password": "New-password-2026"},
+                                        headers={"X-Expected-User": self.admin["id"]})
+        self.assertEqual(registration.status_code, 201, registration.text)
+
     def test_dispatcher_cannot_list_or_modify_admin_accounts(self):
         headers, _ = self.login()
         for endpoint in ("/api/admin/users", "/api/admin/audit"):
