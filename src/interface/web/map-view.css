@@ -2,6 +2,12 @@
 #map .enterprise-label-marker{border:0;background:none;pointer-events:none}
 #map .enterprise-building-label{display:flex;align-items:center;justify-content:center;padding:2px;box-sizing:border-box;overflow:hidden;text-align:center;color:#e2edf6;font-weight:600;line-height:1.15;text-shadow:0 1px 2px #142637;white-space:normal}
 #map .enterprise-building-label>span{display:block;max-width:100%;max-height:100%;overflow:hidden;overflow-wrap:anywhere}
+#map .enterprise-sector-label-marker,#map .enterprise-zone-label-marker{background:none;border:0;pointer-events:none}
+#map .enterprise-sector-label{display:block;text-align:center;white-space:nowrap;color:#c1cecf;font-size:10px;line-height:15px;font-weight:600;text-shadow:0 1px 2px #132b38}
+#map .enterprise-zone-label{display:flex;align-items:center;justify-content:center;padding:2px;box-sizing:border-box;overflow:hidden;text-align:center;font-weight:600;line-height:1.15;text-shadow:0 1px 2px #182b35}
+#map .enterprise-zone-label>span{display:block;max-width:100%;max-height:100%;overflow:hidden;overflow-wrap:anywhere}
+#map .enterprise-zone-label.permit{color:#f6cc8c}
+#map .enterprise-zone-label.forbidden{color:#ffc4c4}
 #map .enterprise-vehicle-marker,#map .enterprise-sensor-marker{background:none;border:0}
 #map .enterprise-vehicle-marker{--marker-color:#62bafa}
 #map .enterprise-vehicle-marker.alarm{--marker-color:#ff8585}
@@ -9,6 +15,8 @@
 #map .enterprise-vehicle-glyph{position:relative;display:flex;align-items:center;flex-direction:column;width:36px;color:var(--marker-color);border-radius:9px}
 #map .enterprise-vehicle-symbol{display:grid;place-items:center;width:27px;height:27px;font:bold 13px/1 'Segoe UI',sans-serif;background:#173950;border:2px solid currentColor;border-radius:50%;box-shadow:0 1px 3px #06121a}
 #map .enterprise-vehicle-glyph b{font-size:10px;line-height:13px;color:#e8f1f6;background:#152936;padding:0 4px;border-radius:3px;font-weight:600}
+#map .enterprise-signal-time,#map .enterprise-sensor-time{font:9px/12px 'Segoe UI',sans-serif;font-variant-numeric:tabular-nums;color:#d4e3ec;background:#142b38eb;border-radius:2px;padding:0 2px;white-space:nowrap}
+#map .enterprise-sensor-time{position:absolute;left:50%;top:27px;transform:translateX(-50%)}
 #map .enterprise-vehicle-marker.stale .enterprise-vehicle-symbol{border-style:dashed;opacity:.85}
 #map .enterprise-stale-badge{position:absolute;top:-5px;right:0;border-radius:50%;background:#efc05f;color:#1c2c39;font:bold 11px/15px sans-serif;width:15px;height:15px;text-align:center}
 #map .enterprise-sensor-marker{--sensor-color:#efc05f}
