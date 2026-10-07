@@ -2,7 +2,7 @@
   "use strict";
   let session=null;
   const $=id=>document.getElementById(id);
-  const headers=()=>session?.csrf_token?{"X-CSRF-Token":session.csrf_token}:{};
+  const headers=()=>session?.csrf_token?{"X-CSRF-Token":session.csrf_token,"X-Expected-User":session.user.id}:{};
   async function request(path,method="GET",body){
     const response=await fetch(`/api${path}`,{method,credentials:"same-origin",headers:{...headers(),...(body?{"Content-Type":"application/json"}:{})},...(body?{body:JSON.stringify(body)}:{})});
     const value=await response.json();
@@ -11,6 +11,7 @@
   }
   function message(text,error=false){$("auth-message").textContent=text;$("auth-message").className=error?"auth-message failure":"auth-message";}
   function showLogin(){
+    if($("admin-dialog")?.open)$("admin-dialog").close();
     session=null;$("auth-screen").hidden=false;$("product-shell").hidden=true;$("user-controls").hidden=true;
     $("auth-login").hidden=false;$("auth-register").hidden=true;
   }
@@ -41,7 +42,7 @@
     return {enabled:true,...session};
   }
   async function download(path,filename){
-    const response=await fetch(`/api${path}`,{credentials:"same-origin"});
+    const response=await fetch(`/api${path}`,{credentials:"same-origin",headers:headers()});
     if(!response.ok){let body;try{body=await response.json();}catch{}throw Error(body?.message||`HTTP ${response.status}`);}
     const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement("a");
     link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);

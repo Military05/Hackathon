@@ -8,10 +8,11 @@ from pathlib import Path
 
 from fastapi import Body, FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from src.core.service import ApiError, Service, stamp
+from src.core.operations import Operations
 
 ROOT = Path(__file__).resolve().parents[2]
 log = logging.getLogger("dispatch")
@@ -21,6 +22,7 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
     service_kwargs = {"clock": clock} if clock else {}
     service = Service(db_path or os.environ.get("DISPATCH_DB", str(ROOT / "data/runtime/dispatch.db")),
                       site_path or ROOT / "data/demo/site.json", **service_kwargs)
+    operations = Operations(service)
     demo = None
     scenarios = ()
     demo_lock = asyncio.Lock()
@@ -95,6 +97,7 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
 
     app = FastAPI(title="Enterprise dispatch demo", version="2.1", lifespan=lifespan)
     app.state.service = service
+    app.state.operations = operations
     app.state.agent = manager
     app.state.ml = model
     app.state.demo = demo
@@ -179,8 +182,8 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
         return service.list_incidents(status, scope, site_area_id, x_demo_operator)
 
     @app.get("/api/incidents/{incident_id}")
-    def incident(incident_id: str):
-        return service.get_incident(incident_id)
+    def incident(incident_id: str, x_demo_operator: str | None = Header(default=None)):
+        return service.get_incident(incident_id, x_demo_operator)
 
     @app.patch("/api/incidents/{incident_id}")
     def patch_incident(incident_id: str, body: dict = Body(...), x_demo_operator: str | None = Header(default=None)):
@@ -210,6 +213,40 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
     @app.get("/api/model-observations")
     def model_observations(asset_id: str | None = None, limit: int = Query(default=100, ge=1, le=500)):
         return service.model_observations(asset_id, limit)
+
+    @app.get("/api/checkpoint/journal")
+    def checkpoint_journal(q: str | None = Query(default=None, max_length=100), direction: str | None = None,
+                           permission: str | None = None, since: str | None = None, until: str | None = None,
+                           limit: int = Query(default=50, ge=1, le=200), offset: int = Query(default=0, ge=0, le=100000)):
+        return operations.journal(q, direction, permission, since, until, limit, offset)
+
+    @app.get("/api/checkpoint/export.csv")
+    def checkpoint_export(q: str | None = Query(default=None, max_length=100), direction: str | None = None,
+                          permission: str | None = None, since: str | None = None, until: str | None = None,
+                          limit: int = Query(default=200, ge=1, le=200), offset: int = Query(default=0, ge=0, le=100000)):
+        payload = operations.checkpoint_csv(q=q, direction=direction, permission=permission, since=since, until=until,
+                                             limit=limit, offset=offset)
+        return Response(payload, media_type="text/csv; charset=utf-8", headers={"Content-Disposition": 'attachment; filename="checkpoint.csv"',
+                        "X-Export-Limit": str(limit), "X-Export-Offset": str(offset)})
+
+    @app.get("/api/shifts/current")
+    def current_shift():
+        return {"shift": operations.current_shift()}
+
+    @app.get("/api/operator-activity")
+    def operator_activity(x_demo_operator: str | None = Header(default=None)):
+        return operations.dispatch_activity(service.validate_operator(x_demo_operator))
+
+    @app.get("/api/dispatch-history/export.csv")
+    def dispatch_export(request: Request, scope: str = "mine", limit: int = Query(default=1000, ge=1, le=2000),
+                        x_demo_operator: str | None = Header(default=None)):
+        if scope not in ("mine", "all"):
+            raise ApiError(422, "invalid_scope", "Укажите mine или all")
+        if scope == "all" and getattr(request.state, "user", {}).get("role") != "admin":
+            raise ApiError(403, "admin_required", "Общий журнал доступен администратору")
+        operator = service.validate_operator(x_demo_operator) if scope == "mine" else None
+        return Response(operations.dispatch_history_csv(operator, limit), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": 'attachment; filename="dispatcher-actions.csv"', "X-Export-Limit": str(limit)})
 
     if manager:
         app.include_router(make_router(manager, service.validate_operator))

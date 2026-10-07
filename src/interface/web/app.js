@@ -10,7 +10,10 @@ const scenarioNames={normal:"Штатная работа завода",logistics
 const notificationNames={new_incident:"Новое происшествие",reminder:"Случай ожидает реакции",escalation:"Случай передан на следующий уровень",transfer_requested:"Предложена передача",transfer_accepted:"Передача принята",transfer_cancelled:"Передача отменена",transfer_expired:"Срок передачи истёк",operator_unavailable:"Ответственный отсутствует",active_review:"Пора повторно проверить случай"};
 const vehicleNames={forklift:"Погрузчик",service:"Служебный автомобиль",truck:"Грузовик"};
 const esc = x => String(x??"—").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-function showError(e){$("error").hidden=false;$("error").textContent=e.message||String(e);}
+function showError(e){
+  if(S.auth?.enabled&&(e.status===401||e.code==="session_identity_changed")){ProductAuth.showLogin();S.auth.user=null;}
+  $("error").hidden=false;$("error").textContent=e.code==="session_identity_changed"?"Аккаунт изменён в другой вкладке. Войдите заново; для разных диспетчеров используйте отдельные профили браузера.":e.message||String(e);
+}
 async function api(path,method="GET",body,operator=S.operator){
   const controller=new AbortController();
   const t=setTimeout(()=>controller.abort(),6000);
@@ -139,7 +142,7 @@ function updateActions(i){
   const readyRecipient=Boolean($("recipient").value);
   const disabled=S.commandBusy?" disabled":"";
   const button=(id,text,primary=false,extraDisabled=false)=>`<button id="${id}"${primary?' class="primary"':""}${disabled||extraDisabled?" disabled":""}>${text}</button>`;
-  setMarkup("detail-actions",`${button("show-on-map","Показать на карте")}${!i.assigned_operator_id&&working?button("claim","Принять ответственность",true):""}${own&&working?button("contact","Записать: связался")+button("inspect","Записать: запросил проверку"):""}${own&&i.condition_active===false&&i.condition_state!=="unknown"&&!pending&&working?button("close","Завершить обработку"):""}${own&&i.type==="model_anomaly"&&working?button("dismiss","Отклонить модельное подозрение"):""}${own&&!pending&&working?button("transfer","Предложить передачу",false,!readyRecipient):""}${recover?button("reassign","Переназначить отсутствующего",false,!readyRecipient):""}${pending?`<span class="pill">Передача → ${esc(operatorName(i.pending_transfer.to_operator_id))}</span><small class="transfer-clock">${esc(transferClock(i))}</small>${i.pending_transfer.to_operator_id===S.operator?button("accept","Принять передачу",true):""}${own?button("cancel","Отменить передачу"):""}`:""}${button("analyse",S.agentAvailable?"Проанализировать ИИ":"ИИ ещё не подключён",false,!S.agentAvailable||S.analysisSubmitting)}`);
+  setMarkup("detail-actions",`${button("show-on-map","Показать на карте")}${!i.assigned_operator_id&&working&&i.can_claim!==false?button("claim","Принять ответственность",true):""}${own&&working?button("contact","Записать: связался")+button("inspect","Записать: запросил проверку"):""}${own&&i.condition_active===false&&i.condition_state!=="unknown"&&!pending&&working?button("close","Завершить обработку"):""}${own&&i.type==="model_anomaly"&&working?button("dismiss","Отклонить модельное подозрение"):""}${own&&!pending&&working?button("transfer","Предложить передачу",false,!readyRecipient):""}${recover?button("reassign","Переназначить отсутствующего",false,!readyRecipient):""}${pending?`<span class="pill">Передача → ${esc(operatorName(i.pending_transfer.to_operator_id))}</span><small class="transfer-clock">${esc(transferClock(i))}</small>${i.pending_transfer.to_operator_id===S.operator?button("accept","Принять передачу",true):""}${own?button("cancel","Отменить передачу"):""}`:""}${button("analyse",S.agentAvailable?"Проанализировать ИИ":"ИИ ещё не подключён",false,!S.agentAvailable||S.analysisSubmitting)}`);
   $("recovery-hint").hidden=!recover;
   const bind=(id,fn)=>{if($(id))$(id).onclick=async()=>{try{await fn();}catch(e){showError(e);}};};
   bind("claim",()=>command("claim"));
@@ -242,6 +245,7 @@ async function refresh(){
   const context=S.context,operator=S.operator;
   S.busy=true;
   try{
+    if(S.auth?.enabled)await api("/auth/me","GET",undefined,operator);
     const [assets,sensors,incidents,summary,health,demo,profiles]=await Promise.all([api("/assets","GET",undefined,operator),api("/sensors","GET",undefined,operator),api(`/incidents?scope=${$("all").checked?"all":"workstation"}`,"GET",undefined,operator),api("/dispatch-summary","GET",undefined,operator),api("/health","GET",undefined,operator),api("/demo/status","GET",undefined,operator),api("/operator-profiles","GET",undefined,operator)]);
     if(context!==S.context)return;
     S.assets=array(assets,"assets");S.sensors=array(sensors,"sensors");S.incidents=array(incidents,"incidents");S.summary=summary;S.profiles=array(profiles,"operator_profiles");
@@ -259,7 +263,7 @@ async function refresh(){
     if(S.connectionError){$("error").hidden=true;S.connectionError=false;}
   }catch(e){
     if(context!==S.context)return;
-    if(e.status===401&&S.auth?.enabled){ProductAuth.showLogin();S.auth.user=null;return;}
+    if(S.auth?.enabled&&(e.status===401||e.code==="session_identity_changed")){showError(e);return;}
     $("connection").textContent="● Связь с сервером потеряна";$("connection").style.color="#ff7272";S.connectionError=true;showError(e);
   }finally{S.busy=false;}
 }

@@ -100,7 +100,7 @@ class OperationsAcceptance(unittest.TestCase):
         last = stamp(self.clock())
         self.assertEqual([item["employee_id"] for item in self.operations.journal(limit=2, offset=1)["items"]], ["U4", "U2"])
         self.assertEqual(self.operations.journal(q="U1")["total"], 2)
-        self.assertEqual(self.operations.journal(q="Гость")["total"], 1)
+        self.assertEqual(self.operations.journal(q=self.service.assets_by_id["U4"]["name"])["total"], 1)
         self.assertEqual(self.operations.journal(q="%_")["total"], 0)
         self.assertEqual(self.operations.journal(direction="out")["total"], 1)
         self.assertEqual(self.operations.journal(permission="violation")["total"], 1)

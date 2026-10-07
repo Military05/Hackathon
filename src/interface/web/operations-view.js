@@ -20,11 +20,11 @@
   function renderShift(data){
     const shift=data?.shift||data;
     if(!shift?.shift_id){$("shift-summary").textContent="Начало смены: выберите сценарий, чтобы связать проверку людей и движение транспорта.";return;}
-    const phases={checking:"Проверка людей на КПП",gate_checks:"Проверка людей на КПП",transport:"Допуск проверен · транспорт работает",running:"Транспорт работает",completed:"Смена завершена",stopped:"Сценарий остановлен"};
+    const phases={checking:"Проверка людей на КПП",gate_checks:"Проверка людей на КПП",transport:"Допуск проверен · транспорт работает",running:"Транспорт работает",completed:"Смена завершена",stopped:"Сценарий остановлен",error:"Ошибка проверки КПП",interrupted:"Прервано при перезапуске"};
     const checked=shift.gate_count??shift.checked_count??0;
     const expected=shift.expected_gate_count??shift.expected_count??3;
     const vehicles=shift.transport_events_count??0;
-    $("shift-summary").innerHTML=`<strong>${escape(phases[shift.phase]||shift.phase||"Смена")}</strong><span>Люди: ${checked}/${expected} · событий транспорта: ${vehicles}</span><small>Один эпизод ${escape(shift.shift_id.slice(-8))}${shift.transport_asset_ids?.length?` · ${escape(shift.transport_asset_ids.join(", "))}`:""}; сигналы датчиков сохраняются во время проверки.</small>`;
+    $("shift-summary").innerHTML=`<strong>${escape(phases[shift.phase]||shift.phase||"Смена")}</strong><span>Люди: ${checked}/${expected} · событий транспорта: ${vehicles}</span><small>Один эпизод ${escape(shift.shift_id.slice(-8))}${shift.transport_asset_ids?.length?` · ${escape(shift.transport_asset_ids.join(", "))}`:""}; сигналы датчиков сохраняются во время проверки.</small>${shift.error?`<small class="panel-error">${escape(shift.error)}</small>`:""}`;
   }
   function renderActivity(data){$("activity-summary").innerHTML=[['Принято',data.claimed],['Передано',data.transferred],['Завершено',data.closed],['Реакций',data.responses]].map(([label,value])=>`<span><b>${Number(value)||0}</b>${label}</span>`).join("");}
   async function update(request){

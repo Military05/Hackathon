@@ -28,7 +28,7 @@ class BackendAcceptance(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.db_path = Path(self.temp.name) / "dispatch.db"
         self.clock = Clock()
-        self.app = create_app(db_path=self.db_path, enable_scheduler=False, clock=self.clock)
+        self.app = create_app(enable_auth=False, db_path=self.db_path, enable_scheduler=False, clock=self.clock)
         self.service = self.app.state.service
         self.client = TestClient(self.app)
         self.counter = 0
@@ -159,7 +159,7 @@ class BackendAcceptance(unittest.TestCase):
             responses = list(pool.map(claim, ["dispatcher-1", "dispatcher-3"]))
         self.assertEqual(sorted(r.status_code for r in responses), [200, 409])
         winner = next(r.json() for r in responses if r.status_code == 200)
-        restarted = create_app(db_path=self.db_path, enable_scheduler=False, clock=self.clock)
+        restarted = create_app(enable_auth=False, db_path=self.db_path, enable_scheduler=False, clock=self.clock)
         self.assertEqual(restarted.state.service.get_incident(incident["incident_id"])["assigned_operator_id"], winner["assigned_operator_id"])
         claims = [h for h in self.service.get_incident(incident["incident_id"])["history"] if h["action"] == "claim"]
         self.assertEqual(len(claims), 1)
@@ -212,7 +212,7 @@ class BackendAcceptance(unittest.TestCase):
         incident = next(i for i in self.service.list_incidents() if i.get("sensor_id") == "HB-QA")
         self.assertEqual(incident["details"]["cause"], "never_started")
         self.assertEqual(incident["evidence_event_ids"], [])
-        restarted = create_app(db_path=self.db_path, enable_scheduler=False, clock=self.clock)
+        restarted = create_app(enable_auth=False, db_path=self.db_path, enable_scheduler=False, clock=self.clock)
         restarted.state.service.tick()
         self.assertEqual(len([i for i in restarted.state.service.list_incidents() if i.get("sensor_id") == "HB-QA"]), 1)
         body = {"event_id": "real-first-heartbeat", "event_time": stamp(self.clock()), "sensor_id": "HB-QA", "type": "heartbeat", "demo": True, "payload": {}}
@@ -246,7 +246,7 @@ class BackendAcceptance(unittest.TestCase):
         self.assertEqual(len(first["notifications"]), 2)
         self.assertEqual(len(second["notifications"]), 2)
         self.assertGreater(second["next_seq"], first["next_seq"])
-        restarted = create_app(db_path=self.db_path, enable_scheduler=False, clock=self.clock)
+        restarted = create_app(enable_auth=False, db_path=self.db_path, enable_scheduler=False, clock=self.clock)
         self.assertEqual(restarted.state.service.notifications("dispatcher-3", first["next_seq"], 2), second)
 
     def test_response_and_dismiss_do_not_hide_precise_active_condition(self):
