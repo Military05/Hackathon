@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 app = FastAPI(
     title="Enterprise Monitoring API",
@@ -15,3 +16,10 @@ def get_health():
         "agent": "unavailable",
         "demo": True,
     }
+
+
+app.mount(
+    "/",
+    StaticFiles(directory="src/interface/web", html=True),
+    name="frontend",
+)
