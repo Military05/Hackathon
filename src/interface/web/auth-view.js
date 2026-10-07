@@ -10,10 +10,11 @@
     return value;
   }
   function message(text,error=false){$("auth-message").textContent=text;$("auth-message").className=error?"auth-message failure":"auth-message";}
-  function showLogin(){
+  function showLogin(reason){
     if($("admin-dialog")?.open)$("admin-dialog").close();
     session=null;$("auth-screen").hidden=false;$("product-shell").hidden=true;$("user-controls").hidden=true;
     $("auth-login").hidden=false;$("auth-register").hidden=true;
+    if(reason)message(reason,true);
   }
   async function submit(form,path){
     const button=form.querySelector("button[type=submit]");if(button.disabled)return;
@@ -43,9 +44,9 @@
   }
   async function download(path,filename){
     const response=await fetch(`/api${path}`,{credentials:"same-origin",headers:headers()});
-    if(!response.ok){let body;try{body=await response.json();}catch{}throw Error(body?.message||`HTTP ${response.status}`);}
+    if(!response.ok){let body;try{body=await response.json();}catch{}const error=Error(body?.message||`HTTP ${response.status}`);error.status=response.status;error.code=body?.code;throw error;}
     const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement("a");
-    link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    link.href=url;link.download=filename;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
   root.ProductAuth={init,headers,request,download,showLogin,getSession:()=>session};
 })(globalThis);

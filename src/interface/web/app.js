@@ -11,8 +11,9 @@ const notificationNames={new_incident:"Новое происшествие",remi
 const vehicleNames={forklift:"Погрузчик",service:"Служебный автомобиль",truck:"Грузовик"};
 const esc = x => String(x??"—").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function showError(e){
-  if(S.auth?.enabled&&(e.status===401||e.code==="session_identity_changed")){ProductAuth.showLogin();S.auth.user=null;}
-  $("error").hidden=false;$("error").textContent=e.code==="session_identity_changed"?"Аккаунт изменён в другой вкладке. Войдите заново; для разных диспетчеров используйте отдельные профили браузера.":e.message||String(e);
+  const message=e.code==="session_identity_changed"?"Аккаунт изменён в другой вкладке. Войдите заново; для разных диспетчеров используйте отдельные профили браузера.":e.status===401?"Сессия завершена. Войдите заново.":e.message||String(e);
+  if(S.auth?.enabled&&(e.status===401||e.code==="session_identity_changed")){ProductAuth.showLogin(message);S.auth.user=null;return;}
+  $("error").hidden=false;$("error").textContent=message;
 }
 async function api(path,method="GET",body,operator=S.operator){
   const controller=new AbortController();
