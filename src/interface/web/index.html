@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Мониторинг предприятия</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+
+<header class="header">
+    <div>
+        <h1>Мониторинг предприятия</h1>
+        <p>Диспетчерская панель</p>
+    </div>
+
+    <div id="system-status">
+        Система загружается...
+    </div>
+</header>
+
+<main class="dashboard">
+
+    <section class="map-panel">
+        <h2>Карта предприятия</h2>
+
+        <div class="map-wrapper">
+            <svg
+                id="site-map"
+                viewBox="0 0 100 100"
+                aria-label="Карта предприятия"
+            >
+            </svg>
+        </div>
+    </section>
+
+    <aside class="incidents-panel">
+        <h2>Происшествия</h2>
+
+        <div id="incidents-list">
+            Загрузка...
+        </div>
+
+        <div id="incident-details" class="incident-details">
+        <h3>Подробности происшествия</h3>
+        <p>Выберите происшествие из списка</p>
+        </div>
+    </aside>
+
+</main>
+
+
+
+<section class="sensors-panel">
+    <h2>Датчики</h2>
+
+    <div id="sensors-list">
+        Загрузка...
+    </div>
+</section>
+
+<script src="app.js"></script>
+
+</body>
+</html>
