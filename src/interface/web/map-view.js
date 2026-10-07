@@ -63,6 +63,20 @@
     }
     return {label:building.id||"",fontSize:9,width:Math.max(0,width),height:Math.max(0,height),maxLines:1};
   }
+  function buildingControl(site,building){
+    const area=(site.site_areas||[]).find(a=>a.id===building.site_area_id),sectorId=area?.responsible_sector_id;
+    const profile=sectorId&&(site.operator_profiles||[]).find(p=>p.sector_id===sectorId);
+    const operatorId=profile?.operator_id||profile?.id,number=/^dispatcher-(\d+)$/.exec(operatorId||"")?.[1];
+    const label=number?`Диспетчер ${number}`:profile?.name||"Не назначен";
+    return {operatorId,sectorId,label,compactLabel:number?`Д${number}`:"—",shortLabel:number?`Дисп. ${number}`:label};
+  }
+  function controlledLabelMetrics(building,control,width,height){
+    const compact=height<28||width<35,ownerFontSize=8.5;
+    const ownerLabel=compact?control.compactLabel:estimatedLabelWidth(control.label,ownerFontSize)<=width-8?control.label:control.shortLabel;
+    const ownerWidth=estimatedLabelWidth(ownerLabel,ownerFontSize)+8;
+    const name=labelMetrics(building,compact?Math.max(0,width-ownerWidth):width,compact?height:Math.max(0,height-12));
+    return {...name,width:Math.max(0,width),height:Math.max(0,height),compact,ownerLabel,ownerFontSize};
+  }
   function create({elementId="map",site,onAsset=()=>{},onSensor=()=>{},onBuilding=()=>{}}){
     const Leaflet=globalThis.L;
     if(!Leaflet)throw Error("Локальная библиотека карты ещё не загружена");
@@ -119,14 +133,15 @@
     }
     for(const building of site.buildings||[]){
       const r=building.rectangle;if(!r)continue;
+      const control=buildingControl(site,building),controlTitle=`${building.name} · Под контролем: ${control.label}`;
       const office=building.id==="O1";
       const fillColor=/^#[0-9a-f]{6}$/i.test(building.color||"")?building.color:office?"#445779":"#24465c";
       const borderColor=office?"#a9b6df":"#668faa";
       const layer=Leaflet.rectangle(rectangleBounds(r),{pane:"enterpriseObjects",color:borderColor,weight:1.5,fillColor,fillOpacity:.95});
-      layer.addTo(map).bindTooltip(`${escape(building.name)} · ${escape(building.id)}`);
+      layer.addTo(map).bindTooltip(`${escape(controlTitle)} · ${escape(building.id)}`);
       layer.on("click",()=>onBuilding(building.id));
       const label=Leaflet.marker(xy(r.x+r.width/2,r.y+r.height/2),{pane:"enterpriseLabels",interactive:false,keyboard:false,icon:Leaflet.divIcon({className:"enterprise-label-marker",html:"",iconSize:[0,0]})}).addTo(map);
-      buildings.set(building.id,{building,layer,label,borderColor,labelSignature:""});
+      buildings.set(building.id,{building,control,controlTitle,layer,label,borderColor,labelSignature:""});
     }
     function gridStep(unitsPerPixel){
       return unitsPerPixel<.12?5:unitsPerPixel<.5?10:20;
@@ -137,10 +152,10 @@
       for(const {road,edge,fill} of roads){const width=roadWidthPixels(road.width,unit);edge.setStyle({weight:width+2});fill.setStyle({weight:width});}
       for(const record of buildings.values()){
         const r=record.building.rectangle,p1=map.latLngToLayerPoint(xy(r.x,r.y)),p2=map.latLngToLayerPoint(xy(r.x+r.width,r.y+r.height));
-        const m=labelMetrics(record.building,Math.abs(p2.x-p1.x)-4,Math.abs(p2.y-p1.y)-4),signature=JSON.stringify(m);
+        const m=controlledLabelMetrics(record.building,record.control,Math.abs(p2.x-p1.x)-4,Math.abs(p2.y-p1.y)-4),signature=JSON.stringify(m);
         if(signature===record.labelSignature)continue;
         record.labelSignature=signature;
-        record.label.setIcon(Leaflet.divIcon({className:"enterprise-label-marker",html:`<span class="enterprise-building-label" style="width:${m.width}px;height:${m.height}px;font-size:${m.fontSize}px" title="${escape(record.building.name)}"><span>${escape(m.label)}</span></span>`,iconSize:[m.width,m.height],iconAnchor:[m.width/2,m.height/2]}));
+        record.label.setIcon(Leaflet.divIcon({className:"enterprise-label-marker",html:`<span class="enterprise-building-label controlled ${m.compact?"compact":""}" data-building-id="${escape(record.building.id)}" style="width:${m.width}px;height:${m.height}px;font-size:${m.fontSize}px" title="${escape(record.controlTitle)}"><span class="enterprise-building-name">${escape(m.label)}</span><small class="enterprise-building-control" data-operator-id="${escape(record.control.operatorId||"")}" style="font-size:${m.ownerFontSize}px">${escape(m.ownerLabel)}</small></span>`,iconSize:[m.width,m.height],iconAnchor:[m.width/2,m.height/2]}));
       }
       for(const record of zones.values()){
         const r=record.zone.rectangle,p1=map.latLngToLayerPoint(xy(r.x,r.y)),p2=map.latLngToLayerPoint(xy(r.x+r.width,r.y+r.height));
@@ -310,5 +325,5 @@
     fitAll();redrawGeometry();update(state);
     return {map,update,fitAll,focusSector,highlight,clearHighlight,showIncident,setRoutesVisible,selectAsset,destroy(){destroyed=true;if(animationFrame!==null&&typeof cancelAnimationFrame!=="undefined")cancelAnimationFrame(animationFrame);resize?.disconnect();map.off("zoomend moveend",redrawGeometry);map.remove();},getLayerCounts(){return {buildings:buildings.size,roads:roads.length,pedestrians:pedestrians.length,routes:personalRoutes.size,assets:assets.size,sensors:sensors.size,grid:grid.getLayers().length};}};
   }
-  return {create,labelMetrics,estimatedLabelWidth,roadWidthPixels,isStale,interpolatePoint,sectorRectangles,zoneStyle,zonePolicyText,signalTime};
+  return {create,labelMetrics,buildingControl,estimatedLabelWidth,roadWidthPixels,isStale,interpolatePoint,sectorRectangles,zoneStyle,zonePolicyText,signalTime};
 });
