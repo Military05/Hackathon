@@ -28,7 +28,8 @@ data/local/
 tmp/
 
 # Local demo data and trained/runtime artifacts
-runtime/
+/runtime/
+data/runtime/
 data/generated/
 artifacts/local/
 models/local/
