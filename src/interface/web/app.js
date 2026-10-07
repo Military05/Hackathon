@@ -2,7 +2,7 @@
 const $ = id => document.getElementById(id);
 const titles = {forbidden_zone:"Въезд в запрещённую зону",unauthorized_access:"Подтверждённый проход без допуска",sensor_offline:"Нет сигнала датчика",model_anomaly:"Необычное движение"};
 const labels = {open:"Не принято",acknowledged:"Принято",closed:"Завершено",active:"Условие активно",restored:"Условие восстановлено",unknown:"Нужно проверить",online:"На связи",offline:"Нет связи",rejected_model_signal:"Подозрение отклонено"};
-const sectorNames = {logistics:"Логистика",production:"Производство",coordination:"Координация"};
+const sectorNames = {logistics:"Логистика и склады",production:"Производство",coordination:"КПП"};
 const actionNames = {detected:"Обнаружено",claim:"Ответственность принята",record_response:"Реакция записана",condition_restored:"Условие восстановлено",escalation:"Эскалация",request_transfer:"Передача предложена",accept_transfer:"Передача принята",cancel_transfer:"Передача отменена",reassign_unavailable:"Переназначение отсутствующего оператора",dismiss_model:"Модельное подозрение отклонено",close:"Обработка завершена"};
 const S = {site:null,map:null,assets:[],sensors:[],incidents:[],profiles:[],summary:{},selected:null,detail:null,detailId:null,operator:"dispatcher-1",cursor:0,sound:false,audio:null,job:null,session:crypto.randomUUID(),buildingLayers:new Map(),assetLayers:new Map(),sensorLayers:new Map(),asOf:Date.now(),serverOffset:0,busy:false,context:0,detailRequest:0,commandBusy:false,switching:false,presenceChain:Promise.resolve(),connectionError:false,agentAvailable:true,analysisSubmitting:false};
 Object.assign(S,{mapRenderer:null,diagnostics:null,noticeRows:[],objectSelection:null,demoBusy:false,demo:null});
@@ -15,7 +15,7 @@ async function api(path,method="GET",body,operator=S.operator){
   const controller=new AbortController();
   const t=setTimeout(()=>controller.abort(),6000);
   try{
-    const r=await fetch(`/api${path}`,{method,signal:controller.signal,headers:{"X-Demo-Operator":operator,...(body?{"Content-Type":"application/json"}:{})},...(body?{body:JSON.stringify(body)}:{})});
+    const r=await fetch(`/api${path}`,{method,credentials:"same-origin",signal:controller.signal,headers:{"X-Demo-Operator":operator,...(typeof ProductAuth!=="undefined"?ProductAuth.headers():{}),...(body?{"Content-Type":"application/json"}:{})},...(body?{body:JSON.stringify(body)}:{})});
     let v;
     try{v=await r.json();}catch{throw Error("Сервер вернул некорректный ответ");}
     if(!r.ok){
@@ -69,7 +69,8 @@ function showAsset(id){
   const a=S.assets.find(x=>x.asset_id===id);
   if(!a){$("asset-info").textContent="Объект отсутствует в текущих данных.";return;}
   const coordinates=Number.isFinite(a.x)&&Number.isFinite(a.y)?`(${a.x.toFixed(1)}, ${a.y.toFixed(1)})`:"не получена";
-  objectInfo(`${entityName({asset_id:id})} · ${vehicleNames[a.vehicle_type||a.type]||"Транспорт"} · Цель: ${named(S.site.buildings,a.destination)||"не задана"} · Последняя позиция ${coordinates}, ${age(a.last_seen)}. ${assetStale(a)?"Текущее место не подтверждено.":""}`,"asset",id,(S.site.sensors||[]).filter(s=>s.asset_id===id).map(s=>s.id||s.sensor_id));
+  const policy=(S.site.permissions||[]).find(p=>p.asset_id===id),allowed=(policy?.allowed_zone_ids||[]).map(zone=>named(S.site.zones,zone));
+  objectInfo(`${entityName({asset_id:id})} · ${vehicleNames[a.vehicle_type||a.type]||"Транспорт"} · Цель: ${named(S.site.buildings,a.destination)||"не задана"} · Последний сигнал: ${clock(a.last_seen)} (${age(a.last_seen)}), позиция ${coordinates}. Допуск в зоны: ${allowed.join(", ")||"нет"}. ${assetStale(a)?"Текущее место не подтверждено.":""}`,"asset",id,(S.site.sensors||[]).filter(s=>s.asset_id===id).map(s=>s.id||s.sensor_id));
 }
 function showBuilding(id){const b=S.site.buildings.find(x=>x.id===id);if(!b)return;objectInfo(`${b.name}. Рабочих происшествий: ${relatedIncidents("building",id).length}.`,"building",id,(S.site.sensors||[]).filter(s=>s.building_id===id).map(s=>s.id||s.sensor_id));}
 function showSensor(id,inspect=false){const s=S.sensors.find(x=>x.sensor_id===id);objectInfo(`${named(S.site.sensors,id)} · ${labels[s?.status]||"Сигнал ещё не получен"} · ${age(s?.last_received_at)}. Проверка связи не подтверждает физическую исправность датчика.`,"sensor",id);if(inspect)S.diagnostics?.inspectSensor?.(id);}
@@ -91,7 +92,7 @@ function renderIncidents(){
   setMarkup("incidents",rows.length?rows.map(i=>`<button class="incident ${esc(i.severity)} ${!workable(i)?"archived":""} ${i.incident_id===S.selected?"selected":""}" data-id="${esc(i.incident_id)}"><strong>${esc(titles[i.type]||i.type)}</strong><p>${esc(entityName(i))} · ${esc(placeName(i))}</p><small>${esc(labels[i.disposition]||labels[i.status]||i.status)} · ${esc(operatorName(i.assigned_operator_id))}</small><span class="pill">${esc(labels[i.condition_state]||i.condition_state||"active")}</span>${i.escalation_level?`<span class="pill escalated">Эскалация ${i.escalation_level}</span>`:""}<time datetime="${esc(i.detected_at)}">${esc(clock(i.detected_at))} · ${esc(age(i.detected_at))}</time></button>`).join(""):"<p class='muted'>Нет случаев по выбранным условиям. Завершённые и отклонённые доступны в истории.</p>");
   $("incidents").querySelectorAll("[data-id]").forEach(b=>b.onclick=()=>selectIncident(b.dataset.id).catch(showError));
 }
-async function selectIncident(id){S.selected=id;S.detail=null;S.detailId=null;S.job=null;S.detailRequest++;S.mapRenderer?.clearHighlight();$("selected-id").textContent=id;$("details").textContent="Загрузка карточки…";renderIncidents();await renderDetails();}
+async function selectIncident(id){S.selected=id;S.detail=null;S.detailId=null;S.job=null;S.detailRequest++;if(typeof document.querySelector==="function")document.querySelector(".detail")?.classList.remove("is-empty");S.mapRenderer?.clearHighlight();$("selected-id").textContent=id;$("details").textContent="Загрузка карточки…";renderIncidents();await renderDetails();}
 function showSelectedOnMap(){if(!S.detail||S.detail.incident_id!==S.selected)return;const found=S.mapRenderer?.showIncident(S.detail);if(found===false){showError(Error("Для этого случая нет подтверждённых координат. Проверьте источник данных; точка на карте не выдумывается."));}else $("error").hidden=true;}
 async function command(action,extra={}){
   const shown=S.detail;
@@ -237,7 +238,7 @@ async function notifications(initial=false){
   }
 }
 async function refresh(){
-  if(S.busy||S.switching)return;
+  if(S.busy||S.switching||(S.auth?.enabled&&!S.auth.user))return;
   const context=S.context,operator=S.operator;
   S.busy=true;
   try{
@@ -252,11 +253,13 @@ async function refresh(){
     $("ml-status").textContent=mlStatus==="unavailable"||mlStatus==="not_connected"?"Модель движения пока не подключена":`Модель движения: ${mlStatus==="ready"?"готова":mlStatus}`;
     renderDemo(demo);
     drawAssets();renderSummary();renderIncidents();renderSensors();await notifications();
+    if(typeof OperationsView!=="undefined")await OperationsView.update(api);
     if(context!==S.context)return;
     if(S.selected)await renderDetails();
     if(S.connectionError){$("error").hidden=true;S.connectionError=false;}
   }catch(e){
     if(context!==S.context)return;
+    if(e.status===401&&S.auth?.enabled){ProductAuth.showLogin();S.auth.user=null;return;}
     $("connection").textContent="● Связь с сервером потеряна";$("connection").style.color="#ff7272";S.connectionError=true;showError(e);
   }finally{S.busy=false;}
 }
@@ -265,8 +268,9 @@ function sendPresence(operator,session,availability){
   const request=S.presenceChain.catch(()=>{}).then(()=>api("/operator-presence","POST",{session_id:session,availability},operator));
   S.presenceChain=request.catch(()=>{});return request;
 }
-async function presence(){if(S.switching)return;try{await sendPresence(S.operator,S.session,$("ready").checked?"ready":"away");}catch(e){showError(e);}}
+async function presence(){if(S.switching||(S.auth?.enabled&&!S.auth.user))return;try{await sendPresence(S.operator,S.session,$("ready").checked?"ready":"away");}catch(e){showError(e);}}
 async function switchOperator(operator){
+  if(S.auth?.enabled){$("operator").value=S.operator;return;}
   if(S.switching||operator===S.operator)return;
   const previous=S.operator;
   S.switching=true;$("operator").disabled=true;
@@ -279,15 +283,17 @@ async function switchOperator(operator){
     focusSector();
     if(typeof window!=="undefined"){const url=new URL(window.location.href);url.searchParams.set("operator",operator);window.history.replaceState(null,"",url);}
   }catch(e){$("operator").value=S.operator;showError(e);}
-  finally{S.switching=false;$("operator").disabled=false;}
+  finally{S.switching=false;$("operator").disabled=Boolean(S.auth?.enabled);}
   if(S.operator!==previous)await refresh();
 }
 async function boot(){
   try{
-    if(typeof window!=="undefined"){S.operator=initialOperator(window.location.search);$("operator").value=S.operator;}
+    if(typeof ProductAuth!=="undefined"){S.auth=await ProductAuth.init({beforeLogout:()=>sendPresence(S.operator,S.session,"away"),onError:showError});if(S.auth.enabled&&!S.auth.user)return;}
+    if(typeof window!=="undefined"){S.operator=S.auth?.enabled?S.auth.user.operator_id:initialOperator(window.location.search);$("operator").value=S.operator;$("operator").disabled=Boolean(S.auth?.enabled);}
     S.site=await api("/site");S.profiles=array(await api("/operator-profiles"),"operator_profiles");initMap();
+    if(typeof OperationsView!=="undefined")OperationsView.bind(api,showError);
     if(typeof SensorDiagnostics!=="undefined")S.diagnostics=SensorDiagnostics.create({elementId:"sensors",getSensors:()=>S.sensors,requestCheck:()=>api("/sensors"),positionStaleSeconds:S.site.dispatch_config?.position_stale_seconds||5,serverTime:()=>Date.now()+S.serverOffset,onSound:()=>beep("check"),onSelectSensor:id=>{showSensor(id);if(!S.mapRenderer.showIncident({sensor_id:id}))showError(Error("У датчика нет подтверждённой позиции."));}});
-    await presence();await notifications(true);await refresh();
+    await presence();await notifications(true);await refresh();focusSector();
     setInterval(presence,3000);const loop=async()=>{await refresh();setTimeout(loop,1000);};setTimeout(loop,1000);
   }catch(e){showError(e);}
 }
