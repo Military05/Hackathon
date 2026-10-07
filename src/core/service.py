@@ -256,7 +256,7 @@ class Service:
             raise ApiError(422, "event_too_large", "Event exceeds configured size")
         return value
 
-    def ingest_event(self, event):
+    def ingest_event(self, event, *, shift_id=None):
         value = self._normalize_event(event)
         normalized = canonical(value)
         now = self.clock()
@@ -265,6 +265,9 @@ class Service:
             if old:
                 if old["normalized"] != normalized:
                     raise ApiError(409, "event_conflict", "event_id is already used with another body")
+                if shift_id:
+                    from src.core.operations import correlate_event
+                    correlate_event(db, shift_id, value)
                 return {"event_id": value["event_id"], "received_at": old["received_at"], "duplicate": True}
             value["received_at"] = stamp(now)
             payload = value["payload"]
@@ -296,6 +299,9 @@ class Service:
                                        employee_id=payload["employee_id"], asset_id=payload["employee_id"],
                                        building_id=payload["building_id"], sensor_id=value["sensor_id"],
                                        details={"access_kind": "passage_confirmed", "policy_version": self.site["policy_version"]})
+            if shift_id:
+                from src.core.operations import correlate_event
+                correlate_event(db, shift_id, value)
             return {"event_id": value["event_id"], "received_at": value["received_at"], "duplicate": False}
 
     def _position(self, db, event, fresh):
@@ -583,8 +589,8 @@ class Service:
                     raise ApiError(409, "already_claimed", "Incident already has an owner")
                 escalation = any(json.loads(row[0])["kind"] in {"escalation", "operator_unavailable", "active_review", "transfer_expired"}
                                  for row in db.execute("SELECT body FROM notifications WHERE incident_id=? AND recipient_operator_id=?", (incident_id, operator)))
-                if not (operator == "dispatcher-3" or item["responsible_sector_id"] == self._profile_sector(operator) or escalation):
-                    raise ApiError(409, "operator_conflict", "Only responsible operator, coordinator or addressed reserve may claim")
+                if not (item["responsible_sector_id"] == self._profile_sector(operator) or escalation):
+                    raise ApiError(409, "operator_conflict", "Only responsible operator or addressed reserve may claim")
                 item["assigned_operator_id"] = operator
                 item["status"] = "acknowledged"
                 item["acknowledged_at"] = stamp(self.clock())

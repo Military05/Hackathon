@@ -2,6 +2,7 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 import math
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -65,7 +66,15 @@ class TrafficAcceptance(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.clock = Clock()
-        self.service = Service(Path(self.temp.name) / "traffic.db", ROOT / "data/demo/site.json", clock=self.clock)
+        site = json.loads((ROOT / "data/demo/site.json").read_text(encoding="utf-8"))
+        if not any(sensor["id"] == "ACCESS-G1" for sensor in site["sensors"]):
+            site["sensors"].append({"id": "ACCESS-G1", "type": "access", "building_id": "G1", "site_area_id": "checkpoint"})
+        if not any(asset["id"] == "U4" for asset in site["assets"]):
+            site["assets"].append({"id": "U4", "type": "employee", "name": "Гость без допуска"})
+            site["permissions"].append({"employee_id": "U4", "allowed_building_ids": [], "allowed_zone_ids": []})
+        site_path = Path(self.temp.name) / "site.json"
+        site_path.write_text(json.dumps(site, ensure_ascii=False), encoding="utf-8")
+        self.service = Service(Path(self.temp.name) / "traffic.db", site_path, clock=self.clock)
         self.runner = DemoRunner(self.service)
 
     def tearDown(self):
@@ -130,7 +139,8 @@ class TrafficAcceptance(unittest.TestCase):
         incidents = self.service.list_incidents()
         self.assertEqual(len(incidents), 1)
         self.assertEqual(incidents[0]["type"], "unauthorized_access")
-        self.assertEqual(incidents[0]["employee_id"], "U1")
+        self.assertEqual(incidents[0]["employee_id"], "U4")
+        self.assertEqual(incidents[0]["building_id"], "G1")
         self.assertFalse(incidents[0]["condition_active"])
         events = self.service.event_history(limit=500)
         self.assertEqual(sum(event["type"] == "access" for event in events), 2)
