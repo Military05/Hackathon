@@ -47,7 +47,7 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
     if os.environ.get("DISPATCH_ENABLE_ML") == "1":
         try:
             from src.ml.movement import MovementModel
-            model = MovementModel()
+            model = MovementModel(service=service)
             service.model = model
             service.model_version = model.metadata.get("model_version", "not_loaded")
         except Exception:
@@ -61,6 +61,7 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
                 if model and asyncio.get_running_loop().time() >= next_ml:
                     next_ml = asyncio.get_running_loop().time() + 5
                     now = service.clock()
+                    now = now.fromtimestamp(int(now.timestamp()) // 5 * 5, tz=now.tzinfo)
                     for asset in service.site["assets"]:
                         if asset["type"] != "vehicle":
                             continue
@@ -76,7 +77,7 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
     @asynccontextmanager
     async def lifespan(application):
         if manager:
-            manager.start()
+            await manager.start()
         timer = asyncio.create_task(scheduler()) if enable_scheduler else None
         if demo and enable_scheduler and os.environ.get("DEMO_AUTOSTART", "1") == "1":
             try:
@@ -93,7 +94,7 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
                 with suppress(asyncio.CancelledError):
                     await timer
             if manager:
-                manager.stop()
+                await manager.stop()
 
     app = FastAPI(title="Enterprise dispatch demo", version="2.1", lifespan=lifespan)
     app.state.service = service

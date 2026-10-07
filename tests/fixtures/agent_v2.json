@@ -1,0 +1,47 @@
+{
+  "snapshots": [
+    {
+      "as_of": "2026-10-07T09:00:20Z",
+      "rule_version": "rules-demo-v2.1",
+      "model_version": "movement-v1-demo",
+      "history_bounds": {"since": "2026-10-07T09:00:00Z", "until": "2026-10-07T09:00:20Z"},
+      "incident": {
+        "incident_id": "INC-ZONE-1", "type": "forbidden_zone", "asset_id": "V1",
+        "sensor_id": "POS-V1", "condition_active": true, "condition_state": "active",
+        "site_area_id": "warehouse-yard", "sector_id": "logistics", "zone_id": "ZONE-W1",
+        "detected_at": "2026-10-07T09:00:10Z", "evidence_event_ids": ["demo-position-0010"],
+        "assigned_operator_id": "dispatcher-1", "dispatch_revision": 1, "status": "open"
+      },
+      "events": [
+        {"event_id": "demo-position-0010", "event_time": "2026-10-07T09:00:10Z",
+         "received_at": "2026-10-07T09:00:10.100000Z", "sensor_id": "POS-V1", "type": "position",
+         "demo": true, "payload": {"asset_id": "V1", "x": 20.0, "y": 27.0}}
+      ],
+      "observations": [],
+      "policies": {
+        "V1": {"asset_id": "V1", "type": "vehicle", "vehicle_type": "forklift", "destination": "W2",
+               "allowed_buildings": ["W1", "W2"], "allowed_zones": ["ROAD"], "policy_version": "policy-v1"},
+        "U1": {"asset_id": "U1", "type": "employee", "allowed_buildings": ["O1"], "policy_version": "policy-v1"}
+      },
+      "sensor_health": {
+        "POS-V1": {"sensor_id": "POS-V1", "status": "online", "last_received_at": "2026-10-07T09:00:10.100000Z",
+                   "threshold_seconds": 5, "version": "sensor-health-v1"}
+      }
+    },
+    {
+      "as_of": "2026-10-07T09:00:20Z", "rule_version": "rules-demo-v2.1", "model_version": "movement-v1-demo",
+      "incident": {
+        "incident_id": "INC-NEVER-STARTED", "type": "sensor_offline", "sensor_id": "POS-V2",
+        "condition_active": true, "condition_state": "never_started", "evidence_event_ids": [],
+        "detected_at": "2026-10-07T09:00:15Z", "assigned_operator_id": null
+      },
+      "events": [], "observations": [], "policies": {},
+      "sensor_health": {
+        "POS-V2": {"sensor_id": "POS-V2", "status": "never_started", "last_received_at": null,
+                   "threshold_seconds": 5, "startup_grace_seconds": 15,
+                   "waiting_since": "2026-10-07T09:00:00Z", "detected_at": "2026-10-07T09:00:15Z",
+                   "version": "sensor-health-v1"}
+      }
+    }
+  ]
+}
