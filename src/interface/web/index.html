@@ -12,18 +12,35 @@
 <header class="header">
     <div>
         <h1>Мониторинг предприятия</h1>
-        <p>Диспетчерская панель</p>
+        <p>Наблюдение, ответственность и реакция оператора</p>
     </div>
 
-    <div id="system-status">
+    <div id="system-status" role="status" aria-live="polite">
         Система загружается...
     </div>
 </header>
 
+<section class="workstation" aria-label="Рабочее место">
+    <p id="mode-label" class="notice"></p>
+    <div class="controls">
+        <label>Рабочее место <select id="operator"></select></label>
+        <label>Готовность <select id="availability"><option value="ready">Принимаю новые случаи</option><option value="away">Временно недоступен</option></select></label>
+        <label><input id="sound" type="checkbox"> Разрешить короткий звук</label>
+        <a id="api-link" href="?mode=api">API</a><a id="mock-link" href="?mode=mock">Mock</a>
+    </div>
+    <small id="presence-status">Связь с рабочим местом не доказывает присутствие человека.</small>
+    <div id="dispatch-summary" class="summary" aria-label="Общая сводка"></div>
+    <p id="notifications" role="status" aria-live="polite"></p>
+    <p id="action-message" role="alert" class="notice"></p>
+    <div id="mock-controls" class="controls" hidden>
+        <span>Только тестовые сценарии:</span><button id="mock-burst" type="button">Ещё два случая на складах</button><button id="mock-loss" type="button">Потеря позиции V1</button>
+    </div>
+</section>
 <main class="dashboard">
 
     <section class="map-panel">
         <h2>Карта предприятия</h2>
+        <label><input id="all-map" type="checkbox"> Вся территория</label>
 
         <div class="map-wrapper">
             <svg
@@ -33,10 +50,12 @@
             >
             </svg>
         </div>
+        <p class="legend">● Зелёный: актуальная позиция · ● Жёлтый: последнее известное место. Красный контур: контролируемая зона.</p>
     </section>
 
     <aside class="incidents-panel">
-        <h2>Происшествия</h2>
+        <h2>Происшествия <span id="incident-count">0</span></h2>
+        <div class="controls"><label><input id="all-incidents" type="checkbox"> Общий журнал</label><label><input id="show-history" type="checkbox"> Включить обработанные</label></div>
 
         <div id="incidents-list">
             Загрузка...
@@ -60,6 +79,9 @@
     </div>
 </section>
 
+<section class="sensors-panel"><h2>Анализ выбранного случая</h2><p id="agent-result">Агент не подключён.</p></section>
+<script src="dispatch-core.js"></script>
+<script src="provider.js"></script>
 <script src="app.js"></script>
 
 </body>

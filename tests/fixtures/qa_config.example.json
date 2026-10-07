@@ -1,10 +1,34 @@
 {
-  "allowed_access": {"sensor_id": "ACCESS-O1", "employee_id": "U2", "building_id": "O1"},
-  "denied_access": {"sensor_id": "ACCESS-O1", "employee_id": "U1", "building_id": "O1"},
-  "forbidden_zone": {
-    "sensor_id": "POS-V1", "asset_id": "V1", "zone_id": "Z1",
-    "outside": {"x": 5, "y": 5}, "inside": {"x": 30, "y": 30},
-    "inside_again": {"x": 31, "y": 31}
+  "allowed_access": {
+    "sensor_id": "ACCESS-O1",
+    "employee_id": "U2",
+    "building_id": "O1"
   },
-  "heartbeat": {"sensor_id": "HB-QA", "threshold_seconds": 5}
+  "denied_access": {
+    "sensor_id": "ACCESS-O1",
+    "employee_id": "U1",
+    "building_id": "O1"
+  },
+  "forbidden_zone": {
+    "sensor_id": "POS-V1",
+    "asset_id": "V1",
+    "zone_id": "Z1",
+    "outside": {
+      "x": 5,
+      "y": 5
+    },
+    "inside": {
+      "x": 30,
+      "y": 30
+    },
+    "inside_again": {
+      "x": 31,
+      "y": 31
+    }
+  },
+  "heartbeat": {
+    "sensor_id": "HB-QA",
+    "threshold_seconds": 5
+  },
+  "access_semantics": "passage_confirmed; denied_access is legacy name for observed passage without permission, not card rejection"
 }

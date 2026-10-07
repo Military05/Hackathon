@@ -1,5 +1,7 @@
 # Люди пишут код: как использовать чат и Codex на хакатоне
 
+> Обязательные уточнения после аудита: [PREBUILD_FIXES](docs/PREBUILD_FIXES.md). Нормативное дополнение v2; при расхождении старого текста действуют эти уточнения. Наличие инструкции не подтверждает реализацию.
+
 ## Актуальная цель v2: обязательные три рабочих места
 
 [План](docs/TASK_03_PLAN.md), [CONTRACTS v2](docs/CONTRACTS.md), [DISPATCH_OPERATIONS](docs/DISPATCH_OPERATIONS.md), [BACKLOG T01–T27](docs/BACKLOG.md) определяют текущую цель. beta-1: D1–D3/routing/три профиля/claim. Пара A после C1 делает обязательную beta-2: transfer/presence/reminder/escalation/summary/звук. Пара B: ML/общий локальный агент F1. Лия: ранняя регрессия и конкурентная приёмка. Полный финал — D1–D10, не только прежние D1–D4.

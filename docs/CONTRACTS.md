@@ -1,5 +1,7 @@
 # Контракт v2 — задание №3, три диспетчера
 
+> Обязательные уточнения после аудита: [PREBUILD_FIXES](PREBUILD_FIXES.md). Нормативное дополнение v2; при расхождении старого текста действуют эти уточнения. Наличие инструкции не подтверждает реализацию.
+
 Обновлено 7 октября 2026. Этот документ — согласованная цель реализации, не описание уже работающего API. Операции координации, поля и примеры полностью определены в [DISPATCH_OPERATIONS](DISPATCH_OPERATIONS.md), разделах 5–9; они являются частью v2. Старый PATCH только со status несовместим с v2. Изменение поля обсуждаем с Егором С. (A1) / Егором М. (A2) / Гаджи (B1) / Гришей (B2) и Лией (QA — тестировщик) до кода; несовместимое изменение получает новую версию.
 
 ## Как читать этот технический документ
@@ -23,7 +25,7 @@
 
 ## Общие правила
 
-HTTP JSON, prefix /api. UTC ISO 8601 с Z; event_time — время источника, received_at — время сервера. Все id — строки. demo=true во всех синтетических данных. Координаты x/y от 0 до 100 в условных единицах плана, не метры. Граница зоны включена.
+HTTP JSON, prefix /api. UTC ISO 8601 с Z; event_time — время источника, received_at — время сервера. Все id — строки. demo=true во всех синтетических данных. Координаты x/y от 0 до 100 в условных единицах плана, не метры. Граница зоны включена; восстановление выхода подтверждается двумя последовательными свежими position по PREBUILD_FIXES.
 
 Егор С. (A1) создаёт data/demo/site.json: buildings (id, name, rectangle), zones (id, rectangle), assets (id, type), sensors (id, type, asset_id), permissions (asset_id/employee_id и allowed zone/building ids), site_areas, sectors, operator_profiles и dispatch_config по DISPATCH_OPERATIONS. Перечень идентификаторов должен совпадать у симулятора, API и карты. Начальные здания W1,W2,P1,P2,O1,G1; зоны Z1,Z2; машины V1–V3; сотрудники U1–U3. Датчики получают явные id в конфигурации.
 
@@ -43,7 +45,7 @@ HTTP JSON, prefix /api. UTC ISO 8601 с Z; event_time — время источ�
 ~~~
 
 - position: payload asset_id,x,y; датчик соответствует asset_id.
-- access: payload employee_id,building_id,direction (in/out). Это наблюдение прохода; отсутствие разрешения проверяет правило.
+- access: payload employee_id,building_id,direction (in/out). Это подтверждённое наблюдение прохода (passage_confirmed), не запрос карточки и не отказ; отсутствие разрешения проверяет правило.
 - heartbeat: payload {}; состояние датчика связано с sensor_id.
 - Duplicate: одинаковый event_id и нормализованный payload → 200 duplicate=true, повторных side effects нет; другой payload или другие поля события при том же id → 409.
 - Новый Event → 201 с event_id,received_at,duplicate=false.
@@ -75,9 +77,9 @@ HTTP JSON, prefix /api. UTC ISO 8601 с Z; event_time — время источ�
 
 type: forbidden_zone,unauthorized_access,sensor_offline,model_anomaly.
 severity: info,warning,critical; demo defaults forbidden_zone/unauthorized_access=critical, sensor_offline/model_anomaly=warning. Это приоритет внимания диспетчера, не сертифицированная оценка риска.
-status: open,acknowledged,closed. claim атомарно назначает оператора и acknowledged. close допускается только назначенным оператором при condition_active=false и без pending transfer; иначе 409. Для разового unauthorized_access condition_active=false с создания, но обработка остаётся open. У зоны/heartbeat/ML восстановление определяется детектором.
+status: open,acknowledged,closed. claim атомарно назначает оператора и acknowledged. close допускается только назначенным оператором при condition_active=false, condition_state!=unknown и без pending transfer; иначе 409. Для разового unauthorized_access condition_active=false с создания, но обработка остаётся open. У зоны/heartbeat/ML восстановление определяется детектором.
 Одна ongoing condition → одно происшествие. Выход из зоны/возврат heartbeat помечает восстановление и время, историю сохраняем. Новый вход после восстановления — новый случай. Unauthorized_access привязан к уникальному access event.
-Offline: last_received_at,detected_at,threshold_seconds=5; timer раз в секунду, часы received_at. До первого heartbeat sensor=unknown, а не автоматически offline; после первого начинается отсчёт.
+Offline: last_received_at,detected_at,threshold_seconds=5; timer раз в секунду, часы received_at. До первого heartbeat sensor=unknown в пределах startup_sensor_grace_seconds=10. Если ожидаемый источник так и не начал передачу, создаётся sensor_offline с details.cause=never_started и last_received_at=null; это не потеря ранее существовавшей связи. После первого сигнала начинается обычный отсчёт.
 Model anomaly: reuse активного incident на тот же asset; закрытие условия после двух последовательных достаточных normal окон. insufficient_data не считается normal. Параметр сохраняем в конфигурации и отчёте.
 
 ## movement-v1 — единая функция вычисления признаков Гриша (B2)
@@ -112,7 +114,7 @@ ModelObservation: observation_id,asset_id,window_start,window_end,status,score (
 AgentResult: summary,facts[],hypotheses[],recommendations[],evidence_event_ids[],tool_trace[],model_name,created_at,incident_snapshot.
 Факты о событиях должны ссылаться на evidence, полученные tools; факты о допуске дополнительно ссылаются на policy_version из get_asset_policy; гипотезы отдельно и с уровнем уверенности/ограничениями. Версии правил/модели и набор evidence определяют snapshot; после изменения старый analysis помечаем stale.
 
-Одна running job для всех профилей, максимум 20 queued, ожидание до 120 секунд, выполнение до 60 секунд; max 3 model requests и max 6 tool calls. Кэш по incident_id+snapshot общий; requested_by_operator_id хранится отдельно от assigned_operator_id. Поведение restart/timeout — DISPATCH_OPERATIONS §9. Финальный ответ без валидных evidence не публикуем как успешный анализ. tool_trace показывает функцию, допустимые аргументы, длительность и полученные id; секреты не пишем.
+Одна running job для всех профилей, максимум 2 queued, ожидание до 120 секунд, выполнение до 60 секунд; max 3 model requests и max 6 tool calls. Кэш по incident_id+snapshot общий; requested_by_operator_id хранится отдельно от assigned_operator_id. Поведение restart/timeout — DISPATCH_OPERATIONS §9. Финальный ответ без валидных evidence не публикуем как успешный анализ. tool_trace показывает функцию, допустимые аргументы, длительность и полученные id; секреты не пишем.
 
 ## Дополнения v2: обязательная координация
 
