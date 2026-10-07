@@ -23,7 +23,7 @@ function harness(handler=async()=>({})){
   let fetchHandler=handler;
   const calls=[];
   const context=vm.createContext({document,crypto:webcrypto,Date,URLSearchParams,URL,AbortController,setTimeout:()=>1,clearTimeout:()=>{},setInterval:()=>1,fetch:async(url,options)=>{calls.push({url,options,body:options.body?JSON.parse(options.body):undefined});const value=await fetchHandler(url,options);return value?.__response?value:{ok:true,status:200,json:async()=>value};}});
-  vm.runInContext(source+"\nglobalThis.ui={S,api,command,applyDetails,renderDetails,renderJob,startAnalysis,notifications,sendPresence,switchOperator,recoveryAllowed,renderIncidents,renderSummary,compareIncidents,showAsset,initialOperator,focusSector};",context);
+  vm.runInContext(source+"\nglobalThis.ui={S,api,command,applyDetails,renderDetails,renderJob,startAnalysis,notifications,sendPresence,switchOperator,recoveryAllowed,renderIncidents,renderSummary,compareIncidents,showAsset,initialOperator,focusSector,selectIncident,showSelectedOnMap,entityName,placeName};",context);
   context.ui.S.site={dispatch_config:{position_stale_seconds:5},site_areas:[]};
   context.ui.S.map={fitBounds(){}};
   context.ui.S.profiles=[{operator_id:"dispatcher-1",name:"Склады",sector_id:"logistics",operator_ready:true},{operator_id:"dispatcher-2",name:"Цех",sector_id:"production",operator_ready:true},{operator_id:"dispatcher-3",name:"Координатор",sector_id:"coordination",operator_ready:true}];
@@ -53,7 +53,7 @@ test("polling changes facts without replacing the reason or recipient elements",
   const reason=h.$("reason"),recipient=h.$("recipient"),shell=h.$("details").writes;
   reason.value="Не терять ввод";recipient.value="dispatcher-2";
   h.ui.applyDetails(incident({assigned_operator_id:"dispatcher-1",dispatch_revision:8,as_of:"new timestamp",evidence_event_ids:["EV2"]}));
-  assert.equal(h.$("reason"),reason);assert.equal(h.$("recipient"),recipient);assert.equal(reason.value,"Не терять ввод");assert.equal(recipient.value,"dispatcher-2");assert.equal(h.$("details").writes,shell);assert.match(h.$("detail-facts").innerHTML,/ревизия 8/);
+  assert.equal(h.$("reason"),reason);assert.equal(h.$("recipient"),recipient);assert.equal(reason.value,"Не терять ввод");assert.equal(recipient.value,"dispatcher-2");assert.equal(h.$("details").writes,shell);assert.match(h.$("detail-technical").innerHTML,/ревизия 8/);
 });
 
 test("late incident requests cannot replace the newly selected card",async()=>{
@@ -145,4 +145,25 @@ test("asset click reads current coordinates and current freshness",()=>{
 test("profile links accept valid operator values and sector focus is bounded by plan coordinates",()=>{
   const h=harness();assert.equal(h.ui.initialOperator("?operator=dispatcher-2"),"dispatcher-2");assert.equal(h.ui.initialOperator("?operator=admin"),"dispatcher-1");
   h.ui.S.site.site_areas=[{responsible_sector_id:"logistics",rectangle:{x:0,y:12,width:38,height:76}}];let bounds;h.ui.S.map={fitBounds(value){bounds=value;}};h.ui.focusSector();assert.equal(JSON.stringify(bounds),"[[12,0],[88,38]]");
+});
+
+test("selecting and polling highlight without recenter; only show button focuses",async()=>{
+  const h=harness(async()=>incident());const calls=[];
+  h.ui.S.mapRenderer={clearHighlight(){calls.push("clear");},highlight(i,options){calls.push(options.recenter?"focus":"highlight");},showIncident(){calls.push("focus");return true;}};
+  await h.ui.selectIncident("I1");h.ui.applyDetails(incident({dispatch_revision:8}));
+  assert.deepEqual(calls,["clear","highlight","highlight"]);
+  h.$("show-on-map").onclick();assert.deepEqual(calls,["clear","highlight","highlight","focus"]);
+});
+
+test("unknown target cannot create a made up location",()=>{
+  const h=harness();h.ui.S.selected="I1";h.ui.applyDetails(incident({site_area_id:"unknown"}));
+  h.ui.S.mapRenderer={showIncident(){return false;}};h.ui.showSelectedOnMap();
+  assert.equal(h.$("error").hidden,false);assert.match(h.$("error").textContent,/нет подтверждённых координат/);
+});
+
+test("journal combines type, owner and text filters using shared human asset names",()=>{
+  const h=harness();h.ui.S.site.assets=[{id:"V1",name:"Погрузчик сырья"}];h.ui.S.site.site_areas=[{id:"warehouse-raw",name:"Склад сырья"}];
+  h.ui.S.incidents=[incident({assigned_operator_id:"dispatcher-1"}),incident({incident_id:"I2",type:"sensor_offline",assigned_operator_id:"dispatcher-1"}),incident({incident_id:"I3",assigned_operator_id:"dispatcher-2"})];
+  h.$("filter-type").value="forbidden_zone";h.$("filter-state").value="mine";h.$("search-incidents").value="сырья";h.ui.renderIncidents();
+  assert.match(h.$("incidents").innerHTML,/data-id="I1"/);assert.doesNotMatch(h.$("incidents").innerHTML,/data-id="I[23]"/);assert.match(h.$("incidents").innerHTML,/Погрузчик сырья/);
 });

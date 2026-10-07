@@ -1,0 +1,24 @@
+/* Icons and labels are local vector markup; no image downloads or extra service. */
+#map .enterprise-label-marker{border:0;background:none;pointer-events:none}
+#map .enterprise-building-label{display:flex;align-items:center;justify-content:center;padding:2px;box-sizing:border-box;overflow:hidden;text-align:center;color:#e2edf6;font-weight:600;line-height:1.15;text-shadow:0 1px 2px #142637;white-space:normal}
+#map .enterprise-building-label>span{display:block;max-width:100%;max-height:100%;overflow:hidden;overflow-wrap:anywhere}
+#map .enterprise-vehicle-marker,#map .enterprise-sensor-marker{background:none;border:0}
+#map .enterprise-vehicle-marker{--marker-color:#62bafa}
+#map .enterprise-vehicle-marker.alarm{--marker-color:#ff8585}
+#map .enterprise-vehicle-marker.stale{--marker-color:#efc05f}
+#map .enterprise-vehicle-glyph{position:relative;display:flex;align-items:center;flex-direction:column;width:40px;color:var(--marker-color);border-radius:9px}
+#map .enterprise-vehicle-glyph svg{height:27px;width:33px;padding:2px;background:#152936;box-sizing:content-box;border:1px solid currentColor;border-radius:7px;fill:#152936;stroke:currentColor;stroke-width:1.7;stroke-linejoin:round;stroke-linecap:round}
+#map .enterprise-vehicle-glyph b{font-size:10px;line-height:13px;color:#e8f1f6;background:#152936;padding:0 4px;border-radius:3px;font-weight:600}
+#map .enterprise-vehicle-marker.stale svg{border-style:dashed;opacity:.85}
+#map .enterprise-stale-badge{position:absolute;top:-5px;right:0;border-radius:50%;background:#efc05f;color:#1c2c39;font:bold 11px/15px sans-serif;width:15px;height:15px;text-align:center}
+#map .enterprise-sensor-marker{--sensor-color:#efc05f}
+#map .enterprise-sensor-marker.online{--sensor-color:#66d6b4}
+#map .enterprise-sensor-marker.offline{--sensor-color:#ff8585}
+#map .enterprise-sensor-glyph{display:block;box-sizing:border-box;width:100%;height:100%;background:#142b38;border:1px solid var(--sensor-color);border-radius:5px;box-shadow:0 1px 3px #06121a;color:var(--sensor-color)}
+#map .enterprise-sensor-glyph svg{width:100%;height:100%;padding:2px;box-sizing:border-box;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+#map .enterprise-sensor-marker.mounted .enterprise-sensor-glyph svg{padding:0;stroke-width:1.8}
+#map .enterprise-selected .enterprise-vehicle-glyph svg,#map .enterprise-selected .enterprise-sensor-glyph{outline:2px solid #ffd079;outline-offset:3px;animation:enterprise-slow-pulse 2.4s ease-in-out infinite}
+#map .enterprise-incident-halo{animation:enterprise-zone-pulse 2.4s ease-in-out infinite;stroke-linejoin:round}
+@keyframes enterprise-slow-pulse{0%,100%{box-shadow:0 0 0 1px #ffd07955}50%{box-shadow:0 0 0 7px #ffd07922}}
+@keyframes enterprise-zone-pulse{0%,100%{stroke-opacity:1}50%{stroke-opacity:.35}}
+@media(prefers-reduced-motion:reduce){#map .enterprise-selected .enterprise-vehicle-glyph svg,#map .enterprise-selected .enterprise-sensor-glyph,#map .enterprise-incident-halo{animation:none}}

@@ -5,6 +5,9 @@ const labels = {open:"Не принято",acknowledged:"Принято",closed:
 const sectorNames = {logistics:"Логистика",production:"Производство",coordination:"Координация"};
 const actionNames = {detected:"Обнаружено",claim:"Ответственность принята",record_response:"Реакция записана",condition_restored:"Условие восстановлено",escalation:"Эскалация",request_transfer:"Передача предложена",accept_transfer:"Передача принята",cancel_transfer:"Передача отменена",reassign_unavailable:"Переназначение отсутствующего оператора",dismiss_model:"Модельное подозрение отклонено",close:"Обработка завершена"};
 const S = {site:null,map:null,assets:[],sensors:[],incidents:[],profiles:[],summary:{},selected:null,detail:null,detailId:null,operator:"dispatcher-1",cursor:0,sound:false,audio:null,job:null,session:crypto.randomUUID(),buildingLayers:new Map(),assetLayers:new Map(),sensorLayers:new Map(),asOf:Date.now(),serverOffset:0,busy:false,context:0,detailRequest:0,commandBusy:false,switching:false,presenceChain:Promise.resolve(),connectionError:false,agentAvailable:true,analysisSubmitting:false};
+Object.assign(S,{mapRenderer:null,diagnostics:null,noticeRows:[],stageCheckAt:0,stageBusy:false,objectSelection:null});
+const notificationNames={new_incident:"Новое происшествие",reminder:"Случай ожидает реакции",escalation:"Случай передан на следующий уровень",transfer_requested:"Предложена передача",transfer_accepted:"Передача принята",transfer_cancelled:"Передача отменена",transfer_expired:"Срок передачи истёк",operator_unavailable:"Ответственный отсутствует",active_review:"Пора повторно проверить случай"};
+const vehicleNames={forklift:"Погрузчик",service:"Служебный автомобиль",truck:"Грузовик"};
 const esc = x => String(x??"—").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function showError(e){$("error").hidden=false;$("error").textContent=e.message||String(e);}
 async function api(path,method="GET",body,operator=S.operator){
@@ -35,64 +38,60 @@ function compareIncidents(a,b){
 function setMarkup(id,value){const el=$(id);if(el.innerHTML!==value)el.innerHTML=value;}
 function sameSelection(id,context){return S.selected===id&&S.context===context;}
 function initialOperator(search){const value=new URLSearchParams(search).get("operator");return ["dispatcher-1","dispatcher-2","dispatcher-3"].includes(value)?value:"dispatcher-1";}
+function named(rows,id){const row=(rows||[]).find(x=>(x.id||x.asset_id||x.sensor_id||x.employee_id)===id);return row?.name||row?.short_name||id;}
+function operatorName(id){return id?S.profiles.find(p=>(p.operator_id||p.id)===id)?.name||id:"Ответственный не назначен";}
+function placeName(i){return named(S.site?.zones,i.zone_id)||named(S.site?.buildings,i.building_id)||named(S.site?.site_areas,i.site_area_id)||"Место не определено";}
+function entityName(i){return named(S.site?.assets,i.asset_id||i.employee_id)||named(S.site?.sensors,i.sensor_id)||"Источник не определён";}
+function clock(t){if(!t)return "—";const value=new Date(t);return Number.isNaN(value.getTime())?"—":value.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit",second:"2-digit"});}
+function transferClock(i){if(i.pending_transfer?.status!=="pending")return "";const until=i.pending_transfer.expires_at||i.pending_transfer.deadline_at;if(!until)return "Ожидается ответ получателя";const seconds=Math.max(0,Math.ceil((Date.parse(until)-Date.now()-S.serverOffset)/1000));return Number.isFinite(seconds)?seconds?`Ответить за ${seconds} сек.`:"Срок истёк · ожидается подтверждение сервера":"Ожидается ответ получателя";}
 function focusSector(){
   const sector=S.profiles.find(p=>(p.operator_id||p.id)===S.operator)?.sector_id;
+  if(S.mapRenderer){S.mapRenderer.focusSector(sector);return;}
   const rectangles=(S.site.site_areas||[]).filter(a=>a.responsible_sector_id===sector&&a.rectangle).map(a=>a.rectangle);
   if(!rectangles.length){S.map.fitBounds([[0,0],[100,100]]);return;}
   const minX=Math.min(...rectangles.map(r=>r.x)),minY=Math.min(...rectangles.map(r=>r.y)),maxX=Math.max(...rectangles.map(r=>r.x+r.width)),maxY=Math.max(...rectangles.map(r=>r.y+r.height));
   S.map.fitBounds([xy(minX,maxY),xy(maxX,minY)],{padding:[18,18]});
 }
 function initMap(){
-  S.map=L.map("map",{crs:L.CRS.Simple,minZoom:1,maxZoom:5,zoomSnap:.25}).fitBounds([[0,0],[100,100]]);
-  S.map.attributionControl.addAttribution("Демонстрационная схема · без GPS");
-  const pane=S.map.createPane("roads");pane.style.zIndex=350;
-  for(let i=0;i<=100;i+=10){L.polyline([xy(i,0),xy(i,100)],{color:"#294052",weight:1,interactive:false}).addTo(S.map);L.polyline([xy(0,i),xy(100,i)],{color:"#294052",weight:1,interactive:false}).addTo(S.map);}
-  for(const road of S.site.roads||[]){const pts=road.points||road.path||road;if(Array.isArray(pts))L.polyline(pts.map(p=>Array.isArray(p)?xy(...p):xy(p.x,p.y)),{pane:"roads",color:"#435b6b",weight:17,lineCap:"square",interactive:false}).addTo(S.map);}
-  for(const z of S.site.zones){const r=z.rectangle;L.rectangle([xy(r.x,r.y),xy(r.x+r.width,r.y+r.height)],{color:"#ed9b58",weight:1.5,dashArray:"5 4",fillColor:"#c77932",fillOpacity:.14}).addTo(S.map).bindTooltip(`${esc(z.id)} · ${esc(z.name||"Ограниченный доступ")}`);}
-  for(const b of S.site.buildings){
-    const r=b.rectangle;
-    const layer=L.rectangle([xy(r.x,r.y),xy(r.x+r.width,r.y+r.height)],{color:b.id==="O1"?"#a7b7e4":"#538fac",weight:1.5,fillColor:b.id==="O1"?"#53638d":"#25455c",fillOpacity:.9}).addTo(S.map).bindTooltip(b.id==="O1"?"Центральный<br>офис":esc(b.name),{permanent:true,direction:"center",className:"map-label"});
-    layer.on("click",()=>{$("asset-info").textContent=`${b.name} (${b.id}). ${S.incidents.filter(i=>i.building_id===b.id&&workable(i)).length} рабочих происшествий. Ограничения доступа задаёт конфигурация.`;});
-    S.buildingLayers.set(b.id,layer);
-  }
-  drawAssets();focusSector();
+  S.mapRenderer=EnterpriseMap.create({elementId:"map",site:S.site,onAsset:showAsset,onSensor:showSensor,onBuilding:showBuilding});
+  S.map=S.mapRenderer.map;drawAssets();
+}
+function relatedIncidents(kind,id){return S.incidents.filter(i=>workable(i)&&(i[`${kind}_id`]===id||(kind==="building"&&i.site_area_id===S.site.buildings?.find(b=>b.id===id)?.site_area_id)));}
+function objectInfo(text,kind,id,sensorIds=[]){
+  S.objectSelection={kind,id};const rows=relatedIncidents(kind,id);
+  $("asset-info").textContent=text;
+  if(rows.length||sensorIds.length){$("asset-info").innerHTML=`<p>${esc(text)}</p><div class="object-links">${rows.map(i=>`<button data-related="${esc(i.incident_id)}">${esc(titles[i.type]||i.type)} · ${esc(clock(i.detected_at))}</button>`).join("")}${sensorIds.map(sensorId=>`<button data-sensor="${esc(sensorId)}">Проверить ${esc(named(S.site.sensors,sensorId))}</button>`).join("")}</div>`;
+  $("asset-info").querySelectorAll("[data-related]").forEach(b=>b.onclick=()=>selectIncident(b.dataset.related).catch(showError));
+  $("asset-info").querySelectorAll("[data-sensor]").forEach(b=>b.onclick=()=>showSensor(b.dataset.sensor,true));}
 }
 function showAsset(id){
   const a=S.assets.find(x=>x.asset_id===id);
   if(!a){$("asset-info").textContent="Объект отсутствует в текущих данных.";return;}
-  $("asset-info").textContent=`${a.asset_id} · ${a.vehicle_type||a.type||"Транспорт"} · Цель: ${a.destination||"не задана"} · Последняя позиция (${a.x.toFixed(1)}, ${a.y.toFixed(1)}), ${age(a.last_seen)}. ${assetStale(a)?"Текущее место не подтверждено.":""}`;
+  const coordinates=Number.isFinite(a.x)&&Number.isFinite(a.y)?`(${a.x.toFixed(1)}, ${a.y.toFixed(1)})`:"не получена";
+  objectInfo(`${entityName({asset_id:id})} · ${vehicleNames[a.vehicle_type||a.type]||"Транспорт"} · Цель: ${named(S.site.buildings,a.destination)||"не задана"} · Последняя позиция ${coordinates}, ${age(a.last_seen)}. ${assetStale(a)?"Текущее место не подтверждено.":""}`,"asset",id,(S.site.sensors||[]).filter(s=>s.asset_id===id).map(s=>s.id||s.sensor_id));
 }
+function showBuilding(id){const b=S.site.buildings.find(x=>x.id===id);if(!b)return;objectInfo(`${b.name}. Рабочих происшествий: ${relatedIncidents("building",id).length}.`,"building",id,(S.site.sensors||[]).filter(s=>s.building_id===id).map(s=>s.id||s.sensor_id));}
+function showSensor(id,inspect=false){const s=S.sensors.find(x=>x.sensor_id===id);objectInfo(`${named(S.site.sensors,id)} · ${labels[s?.status]||"Сигнал ещё не получен"} · ${age(s?.last_received_at)}. Проверка связи не подтверждает физическую исправность датчика.`,"sensor",id);if(inspect)S.diagnostics?.inspectSensor?.(id);}
 function drawAssets(){
-  for(const a of S.assets){
-    if(!Number.isFinite(a.x)||!Number.isFinite(a.y))continue;
-    const alarm=S.incidents.some(i=>i.asset_id===a.asset_id&&i.condition_active&&workable(i));
-    const color=assetStale(a)?"#e5b655":alarm?"#ff7272":"#4eb1ff";
-    let l=S.assetLayers.get(a.asset_id);
-    if(!l){l=L.circleMarker(xy(a.x,a.y),{radius:7,weight:2,fillOpacity:1}).addTo(S.map).bindTooltip(esc(a.asset_id),{permanent:true,direction:"right"});l.on("click",()=>showAsset(a.asset_id));S.assetLayers.set(a.asset_id,l);}
-    l.setLatLng(xy(a.x,a.y));l.setStyle({color,fillColor:color});
-  }
-  for(const s of S.sensors){
-    const def=(S.site.sensors||[]).find(d=>(d.id||d.sensor_id)===s.sensor_id)||s;
-    if(def.type==="position"||def.asset_id)continue;
-    const pos=def.position||def;
-    if(!Number.isFinite(pos.x)||!Number.isFinite(pos.y))continue;
-    let l=S.sensorLayers.get(s.sensor_id);
-    const color=s.status==="online"?"#5bceae":s.status==="offline"?"#ff7272":"#e5b655";
-    if(!l){l=L.circleMarker(xy(pos.x,pos.y),{radius:4,weight:1,fillOpacity:1}).addTo(S.map).bindTooltip(esc(s.sensor_id));l.on("click",()=>{const p=S.sensors.find(i=>i.sensor_id===s.sensor_id);if(p)$("asset-info").textContent=`${p.sensor_id} · ${labels[p.status]||p.status} · ${age(p.last_received_at)}. Heartbeat показывает связь с источником, а не свежесть позиции.`;});S.sensorLayers.set(s.sensor_id,l);}
-    l.setStyle({color,fillColor:color});
-  }
-  for(const [id,l] of S.buildingLayers){const danger=S.incidents.some(i=>i.building_id===id&&i.condition_active&&workable(i));l.setStyle({color:danger?"#ff7272":id==="O1"?"#a7b7e4":"#538fac"});}
+  S.mapRenderer?.update({assets:S.assets,sensors:S.sensors,incidents:S.incidents,serverOffset:S.serverOffset});
 }
 function renderSummary(){
   const rows=S.summary.sectors||[];
   setMarkup("summary",rows.map(r=>`<article><div><strong>${esc(sectorNames[r.sector_id]||r.sector_id)}</strong><small>${r.operator_ready?"Оператор готов":r.operator_online||r.client_online?"Рабочее место на связи · оператор отсутствует":"Нет связи с рабочим местом"}</small></div><div><b>${r.active_count||0}</b><small>активных · ${r.unclaimed_count||0} не принято<br>${r.escalated_count||0} эскалировано</small></div></article>`).join("")+`<div class="unknown-summary">Место не определено: <strong>${S.summary.unknown_count||0}</strong> рабочих случаев. Проверяйте источник и свежесть позиции.</div>`);
 }
 function renderIncidents(){
-  const rows=S.incidents.filter(i=>$("history-toggle").checked||workable(i)).sort(compareIncidents);
-  setMarkup("incidents",rows.length?rows.map(i=>`<button class="incident ${esc(i.severity)} ${!workable(i)?"archived":""} ${i.incident_id===S.selected?"selected":""}" data-id="${esc(i.incident_id)}"><strong>${esc(titles[i.type]||i.type)}</strong><p>${esc(i.asset_id||i.employee_id||i.sensor_id)} · ${esc(i.zone_id||i.building_id||i.site_area_id||"Место не определено")}</p><small>${esc(labels[i.disposition]||labels[i.status]||i.status)} · ${esc(i.assigned_operator_id||"Ответственный не назначен")}</small><span class="pill">${esc(labels[i.condition_state]||i.condition_state||"active")}</span>${i.escalation_level?`<span class="pill escalated">Эскалация ${i.escalation_level}</span>`:""}</button>`).join(""):"<p class='muted'>В этом рабочем месте нет рабочих происшествий. Завершённые и отклонённые доступны в истории.</p>");
+  const type=$("filter-type")?.value||"",state=$("filter-state")?.value||"",query=($("search-incidents")?.value||"").trim().toLocaleLowerCase("ru-RU");
+  const rows=S.incidents.filter(i=>{
+    if(!$("history-toggle").checked&&!workable(i))return false;
+    if(type&&type!=="all"&&i.type!==type)return false;
+    if(state&&state!=="all"&&(state==="unclaimed"?Boolean(i.assigned_operator_id)||!workable(i):state==="mine"?i.assigned_operator_id!==S.operator:state==="escalated"?!i.escalation_level:state==="pending"?i.pending_transfer?.status!=="pending":i.condition_state!==state&&i.status!==state))return false;
+    return !query||[titles[i.type],entityName(i),placeName(i),operatorName(i.assigned_operator_id),i.incident_id,i.asset_id,i.sensor_id,i.building_id,i.zone_id].join(" ").toLocaleLowerCase("ru-RU").includes(query);
+  }).sort(compareIncidents);
+  setMarkup("incidents",rows.length?rows.map(i=>`<button class="incident ${esc(i.severity)} ${!workable(i)?"archived":""} ${i.incident_id===S.selected?"selected":""}" data-id="${esc(i.incident_id)}"><strong>${esc(titles[i.type]||i.type)}</strong><p>${esc(entityName(i))} · ${esc(placeName(i))}</p><small>${esc(labels[i.disposition]||labels[i.status]||i.status)} · ${esc(operatorName(i.assigned_operator_id))}</small><span class="pill">${esc(labels[i.condition_state]||i.condition_state||"active")}</span>${i.escalation_level?`<span class="pill escalated">Эскалация ${i.escalation_level}</span>`:""}<time datetime="${esc(i.detected_at)}">${esc(clock(i.detected_at))} · ${esc(age(i.detected_at))}</time></button>`).join(""):"<p class='muted'>Нет случаев по выбранным условиям. Завершённые и отклонённые доступны в истории.</p>");
   $("incidents").querySelectorAll("[data-id]").forEach(b=>b.onclick=()=>selectIncident(b.dataset.id).catch(showError));
 }
-async function selectIncident(id){S.selected=id;S.detail=null;S.detailId=null;S.job=null;S.detailRequest++;$("selected-id").textContent=id;$("details").textContent="Загрузка карточки…";renderIncidents();await renderDetails();}
+async function selectIncident(id){S.selected=id;S.detail=null;S.detailId=null;S.job=null;S.detailRequest++;S.mapRenderer?.clearHighlight();$("selected-id").textContent=id;$("details").textContent="Загрузка карточки…";renderIncidents();await renderDetails();}
+function showSelectedOnMap(){if(!S.detail||S.detail.incident_id!==S.selected)return;const found=S.mapRenderer?.showIncident(S.detail);if(found===false){showError(Error("Для этого случая нет подтверждённых координат. Проверьте источник данных; точка на карте не выдумывается."));}else $("error").hidden=true;}
 async function command(action,extra={}){
   const shown=S.detail;
   if(!shown||shown.incident_id!==S.selected)throw Error("Дождитесь загрузки карточки.");
@@ -138,7 +137,7 @@ function updateActions(i){
   const readyRecipient=Boolean($("recipient").value);
   const disabled=S.commandBusy?" disabled":"";
   const button=(id,text,primary=false,extraDisabled=false)=>`<button id="${id}"${primary?' class="primary"':""}${disabled||extraDisabled?" disabled":""}>${text}</button>`;
-  setMarkup("detail-actions",`${!i.assigned_operator_id&&working?button("claim","Принять ответственность",true):""}${own&&working?button("contact","Записать: связался")+button("inspect","Записать: запросил проверку"):""}${own&&i.condition_active===false&&i.condition_state!=="unknown"&&!pending&&working?button("close","Завершить обработку"):""}${own&&i.type==="model_anomaly"&&working?button("dismiss","Отклонить модельное подозрение"):""}${own&&!pending&&working?button("transfer","Предложить передачу",false,!readyRecipient):""}${recover?button("reassign","Переназначить отсутствующего",false,!readyRecipient):""}${pending?`<span class="pill">Передача → ${esc(i.pending_transfer.to_operator_id)}</span>${i.pending_transfer.to_operator_id===S.operator?button("accept","Принять передачу",true):""}${own?button("cancel","Отменить передачу"):""}`:""}${button("analyse",S.agentAvailable?"Проанализировать ИИ":"ИИ ещё не подключён",false,!S.agentAvailable||S.analysisSubmitting)}`);
+  setMarkup("detail-actions",`${button("show-on-map","Показать на карте")}${!i.assigned_operator_id&&working?button("claim","Принять ответственность",true):""}${own&&working?button("contact","Записать: связался")+button("inspect","Записать: запросил проверку"):""}${own&&i.condition_active===false&&i.condition_state!=="unknown"&&!pending&&working?button("close","Завершить обработку"):""}${own&&i.type==="model_anomaly"&&working?button("dismiss","Отклонить модельное подозрение"):""}${own&&!pending&&working?button("transfer","Предложить передачу",false,!readyRecipient):""}${recover?button("reassign","Переназначить отсутствующего",false,!readyRecipient):""}${pending?`<span class="pill">Передача → ${esc(operatorName(i.pending_transfer.to_operator_id))}</span><small class="transfer-clock">${esc(transferClock(i))}</small>${i.pending_transfer.to_operator_id===S.operator?button("accept","Принять передачу",true):""}${own?button("cancel","Отменить передачу"):""}`:""}${button("analyse",S.agentAvailable?"Проанализировать ИИ":"ИИ ещё не подключён",false,!S.agentAvailable||S.analysisSubmitting)}`);
   $("recovery-hint").hidden=!recover;
   const bind=(id,fn)=>{if($(id))$(id).onclick=async()=>{try{await fn();}catch(e){showError(e);}};};
   bind("claim",()=>command("claim"));
@@ -151,22 +150,25 @@ function updateActions(i){
   bind("accept",()=>command("accept_transfer",{transfer_id:S.detail.pending_transfer.transfer_id}));
   bind("cancel",()=>command("cancel_transfer",{transfer_id:S.detail.pending_transfer.transfer_id,reason:reason()||"Передача отменена отправителем"}));
   bind("analyse",startAnalysis);
+  bind("show-on-map",showSelectedOnMap);
 }
 function applyDetails(i){
   if(i.incident_id!==S.selected)return;
   if(S.detail?.incident_id===i.incident_id&&S.detail.dispatch_revision>i.dispatch_revision)return;
   if(S.detailId!==i.incident_id){
     // Inputs live outside the refreshed facts/actions; polling never replaces them.
-    $("details").innerHTML='<div id="detail-facts" class="facts"></div><div id="response-plan" class="response-plan"></div><div class="response"><label for="reason">Реакция оператора</label><input id="reason" placeholder="Причина / запись выполненного действия" maxlength="500"></div><div id="recipient-wrap" class="recipient-wrap"><label for="recipient">Получатель</label><select id="recipient"></select></div><p id="recovery-hint" class="muted">Резерв может переназначить случай после подтверждённого отсутствия ответственного. Срок и готовность получателя проверяет сервер.</p><div id="detail-actions" class="actions"></div><div id="detail-history" class="history"></div><div id="analysis" class="analysis"></div>';
+    $("details").innerHTML='<div id="detail-facts" class="facts"></div><div id="response-plan" class="response-plan"></div><div class="response"><label for="reason">Реакция оператора</label><input id="reason" placeholder="Причина / запись выполненного действия" maxlength="500"></div><div id="recipient-wrap" class="recipient-wrap"><label for="recipient">Получатель</label><select id="recipient"></select></div><p id="recovery-hint" class="muted">Резерв может переназначить случай после подтверждённого отсутствия ответственного. Срок и готовность получателя проверяет сервер.</p><div id="detail-actions" class="actions"></div><details class="detail-extra"><summary>История и исходные события</summary><div id="detail-history" class="history"></div></details><details class="detail-extra"><summary>Технические данные</summary><div id="detail-technical"></div></details><div id="analysis" class="analysis"></div>';
     S.detailId=i.incident_id;
   }
   S.detail=i;$("selected-id").textContent=i.incident_id;
-  setMarkup("detail-facts",`<div><label>Причина</label>${esc(titles[i.type]||i.type)}</div><div><label>Место и объект</label>${esc(i.zone_id||i.building_id||i.site_area_id)} · ${esc(i.asset_id||i.employee_id||i.sensor_id)}</div><div><label>Условие / обработка</label>${esc(labels[i.condition_state]||i.condition_state)} / ${esc(labels[i.disposition]||labels[i.status]||i.status)}</div><div><label>Ответственный</label>${esc(i.assigned_operator_id||"Не назначен")}, ревизия ${i.dispatch_revision}</div>`);
+  setMarkup("detail-facts",`<div><label>Причина</label>${esc(titles[i.type]||i.type)}</div><div><label>Место и объект</label>${esc(placeName(i))} · ${esc(entityName(i))}</div><div><label>Условие / обработка</label>${esc(labels[i.condition_state]||i.condition_state)} / ${esc(labels[i.disposition]||labels[i.status]||i.status)}</div><div><label>Ответственный</label>${esc(operatorName(i.assigned_operator_id))}</div><div><label>Обнаружено</label>${esc(clock(i.detected_at))} · ${esc(age(i.detected_at))}</div>`);
+  setMarkup("detail-technical",`<p>Случай ${esc(i.incident_id)} · ревизия ${esc(i.dispatch_revision)}</p><p>Источник: ${esc(i.asset_id||i.employee_id||i.sensor_id)} · участок ${esc(i.site_area_id)} · зона ${esc(i.zone_id)} · здание ${esc(i.building_id)}</p>`);
+  S.mapRenderer?.highlight(i,{recenter:false});
   const plan=i.response_plan||{},steps=Array.isArray(plan.steps)?plan.steps:[plan.steps||i.response_instruction||i.details?.response_instruction||"Принять случай, проверить свежие наблюдения и записать реакцию."];
   setMarkup("response-plan",`<strong>Связаться: ${esc(plan.contact||"Ответственная роль участка")}</strong><ol>${steps.map(step=>`<li>${esc(step)}</li>`).join("")}</ol>`);
   updateActions(i);
   const ids=i.evidence_event_ids||[];
-  setMarkup("detail-history",`<strong>Исходные события:</strong> ${ids.length?ids.map(esc).join(", "):"Отсутствие сигнала подтверждается состоянием источника, без выдуманного события."}${i.disposition==="rejected_model_signal"?`<p class="disposition">Подозрение отклонено: ${esc(i.disposition_reason)} · ${esc(i.reviewed_at)}</p>`:""}${(i.history||[]).map(h=>`<p>${esc(h.created_at)} · ${esc(h.actor_operator_id||"Система")} · ${esc(actionNames[h.action]||h.action)} · ${esc(h.reason||"")}</p>`).join("")}`);
+  setMarkup("detail-history",`<strong>Исходные события:</strong> ${ids.length?ids.map(esc).join(", "):"Отсутствие сигнала подтверждается состоянием источника, без выдуманного события."}${i.disposition==="rejected_model_signal"?`<p class="disposition">Подозрение отклонено: ${esc(i.disposition_reason)} · ${esc(clock(i.reviewed_at))}</p>`:""}${(i.history||[]).map(h=>`<p>${esc(clock(h.created_at))} · ${esc(h.actor_operator_id?operatorName(h.actor_operator_id):"Система")} · ${esc(actionNames[h.action]||h.action)} · ${esc(h.reason||"")}</p>`).join("")}`);
   if(!S.job)setMarkup("analysis",S.agentAvailable?"<p class='muted'>ИИ читает факты инструментами. Мониторинг работает и при выключенной локальной модели.</p>":"<p class='muted'>ИИ пока не подключён. Принимайте случаи и записывайте реакцию вручную; мониторинг продолжает работать.</p>");
 }
 async function renderDetails(){
@@ -193,10 +195,24 @@ async function renderJob(){
   const j=await api(`/agent-jobs/${encodeURIComponent(job)}`);
   if(!sameSelection(id,context)||job!==S.job||j.incident_id&&j.incident_id!==id)return;
   const stale=j.stale||j.result?.stale;
-  setMarkup("analysis",`<strong>Анализ: ${esc(j.status)} ${stale?"· УСТАРЕЛ — данные изменились":""}</strong>${j.error?`<p>${esc(j.error.message||j.error)}</p>`:""}${j.result?`<p>${esc(j.result.summary)}</p><pre>${esc(JSON.stringify({facts:j.result.facts,hypotheses:j.result.hypotheses,recommendations:j.result.recommendations,tool_trace:j.result.tool_trace},null,2))}</pre>`:""}`);
+  const list=(title,values)=>Array.isArray(values)&&values.length?`<strong>${title}</strong><ul class="analysis-list">${values.map(v=>`<li>${esc(typeof v==="string"?v:v.text||v.description||JSON.stringify(v))}</li>`).join("")}</ul>`:"";
+  setMarkup("analysis",`<strong>Анализ: ${esc({pending:"Ожидается",running:"Выполняется",completed:"Готов",failed:"Ошибка"}[j.status]||j.status)} ${stale?"· УСТАРЕЛ — данные изменились":""}</strong>${j.error?`<p>${esc(j.error.message||j.error)}</p>`:""}${j.result?`<p>${esc(j.result.summary)}</p>${list("Наблюдения",j.result.facts)}${list("Предположения",j.result.hypotheses)}${list("Рекомендации",j.result.recommendations)}<details class="detail-extra"><summary>Ход проверки ИИ</summary><pre>${esc(JSON.stringify(j.result.tool_trace||[],null,2))}</pre></details>`:""}`);
 }
-function renderSensors(){setMarkup("sensors",S.sensors.map(s=>`<div class="sensor-row"><div><strong>${esc(s.sensor_id)}</strong><small> · ${esc(s.type)} ${esc(s.asset_id||s.building_id||"")}</small><br><small>${esc(age(s.last_received_at))}</small></div><span class="${esc(s.status)}">${esc(labels[s.status]||s.status)}</span></div>`).join(""));}
-function beep(){if(!S.sound||!S.audio)return;const o=S.audio.createOscillator(),g=S.audio.createGain();o.frequency.value=660;g.gain.value=.045;o.connect(g);g.connect(S.audio.destination);o.start();o.stop(S.audio.currentTime+.22);}
+function renderSensors(){if(S.diagnostics){S.diagnostics.update(S.sensors);return;}setMarkup("sensors",S.sensors.map(s=>`<div class="sensor-row"><div><strong>${esc(s.sensor_id)}</strong><small> · ${esc(s.type)} ${esc(s.asset_id||s.building_id||"")}</small><br><small>${esc(age(s.last_received_at))}</small></div><span class="${esc(s.status)}">${esc(labels[s.status]||s.status)}</span></div>`).join(""));}
+function beep(kind="alarm"){if(!S.sound||!S.audio)return;const o=S.audio.createOscillator(),g=S.audio.createGain();o.frequency.value=kind==="check"?440:660;g.gain.value=kind==="check"?.025:.045;o.connect(g);g.connect(S.audio.destination);o.start();o.stop(S.audio.currentTime+(kind==="check"?.12:.22));}
+function renderNotifications(){
+  const rows=S.noticeRows.slice(-20).reverse();
+  $("notifications").textContent=rows.map(n=>`${notificationNames[n.kind]||"Изменение обработки"} · ${n.incident_id}`).join(". ");
+  if(!rows.length)return;
+  $("notifications").innerHTML=rows.map(n=>`<button class="notification-item" data-notification="${esc(n.incident_id)}">${esc(notificationNames[n.kind]||"Изменение обработки")}<small>${esc(n.incident_id)} · ${esc(clock(n.created_at))} · открыть карточку</small></button>`).join("");
+  $("notifications").querySelectorAll("[data-notification]").forEach(b=>b.onclick=()=>selectIncident(b.dataset.notification).catch(showError));
+}
+async function developmentStages(){
+  if(S.stageBusy||Date.now()-S.stageCheckAt<5000)return;
+  S.stageCheckAt=Date.now();S.stageBusy=true;
+  try{const r=await fetch("development-status.json",{cache:"no-store"});if(!r.ok)return;const v=await r.json();for(const stage of v.stages||[]){const el=$(`stage-${stage.id}`);if(!el)continue;el.dataset.status=stage.status;el.textContent={done:"Готово",checking:"Проверяем",working:"В работе",pending:"Далее"}[stage.status]||"В работе";const note=$(`stage-note-${stage.id}`);if(note)note.textContent=stage.note||"";}}
+  catch{}finally{S.stageBusy=false;}
+}
 async function notifications(initial=false){
   const context=S.context,operator=S.operator;
   let cursor=initial?0:S.cursor;
@@ -205,7 +221,7 @@ async function notifications(initial=false){
     if(context!==S.context)return;
     const rows=v.notifications||v.items||[];
     const next=v.next_seq??(rows.at(-1)?.seq||cursor);
-    if(!initial&&rows.length){const n=rows.at(-1);$("notifications").textContent=`Новое уведомление: ${n.kind} · ${n.incident_id}`;beep();}
+    if(!initial&&rows.length){S.noticeRows.push(...rows);S.noticeRows=S.noticeRows.slice(-20);renderNotifications();beep();}
     if(rows.length&&next<=cursor)throw Error("Сервер не продвигает курсор уведомлений.");
     cursor=next;S.cursor=cursor;
     if(!initial||rows.length<100)break;
@@ -223,11 +239,14 @@ async function refresh(){
     S.agentAvailable=agentStatus!=="unavailable"&&agentStatus!=="not_connected";
     if(summary.as_of){S.asOf=Date.parse(summary.as_of);S.serverOffset=S.asOf-Date.now();}
     $("connection").textContent="● Сервер на связи";$("connection").style.color="#5bceae";
-    $("ml-status").textContent=`ML: ${typeof health.ml==="object"?health.ml.status:health.ml}`;
+    const mlStatus=typeof health.ml==="object"?health.ml.status:health.ml;
+    $("ml-status").textContent=mlStatus==="unavailable"||mlStatus==="not_connected"?"Модель движения пока не подключена":`Модель движения: ${mlStatus==="ready"?"готова":mlStatus}`;
     const simulationAvailable=demo.available!==false&&demo.status!=="unavailable";
     $("sim-status").textContent=!simulationAvailable?"Симулятор пока не подключён":demo.running?`Сценарий: ${demo.scenario} · ${demo.events_sent||0} событий`:"Сценарий остановлен";
     $("start").disabled=!simulationAvailable;$("stop").disabled=!simulationAvailable||!demo.running;$("scenario").disabled=!simulationAvailable;
+    $("start").title=simulationAvailable?"Запустить выбранный сценарий":"Симулятор ещё не подключён владельцем модуля. Карта и ручная обработка доступны.";
     drawAssets();renderSummary();renderIncidents();renderSensors();await notifications();
+    void developmentStages();
     if(context!==S.context)return;
     if(S.selected)await renderDetails();
     if(S.connectionError){$("error").hidden=true;S.connectionError=false;}
@@ -248,7 +267,7 @@ async function switchOperator(operator){
   S.switching=true;$("operator").disabled=true;
   try{
     await sendPresence(previous,S.session,"away");
-    S.operator=operator;S.session=crypto.randomUUID();S.context++;S.selected=null;S.detail=null;S.detailId=null;S.job=null;S.cursor=0;S.detailRequest++;
+    S.operator=operator;S.session=crypto.randomUUID();S.context++;S.selected=null;S.detail=null;S.detailId=null;S.job=null;S.cursor=0;S.noticeRows=[];S.detailRequest++;S.mapRenderer?.clearHighlight();
     $("details").textContent="Выберите происшествие";$("selected-id").textContent="";$("notifications").textContent="";$("incidents").textContent="Загрузка рабочего места…";
     await sendPresence(operator,S.session,$("ready").checked?"ready":"away");
     await notifications(true);
@@ -261,14 +280,19 @@ async function switchOperator(operator){
 async function boot(){
   try{
     if(typeof window!=="undefined"){S.operator=initialOperator(window.location.search);$("operator").value=S.operator;}
-    S.site=await api("/site");S.profiles=array(await api("/operator-profiles"),"operator_profiles");initMap();await presence();await notifications(true);await refresh();
+    S.site=await api("/site");S.profiles=array(await api("/operator-profiles"),"operator_profiles");initMap();
+    if(typeof SensorDiagnostics!=="undefined")S.diagnostics=SensorDiagnostics.create({elementId:"sensors",getSensors:()=>S.sensors,requestCheck:()=>api("/sensors"),positionStaleSeconds:S.site.dispatch_config?.position_stale_seconds||5,serverTime:()=>Date.now()+S.serverOffset,onSound:()=>beep("check"),onSelectSensor:id=>{showSensor(id);if(!S.mapRenderer.showIncident({sensor_id:id}))showError(Error("У датчика нет подтверждённой позиции."));}});
+    await developmentStages();await presence();await notifications(true);await refresh();
     setInterval(presence,3000);const loop=async()=>{await refresh();setTimeout(loop,1000);};setTimeout(loop,1000);
   }catch(e){showError(e);}
 }
 function bindControls(){
   $("operator").onchange=()=>switchOperator($("operator").value).catch(showError);
   $("ready").onchange=presence;$("all").onchange=refresh;$("history-toggle").onchange=renderIncidents;
-  $("fit").onclick=()=>S.map.fitBounds([[0,0],[100,100]]);
+  $("fit").onclick=()=>S.mapRenderer?S.mapRenderer.fitAll():S.map.fitBounds([[0,0],[100,100]]);
+  if($("my-sector"))$("my-sector").onclick=focusSector;
+  for(const id of ["filter-type","filter-state"])if($(id))$(id).onchange=renderIncidents;
+  if($("search-incidents"))$("search-incidents").oninput=renderIncidents;
   $("start").onclick=async()=>{try{await api("/demo/start","POST",{scenario:$("scenario").value});await refresh();}catch(e){showError(e);}};
   $("stop").onclick=async()=>{try{await api("/demo/stop","POST",{});await refresh();}catch(e){showError(e);}};
   $("sound").onclick=async()=>{S.sound=!S.sound;if(S.sound){S.audio||=new AudioContext();await S.audio.resume();beep();}$("sound").textContent=S.sound?"Выключить звук":"Включить звук";};

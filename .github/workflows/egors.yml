@@ -19,5 +19,8 @@ jobs:
         with:
           node-version: '22'
       - run: node --check src/interface/web/app.js
+      - run: node --check src/interface/web/map-view.js
+      - run: node --check src/interface/web/sensors-panel.js
       - run: node --test tests/interface/*.cjs
       - run: node --test tests/interface.test.js
+      - run: node --test tests/map-view.test.cjs tests/sensors-panel.test.cjs

@@ -10,6 +10,10 @@
 
 [Этапы и текущая область](docs/DEVELOPMENT_STAGES.md) · [Рабочий запуск](docs/RUNTIME_QUICKSTART.md) · [План пятером](docs/TEAM_ROOM_PLAYBOOK.md) · [Алгоритм ChatGPT + GitHub](docs/CHATGPT_GITHUB_GUIDE.md).
 
+[Обновление карты v3, диагностика датчиков и ручная проверка](docs/MAP_DISPATCH_V3.md):
+новый план, короткие подписи, «Мой сектор», связь карточки с картой и передача
+новой геометрии владельцу симулятора.
+
 ## Что открыть
 
 1. [Чёткий план на два дня](docs/TASK_03_PLAN.md).

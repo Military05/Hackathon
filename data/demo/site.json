@@ -4,84 +4,1394 @@
   "name": "Демонстрационное предприятие",
   "demo": true,
   "policy_version": "demo-policy-v2",
-  "coordinate_system": {"min": 0, "max": 100, "y_direction": "down", "units": "plan", "gps": false},
+  "coordinate_system": {
+    "min": 0,
+    "max": 100,
+    "y_direction": "down",
+    "units": "plan",
+    "gps": false
+  },
   "buildings": [
-    {"id":"O1","name":"Центральный офис","rectangle":{"x":44,"y":38,"width":12,"height":14},"site_area_id":"office"},
-    {"id":"W1","name":"Склад сырья","rectangle":{"x":9,"y":20,"width":24,"height":18},"site_area_id":"warehouse-raw"},
-    {"id":"W2","name":"Склад продукции","rectangle":{"x":9,"y":62,"width":24,"height":18},"site_area_id":"warehouse-finished"},
-    {"id":"P1","name":"Цех 1","rectangle":{"x":67,"y":20,"width":24,"height":18},"site_area_id":"workshop-1"},
-    {"id":"P2","name":"Цех 2","rectangle":{"x":67,"y":62,"width":24,"height":18},"site_area_id":"workshop-2"},
-    {"id":"G1","name":"КПП","rectangle":{"x":44,"y":88,"width":12,"height":8},"site_area_id":"checkpoint"}
+    {
+      "id": "O1",
+      "name": "Центральный офис",
+      "rectangle": {
+        "x": 45,
+        "y": 41,
+        "width": 13,
+        "height": 12
+      },
+      "site_area_id": "office",
+      "short_name": "Офис"
+    },
+    {
+      "id": "W1",
+      "name": "Склад сырья",
+      "rectangle": {
+        "x": 7,
+        "y": 18,
+        "width": 27,
+        "height": 16
+      },
+      "site_area_id": "warehouse-raw",
+      "short_name": "Сырьё"
+    },
+    {
+      "id": "W2",
+      "name": "Склад продукции",
+      "rectangle": {
+        "x": 14,
+        "y": 66,
+        "width": 19,
+        "height": 17
+      },
+      "site_area_id": "warehouse-finished",
+      "short_name": "Продукция"
+    },
+    {
+      "id": "P1",
+      "name": "Цех 1",
+      "rectangle": {
+        "x": 66,
+        "y": 17,
+        "width": 27,
+        "height": 20
+      },
+      "site_area_id": "workshop-1",
+      "short_name": "Цех 1"
+    },
+    {
+      "id": "P2",
+      "name": "Цех 2",
+      "rectangle": {
+        "x": 72,
+        "y": 64,
+        "width": 18,
+        "height": 21
+      },
+      "site_area_id": "workshop-2",
+      "short_name": "Цех 2"
+    },
+    {
+      "id": "G1",
+      "name": "КПП",
+      "rectangle": {
+        "x": 46,
+        "y": 90,
+        "width": 9,
+        "height": 7
+      },
+      "site_area_id": "checkpoint",
+      "short_name": "КПП"
+    }
   ],
   "roads": [
-    {"id":"road-main","name":"Общий проезд","points":[[39,94],[39,12],[61,12],[61,94]],"width":5,"site_area_id":"common-roads"},
-    {"id":"road-north","points":[[6,42],[94,42]],"width":5,"site_area_id":"common-roads"},
-    {"id":"road-south","points":[[6,58],[94,58]],"width":5,"site_area_id":"common-roads"},
-    {"id":"road-office","points":[[39,85],[61,85]],"width":5,"site_area_id":"common-roads"},
-    {"id":"road-west","points":[[8,42],[8,58]],"width":5,"site_area_id":"common-roads"},
-    {"id":"road-east","points":[[94,42],[94,58]],"width":5,"site_area_id":"common-roads"},
-    {"id":"loading-spur","points":[[25,58],[25,50]],"width":5,"site_area_id":"warehouse-raw"}
+    {
+      "id": "road-main",
+      "name": "Общий проезд",
+      "points": [
+        [
+          45.0,
+          86.0
+        ],
+        [
+          43.4722,
+          85.8611
+        ],
+        [
+          42.2222,
+          85.4444
+        ],
+        [
+          41.25,
+          84.75
+        ],
+        [
+          40.5556,
+          83.7778
+        ],
+        [
+          40.1389,
+          82.5278
+        ],
+        [
+          40.0,
+          81.0
+        ],
+        [
+          40.0,
+          17.0
+        ],
+        [
+          40.1389,
+          15.4722
+        ],
+        [
+          40.5556,
+          14.2222
+        ],
+        [
+          41.25,
+          13.25
+        ],
+        [
+          42.2222,
+          12.5556
+        ],
+        [
+          43.4722,
+          12.1389
+        ],
+        [
+          45.0,
+          12.0
+        ],
+        [
+          57.0,
+          12.0
+        ],
+        [
+          58.5278,
+          12.1389
+        ],
+        [
+          59.7778,
+          12.5556
+        ],
+        [
+          60.75,
+          13.25
+        ],
+        [
+          61.4444,
+          14.2222
+        ],
+        [
+          61.8611,
+          15.4722
+        ],
+        [
+          62.0,
+          17.0
+        ],
+        [
+          62.0,
+          81.0
+        ],
+        [
+          61.8611,
+          82.5278
+        ],
+        [
+          61.4444,
+          83.7778
+        ],
+        [
+          60.75,
+          84.75
+        ],
+        [
+          59.7778,
+          85.4444
+        ],
+        [
+          58.5278,
+          85.8611
+        ],
+        [
+          57.0,
+          86.0
+        ],
+        [
+          45.0,
+          86.0
+        ]
+      ],
+      "width": 5,
+      "site_area_id": "common-roads"
+    },
+    {
+      "id": "road-west",
+      "name": "Складской проезд",
+      "points": [
+        [
+          40.0,
+          43.0
+        ],
+        [
+          39.9167,
+          42.0833
+        ],
+        [
+          39.6667,
+          41.3333
+        ],
+        [
+          39.25,
+          40.75
+        ],
+        [
+          38.6667,
+          40.3333
+        ],
+        [
+          37.9167,
+          40.0833
+        ],
+        [
+          37.0,
+          40.0
+        ],
+        [
+          12.2411,
+          40.0
+        ],
+        [
+          11.5077,
+          40.0389
+        ],
+        [
+          10.8016,
+          40.1556
+        ],
+        [
+          10.1228,
+          40.35
+        ],
+        [
+          9.4712,
+          40.6222
+        ],
+        [
+          8.847,
+          40.9722
+        ],
+        [
+          8.25,
+          41.4
+        ],
+        [
+          6.75,
+          42.6
+        ],
+        [
+          6.2153,
+          43.09
+        ],
+        [
+          5.7778,
+          43.6268
+        ],
+        [
+          5.4375,
+          44.2103
+        ],
+        [
+          5.1944,
+          44.8405
+        ],
+        [
+          5.0486,
+          45.5174
+        ],
+        [
+          5.0,
+          46.2411
+        ],
+        [
+          5.0,
+          57.0
+        ],
+        [
+          5.0833,
+          57.9167
+        ],
+        [
+          5.3333,
+          58.6667
+        ],
+        [
+          5.75,
+          59.25
+        ],
+        [
+          6.3333,
+          59.6667
+        ],
+        [
+          7.0833,
+          59.9167
+        ],
+        [
+          8.0,
+          60.0
+        ],
+        [
+          31.2664,
+          60.0
+        ],
+        [
+          32.16,
+          60.0486
+        ],
+        [
+          33.0184,
+          60.1944
+        ],
+        [
+          33.8416,
+          60.4375
+        ],
+        [
+          34.6296,
+          60.7778
+        ],
+        [
+          35.3824,
+          61.2153
+        ],
+        [
+          36.1,
+          61.75
+        ],
+        [
+          37.9,
+          63.25
+        ],
+        [
+          38.5417,
+          63.7088
+        ],
+        [
+          39.0667,
+          63.9185
+        ],
+        [
+          39.475,
+          63.8791
+        ],
+        [
+          39.7667,
+          63.5906
+        ],
+        [
+          39.9417,
+          63.0531
+        ],
+        [
+          40.0,
+          62.2664
+        ],
+        [
+          40.0,
+          43.0
+        ]
+      ],
+      "width": 4,
+      "site_area_id": "common-roads"
+    },
+    {
+      "id": "road-east",
+      "name": "Производственный проезд",
+      "points": [
+        [
+          62.0,
+          43.0
+        ],
+        [
+          62.0833,
+          42.0833
+        ],
+        [
+          62.3333,
+          41.3333
+        ],
+        [
+          62.75,
+          40.75
+        ],
+        [
+          63.3333,
+          40.3333
+        ],
+        [
+          64.0833,
+          40.0833
+        ],
+        [
+          65.0,
+          40.0
+        ],
+        [
+          88.2664,
+          40.0
+        ],
+        [
+          89.1503,
+          40.0583
+        ],
+        [
+          89.9795,
+          40.2333
+        ],
+        [
+          90.7541,
+          40.525
+        ],
+        [
+          91.474,
+          40.9333
+        ],
+        [
+          92.1393,
+          41.4583
+        ],
+        [
+          92.75,
+          42.1
+        ],
+        [
+          94.25,
+          43.9
+        ],
+        [
+          94.7847,
+          44.6176
+        ],
+        [
+          95.2222,
+          45.3704
+        ],
+        [
+          95.5625,
+          46.1584
+        ],
+        [
+          95.8056,
+          46.9816
+        ],
+        [
+          95.9514,
+          47.84
+        ],
+        [
+          96.0,
+          48.7336
+        ],
+        [
+          96.0,
+          56.0
+        ],
+        [
+          95.9167,
+          56.9167
+        ],
+        [
+          95.6667,
+          57.6667
+        ],
+        [
+          95.25,
+          58.25
+        ],
+        [
+          94.6667,
+          58.6667
+        ],
+        [
+          93.9167,
+          58.9167
+        ],
+        [
+          93.0,
+          59.0
+        ],
+        [
+          68.2411,
+          59.0
+        ],
+        [
+          67.5174,
+          59.0486
+        ],
+        [
+          66.8405,
+          59.1944
+        ],
+        [
+          66.2103,
+          59.4375
+        ],
+        [
+          65.6268,
+          59.7778
+        ],
+        [
+          65.09,
+          60.2153
+        ],
+        [
+          64.6,
+          60.75
+        ],
+        [
+          63.4,
+          62.25
+        ],
+        [
+          62.9722,
+          62.7225
+        ],
+        [
+          62.6222,
+          62.9732
+        ],
+        [
+          62.35,
+          63.0022
+        ],
+        [
+          62.1556,
+          62.8095
+        ],
+        [
+          62.0389,
+          62.3951
+        ],
+        [
+          62.0,
+          61.7589
+        ],
+        [
+          62.0,
+          43.0
+        ]
+      ],
+      "width": 4,
+      "site_area_id": "common-roads"
+    },
+    {
+      "id": "road-office",
+      "name": "Подъезд к офису",
+      "points": [
+        [
+          40,
+          55
+        ],
+        [
+          51.5,
+          55
+        ]
+      ],
+      "width": 3,
+      "site_area_id": "common-roads"
+    },
+    {
+      "id": "road-workshop-2",
+      "name": "Сервисный подъезд",
+      "points": [
+        [
+          62,
+          74
+        ],
+        [
+          70.5,
+          74
+        ]
+      ],
+      "width": 3,
+      "site_area_id": "workshop-2"
+    },
+    {
+      "id": "road-entry",
+      "name": "Въезд у КПП",
+      "points": [
+        [
+          50.5,
+          86
+        ],
+        [
+          50.5,
+          88.5
+        ]
+      ],
+      "width": 3,
+      "site_area_id": "common-roads"
+    },
+    {
+      "id": "loading-spur",
+      "name": "Подъезд к погрузке",
+      "points": [
+        [
+          25,
+          60
+        ],
+        [
+          25,
+          50
+        ]
+      ],
+      "width": 3,
+      "site_area_id": "warehouse-raw"
+    }
   ],
   "routes": {
-    "V1":[[39,85],[39,42],[8,42],[8,58],[39,58],[39,85]],
-    "V2":[[61,85],[61,42],[94,42],[94,58],[61,58],[61,85]],
-    "V3":[[39,85],[39,12],[61,12],[61,85],[39,85]]
+    "V1": [
+      [
+        40.0,
+        43.0
+      ],
+      [
+        39.9167,
+        42.0833
+      ],
+      [
+        39.6667,
+        41.3333
+      ],
+      [
+        39.25,
+        40.75
+      ],
+      [
+        38.6667,
+        40.3333
+      ],
+      [
+        37.9167,
+        40.0833
+      ],
+      [
+        37.0,
+        40.0
+      ],
+      [
+        12.2411,
+        40.0
+      ],
+      [
+        11.5077,
+        40.0389
+      ],
+      [
+        10.8016,
+        40.1556
+      ],
+      [
+        10.1228,
+        40.35
+      ],
+      [
+        9.4712,
+        40.6222
+      ],
+      [
+        8.847,
+        40.9722
+      ],
+      [
+        8.25,
+        41.4
+      ],
+      [
+        6.75,
+        42.6
+      ],
+      [
+        6.2153,
+        43.09
+      ],
+      [
+        5.7778,
+        43.6268
+      ],
+      [
+        5.4375,
+        44.2103
+      ],
+      [
+        5.1944,
+        44.8405
+      ],
+      [
+        5.0486,
+        45.5174
+      ],
+      [
+        5.0,
+        46.2411
+      ],
+      [
+        5.0,
+        57.0
+      ],
+      [
+        5.0833,
+        57.9167
+      ],
+      [
+        5.3333,
+        58.6667
+      ],
+      [
+        5.75,
+        59.25
+      ],
+      [
+        6.3333,
+        59.6667
+      ],
+      [
+        7.0833,
+        59.9167
+      ],
+      [
+        8.0,
+        60.0
+      ],
+      [
+        31.2664,
+        60.0
+      ],
+      [
+        32.16,
+        60.0486
+      ],
+      [
+        33.0184,
+        60.1944
+      ],
+      [
+        33.8416,
+        60.4375
+      ],
+      [
+        34.6296,
+        60.7778
+      ],
+      [
+        35.3824,
+        61.2153
+      ],
+      [
+        36.1,
+        61.75
+      ],
+      [
+        37.9,
+        63.25
+      ],
+      [
+        38.5417,
+        63.7088
+      ],
+      [
+        39.0667,
+        63.9185
+      ],
+      [
+        39.475,
+        63.8791
+      ],
+      [
+        39.7667,
+        63.5906
+      ],
+      [
+        39.9417,
+        63.0531
+      ],
+      [
+        40.0,
+        62.2664
+      ],
+      [
+        40.0,
+        43.0
+      ]
+    ],
+    "V2": [
+      [
+        62.0,
+        43.0
+      ],
+      [
+        62.0833,
+        42.0833
+      ],
+      [
+        62.3333,
+        41.3333
+      ],
+      [
+        62.75,
+        40.75
+      ],
+      [
+        63.3333,
+        40.3333
+      ],
+      [
+        64.0833,
+        40.0833
+      ],
+      [
+        65.0,
+        40.0
+      ],
+      [
+        88.2664,
+        40.0
+      ],
+      [
+        89.1503,
+        40.0583
+      ],
+      [
+        89.9795,
+        40.2333
+      ],
+      [
+        90.7541,
+        40.525
+      ],
+      [
+        91.474,
+        40.9333
+      ],
+      [
+        92.1393,
+        41.4583
+      ],
+      [
+        92.75,
+        42.1
+      ],
+      [
+        94.25,
+        43.9
+      ],
+      [
+        94.7847,
+        44.6176
+      ],
+      [
+        95.2222,
+        45.3704
+      ],
+      [
+        95.5625,
+        46.1584
+      ],
+      [
+        95.8056,
+        46.9816
+      ],
+      [
+        95.9514,
+        47.84
+      ],
+      [
+        96.0,
+        48.7336
+      ],
+      [
+        96.0,
+        56.0
+      ],
+      [
+        95.9167,
+        56.9167
+      ],
+      [
+        95.6667,
+        57.6667
+      ],
+      [
+        95.25,
+        58.25
+      ],
+      [
+        94.6667,
+        58.6667
+      ],
+      [
+        93.9167,
+        58.9167
+      ],
+      [
+        93.0,
+        59.0
+      ],
+      [
+        68.2411,
+        59.0
+      ],
+      [
+        67.5174,
+        59.0486
+      ],
+      [
+        66.8405,
+        59.1944
+      ],
+      [
+        66.2103,
+        59.4375
+      ],
+      [
+        65.6268,
+        59.7778
+      ],
+      [
+        65.09,
+        60.2153
+      ],
+      [
+        64.6,
+        60.75
+      ],
+      [
+        63.4,
+        62.25
+      ],
+      [
+        62.9722,
+        62.7225
+      ],
+      [
+        62.6222,
+        62.9732
+      ],
+      [
+        62.35,
+        63.0022
+      ],
+      [
+        62.1556,
+        62.8095
+      ],
+      [
+        62.0389,
+        62.3951
+      ],
+      [
+        62.0,
+        61.7589
+      ],
+      [
+        62.0,
+        43.0
+      ]
+    ],
+    "V3": [
+      [
+        45.0,
+        86.0
+      ],
+      [
+        43.4722,
+        85.8611
+      ],
+      [
+        42.2222,
+        85.4444
+      ],
+      [
+        41.25,
+        84.75
+      ],
+      [
+        40.5556,
+        83.7778
+      ],
+      [
+        40.1389,
+        82.5278
+      ],
+      [
+        40.0,
+        81.0
+      ],
+      [
+        40.0,
+        17.0
+      ],
+      [
+        40.1389,
+        15.4722
+      ],
+      [
+        40.5556,
+        14.2222
+      ],
+      [
+        41.25,
+        13.25
+      ],
+      [
+        42.2222,
+        12.5556
+      ],
+      [
+        43.4722,
+        12.1389
+      ],
+      [
+        45.0,
+        12.0
+      ],
+      [
+        57.0,
+        12.0
+      ],
+      [
+        58.5278,
+        12.1389
+      ],
+      [
+        59.7778,
+        12.5556
+      ],
+      [
+        60.75,
+        13.25
+      ],
+      [
+        61.4444,
+        14.2222
+      ],
+      [
+        61.8611,
+        15.4722
+      ],
+      [
+        62.0,
+        17.0
+      ],
+      [
+        62.0,
+        81.0
+      ],
+      [
+        61.8611,
+        82.5278
+      ],
+      [
+        61.4444,
+        83.7778
+      ],
+      [
+        60.75,
+        84.75
+      ],
+      [
+        59.7778,
+        85.4444
+      ],
+      [
+        58.5278,
+        85.8611
+      ],
+      [
+        57.0,
+        86.0
+      ],
+      [
+        45.0,
+        86.0
+      ]
+    ]
   },
   "zones": [
-    {"id":"Z1","name":"Закрытая погрузочная зона","rectangle":{"x":12,"y":43,"width":26,"height":14},"site_area_id":"warehouse-raw"},
-    {"id":"Z2","name":"Производственная сервисная зона","rectangle":{"x":64,"y":44,"width":23,"height":12},"site_area_id":"workshop-1"}
+    {
+      "id": "Z1",
+      "name": "Закрытая погрузочная зона",
+      "rectangle": {
+        "x": 12,
+        "y": 43,
+        "width": 26,
+        "height": 14
+      },
+      "site_area_id": "warehouse-raw"
+    },
+    {
+      "id": "Z2",
+      "name": "Производственная сервисная зона",
+      "rectangle": {
+        "x": 64,
+        "y": 44,
+        "width": 23,
+        "height": 12
+      },
+      "site_area_id": "workshop-1"
+    }
   ],
   "assets": [
-    {"id":"V1","type":"vehicle","vehicle_type":"forklift","destination":"W1","name":"Погрузчик 1"},
-    {"id":"V2","type":"vehicle","vehicle_type":"forklift","destination":"P1","name":"Погрузчик 2"},
-    {"id":"V3","type":"vehicle","vehicle_type":"service_vehicle","destination":"G1","name":"Служебная машина"},
-    {"id":"U1","type":"employee","name":"Сотрудник 1"},
-    {"id":"U2","type":"employee","name":"Сотрудник 2"},
-    {"id":"U3","type":"employee","name":"Сотрудник 3"}
+    {
+      "id": "V1",
+      "type": "vehicle",
+      "vehicle_type": "forklift",
+      "destination": "W1",
+      "name": "Погрузчик 1"
+    },
+    {
+      "id": "V2",
+      "type": "vehicle",
+      "vehicle_type": "forklift",
+      "destination": "P1",
+      "name": "Погрузчик 2"
+    },
+    {
+      "id": "V3",
+      "type": "vehicle",
+      "vehicle_type": "service_vehicle",
+      "destination": "G1",
+      "name": "Служебная машина"
+    },
+    {
+      "id": "U1",
+      "type": "employee",
+      "name": "Сотрудник 1"
+    },
+    {
+      "id": "U2",
+      "type": "employee",
+      "name": "Сотрудник 2"
+    },
+    {
+      "id": "U3",
+      "type": "employee",
+      "name": "Сотрудник 3"
+    }
   ],
   "sensors": [
-    {"id":"POS-V1","type":"position","asset_id":"V1","site_area_id":null},
-    {"id":"POS-V2","type":"position","asset_id":"V2","site_area_id":null},
-    {"id":"POS-V3","type":"position","asset_id":"V3","site_area_id":null},
-    {"id":"ACCESS-O1","type":"access","building_id":"O1","site_area_id":"office","position":{"x":50,"y":53}},
-    {"id":"HB-QA","type":"heartbeat","site_area_id":"workshop-2","position":{"x":63,"y":70}}
+    {
+      "id": "POS-V1",
+      "type": "position",
+      "asset_id": "V1",
+      "site_area_id": null
+    },
+    {
+      "id": "POS-V2",
+      "type": "position",
+      "asset_id": "V2",
+      "site_area_id": null
+    },
+    {
+      "id": "POS-V3",
+      "type": "position",
+      "asset_id": "V3",
+      "site_area_id": null
+    },
+    {
+      "id": "ACCESS-O1",
+      "type": "access",
+      "building_id": "O1",
+      "site_area_id": "office",
+      "position": {
+        "x": 51.5,
+        "y": 54
+      }
+    },
+    {
+      "id": "HB-QA",
+      "type": "heartbeat",
+      "site_area_id": "workshop-2",
+      "position": {
+        "x": 70.5,
+        "y": 74
+      }
+    }
   ],
   "permissions": [
-    {"asset_id":"V1","allowed_zone_ids":[],"allowed_building_ids":[]},
-    {"asset_id":"V2","allowed_zone_ids":["Z1"],"allowed_building_ids":[]},
-    {"asset_id":"V3","allowed_zone_ids":["Z1","Z2"],"allowed_building_ids":[]},
-    {"employee_id":"U1","allowed_zone_ids":[],"allowed_building_ids":["G1","W1","W2"]},
-    {"employee_id":"U2","allowed_zone_ids":[],"allowed_building_ids":["P1","P2","G1"]},
-    {"employee_id":"U3","allowed_zone_ids":["Z1","Z2"],"allowed_building_ids":["O1","G1","W1","W2","P1","P2"]}
+    {
+      "asset_id": "V1",
+      "allowed_zone_ids": [],
+      "allowed_building_ids": []
+    },
+    {
+      "asset_id": "V2",
+      "allowed_zone_ids": [
+        "Z1"
+      ],
+      "allowed_building_ids": []
+    },
+    {
+      "asset_id": "V3",
+      "allowed_zone_ids": [
+        "Z1",
+        "Z2"
+      ],
+      "allowed_building_ids": []
+    },
+    {
+      "employee_id": "U1",
+      "allowed_zone_ids": [],
+      "allowed_building_ids": [
+        "G1",
+        "W1",
+        "W2"
+      ]
+    },
+    {
+      "employee_id": "U2",
+      "allowed_zone_ids": [],
+      "allowed_building_ids": [
+        "P1",
+        "P2",
+        "G1"
+      ]
+    },
+    {
+      "employee_id": "U3",
+      "allowed_zone_ids": [
+        "Z1",
+        "Z2"
+      ],
+      "allowed_building_ids": [
+        "O1",
+        "G1",
+        "W1",
+        "W2",
+        "P1",
+        "P2"
+      ]
+    }
   ],
   "site_areas": [
-    {"id":"warehouse-raw","name":"Склад сырья","responsible_sector_id":"logistics","rectangle":{"x":0,"y":12,"width":38,"height":45}},
-    {"id":"warehouse-finished","name":"Склад продукции","responsible_sector_id":"logistics","rectangle":{"x":0,"y":57,"width":38,"height":31}},
-    {"id":"workshop-1","name":"Цех 1","responsible_sector_id":"production","rectangle":{"x":64,"y":12,"width":36,"height":45}},
-    {"id":"workshop-2","name":"Цех 2","responsible_sector_id":"production","rectangle":{"x":64,"y":57,"width":36,"height":31}},
-    {"id":"office","name":"Офис","responsible_sector_id":"coordination","rectangle":{"x":44,"y":38,"width":12,"height":14}},
-    {"id":"checkpoint","name":"КПП","responsible_sector_id":"coordination","rectangle":{"x":42,"y":87,"width":16,"height":13}},
-    {"id":"common-roads","name":"Общие дороги","responsible_sector_id":"coordination"},
-    {"id":"unknown","name":"Место неизвестно","responsible_sector_id":"coordination"}
+    {
+      "id": "warehouse-raw",
+      "name": "Склад сырья",
+      "responsible_sector_id": "logistics",
+      "rectangle": {
+        "x": 0,
+        "y": 12,
+        "width": 38,
+        "height": 45
+      }
+    },
+    {
+      "id": "warehouse-finished",
+      "name": "Склад продукции",
+      "responsible_sector_id": "logistics",
+      "rectangle": {
+        "x": 0,
+        "y": 57,
+        "width": 38,
+        "height": 31
+      }
+    },
+    {
+      "id": "workshop-1",
+      "name": "Цех 1",
+      "responsible_sector_id": "production",
+      "rectangle": {
+        "x": 64,
+        "y": 12,
+        "width": 36,
+        "height": 45
+      }
+    },
+    {
+      "id": "workshop-2",
+      "name": "Цех 2",
+      "responsible_sector_id": "production",
+      "rectangle": {
+        "x": 64,
+        "y": 57,
+        "width": 36,
+        "height": 31
+      }
+    },
+    {
+      "id": "office",
+      "name": "Офис",
+      "responsible_sector_id": "coordination",
+      "rectangle": {
+        "x": 45,
+        "y": 41,
+        "width": 13,
+        "height": 12
+      }
+    },
+    {
+      "id": "checkpoint",
+      "name": "КПП",
+      "responsible_sector_id": "coordination",
+      "rectangle": {
+        "x": 42,
+        "y": 87,
+        "width": 16,
+        "height": 13
+      }
+    },
+    {
+      "id": "common-roads",
+      "name": "Общие дороги",
+      "responsible_sector_id": "coordination"
+    },
+    {
+      "id": "unknown",
+      "name": "Место неизвестно",
+      "responsible_sector_id": "coordination"
+    }
   ],
   "sectors": [
-    {"id":"logistics","name":"Логистика","operator_id":"dispatcher-1"},
-    {"id":"production","name":"Производство","operator_id":"dispatcher-2"},
-    {"id":"coordination","name":"Координация","operator_id":"dispatcher-3"}
+    {
+      "id": "logistics",
+      "name": "Логистика",
+      "operator_id": "dispatcher-1"
+    },
+    {
+      "id": "production",
+      "name": "Производство",
+      "operator_id": "dispatcher-2"
+    },
+    {
+      "id": "coordination",
+      "name": "Координация",
+      "operator_id": "dispatcher-3"
+    }
   ],
   "operator_profiles": [
-    {"id":"dispatcher-1","name":"Диспетчер складов","sector_id":"logistics"},
-    {"id":"dispatcher-2","name":"Диспетчер производства","sector_id":"production"},
-    {"id":"dispatcher-3","name":"Координатор","sector_id":"coordination"}
+    {
+      "id": "dispatcher-1",
+      "name": "Диспетчер складов",
+      "sector_id": "logistics"
+    },
+    {
+      "id": "dispatcher-2",
+      "name": "Диспетчер производства",
+      "sector_id": "production"
+    },
+    {
+      "id": "dispatcher-3",
+      "name": "Координатор",
+      "sector_id": "coordination"
+    }
   ],
   "dispatch_config": {
-    "presence_timeout_seconds":15,"reminder_seconds":10,
-    "escalation_critical_seconds":15,"escalation_warning_seconds":30,"escalation_info_seconds":60,
-    "active_review_seconds":60,"transfer_timeout_seconds":20,
-    "startup_sensor_grace_seconds":10,"sensor_offline_seconds":5,"position_stale_seconds":5,
-    "future_event_tolerance_seconds":2,"fresh_position_max_age_seconds":5,
-    "zone_exit_confirm_samples":2,"model_normal_windows":2,"startup_operator_grace_seconds":5,
-    "recovery_reserve_order":["dispatcher-1","dispatcher-2"],
-    "max_event_bytes":8192
-  }
+    "presence_timeout_seconds": 15,
+    "reminder_seconds": 10,
+    "escalation_critical_seconds": 15,
+    "escalation_warning_seconds": 30,
+    "escalation_info_seconds": 60,
+    "active_review_seconds": 60,
+    "transfer_timeout_seconds": 20,
+    "startup_sensor_grace_seconds": 10,
+    "sensor_offline_seconds": 5,
+    "position_stale_seconds": 5,
+    "future_event_tolerance_seconds": 2,
+    "fresh_position_max_age_seconds": 5,
+    "zone_exit_confirm_samples": 2,
+    "model_normal_windows": 2,
+    "startup_operator_grace_seconds": 5,
+    "recovery_reserve_order": [
+      "dispatcher-1",
+      "dispatcher-2"
+    ],
+    "max_event_bytes": 8192
+  },
+  "layout_version": "site-v3-asymmetric-local"
 }
