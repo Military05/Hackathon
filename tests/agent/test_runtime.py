@@ -341,3 +341,61 @@ def test_format_retry_keeps_the_original_whole_analysis_deadline():
         assert exc.value.code == "execution_timeout"
         assert len(client.deadlines) == 3 and len(set(client.deadlines)) == 1
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("provider", ["openai_compatible", "ollama"])
+@pytest.mark.parametrize("tool_name", ["get_event_history", "get_sensor_health"])
+def test_compact_tool_messages_keep_history_bounds_and_sensor_null(provider, tool_name):
+    from src.agent.tools import ToolSession
+    is_history = tool_name == "get_event_history"
+    snap = snapshot("INC-ZONE-1" if is_history else "INC-NEVER-STARTED")
+    args = ({"asset_id": "V1", "since": "2026-10-07T09:00:00Z", "until": snap.as_of, "limit": 1}
+            if is_history else {"sensor_id": "POS-V2"})
+    full_session = ToolSession(snap)
+    full_session.execute("get_incident", json.dumps({"incident_id": snap.incident_id}))
+    full_result = full_session.execute(tool_name, json.dumps(args))
+    if is_history:
+        row = full_result["events"][0]
+        claim = {"source": "event", "id": row["event_id"], "field": "payload.x", "value": row["payload"]["x"]}
+    else:
+        claim = {"source": "sensor_health", "id": "POS-V2", "field": "last_received_at", "value": None}
+    wire = []
+
+    def transport(request):
+        body = json.loads(request.content)
+        wire.append(body)
+        if len(wire) < 3:
+            message = {"role": "assistant", "content": "", "tool_calls": [
+                tool_call("get_incident" if len(wire) == 1 else tool_name,
+                          {"incident_id": snap.incident_id} if len(wire) == 1 else args,
+                          native=provider == "ollama")]}
+        else:
+            message = {"role": "assistant", "content": answer([claim])}
+        return httpx.Response(200, json={"message": message} if provider == "ollama"
+                              else {"choices": [{"message": message}]})
+
+    async def run():
+        config = AgentConfig(provider=provider, model="test-double",
+                             base_url="http://127.0.0.1:11434" if provider == "ollama" else "http://127.0.0.1:1234/v1")
+        client = LocalModelClient(config, httpx.MockTransport(transport))
+        try:
+            return await run_analysis(client, snap, config)
+        finally:
+            await client.close()
+
+    result = asyncio.run(run())
+    assert len(wire) == 3
+    tool_messages = [m for m in wire[-1]["messages"] if m["role"] == "tool"]
+    payload = json.loads(tool_messages[-1]["content"])
+    if is_history:
+        assert payload["events"] == full_result["events"] and len(payload["events"]) == 1
+        assert payload["truncated"] == full_result["truncated"]
+        assert payload["history_bounds"] == full_result["history_bounds"]
+        assert payload["snapshot_bounded"] is True
+        assert result["evidence_event_ids"] == [claim["id"]]
+    else:
+        assert payload["sensor_health"] == snap.health["POS-V2"]
+        assert payload["sensor_health"]["last_received_at"] is None
+        assert result["evidence_event_ids"] == []
+    assert result["facts"][0]["value"] == claim["value"]
+    assert result["evidence_refs"] == [full_session.ref(claim["source"], claim["id"])]

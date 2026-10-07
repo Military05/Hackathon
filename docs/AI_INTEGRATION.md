@@ -56,6 +56,15 @@ enum, а каждая гипотеза обязана иметь непусто�
 исключает использование кэша старой инструкции. Новые причины отказа содержат имена
 неподходящих полей без копирования непроверенного ответа в API-ошибку.
 
+Версия `dispatcher-v3-compact-context` передаёт descriptor snapshot один раз в первом
+сообщении. Ответы tools для Qwen содержат компактный JSON без повторных обёрток
+`snapshot` и `evidence_refs`; все исходные события, наблюдения MLP, поля, значения и
+ограничения истории передаются полностью. ToolSession, проверка фактов и итоговый
+отчёт сохраняют полный snapshot и доказательства. На локальном D4 из 13 событий
+суммарный текст ответов get_incident/get_asset_policy сокращён примерно на 45%.
+Это уменьшение входа, не измерение времени на ноутбуке: D4 и SENSOR ещё требуют
+проверки настоящей Qwen. Лимиты остаются 60 секунд, три запроса и шесть tools.
+
 Резерв Ollama: LOCAL_LLM_PROVIDER=ollama, LOCAL_LLM_BASE_URL=http://127.0.0.1:11434,
 LOCAL_LLM_MODEL=qwen3:4b. Сначала проверить уже установленные модели через /api/tags.
 Автоматического скачивания, замены модели и cloud fallback нет.
@@ -157,12 +166,14 @@ stale и error. Facts/hypotheses/recommendations готовы для следу�
     .\.venv\Scripts\python.exe -m pip install -r requirements-ai-dev.txt
     .\.venv\Scripts\python.exe -m pytest tests/ml tests/agent tests/qa -q
 
-74 теста прошли: модульная логика, реальная обученная MLP → snapshot → tools → validator,
+79 тестов прошли: модульная логика, реальная обученная MLP → snapshot → tools → validator,
 HTTP protocol на явной model test double, 202/poll/cache/ошибки API. TestClient даёт одно
 предупреждение о будущем переходе Starlette на httpx2; проверки проходят с текущими версиями.
 Это не свидетельство настоящего Qwen или полного D1–D10 через общий backend.
 Регрессии формата проверяют source enum, непустые limitations, передачу схемы только в
 финальной фазе, отказ при неверных фактах и сохранение исходного deadline при повторе.
+Регрессии контекста проверяют полный D4 через оба HTTP-адаптера, точные score/threshold,
+все исходные события и итоговые evidence_refs, ограниченную историю и null heartbeat.
 
 От владельца/команды: запустить скачанную Qwen и probe на своей машине, перенести артефакт
 на ноутбук; A1 подключить snapshot query/router/inference; затем Лия проверяет полный путь,

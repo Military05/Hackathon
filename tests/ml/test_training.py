@@ -68,27 +68,72 @@ def test_artifact_corruption_and_version_mismatch_fail_explicitly(trained, tmp_p
     assert MovementModel(dest).state == "artifact_invalid"
 
 
-def test_trained_observation_flows_to_verified_agent_result(trained):
+@pytest.mark.parametrize("provider", ["openai_compatible", "ollama"])
+def test_trained_observation_flows_to_verified_agent_result(trained, provider):
     """Real trained MLP + real tools/validator; language-model response is a test double."""
     import asyncio
+    import httpx
     from src.agent.config import AgentConfig
     from src.agent.loop import run_analysis
+    from src.agent.model_client import LocalModelClient
     from src.agent.providers import FrozenSnapshot
+    from src.agent.tools import ToolSession
     data, artifacts, _ = trained
     export_demo(data, artifacts / "movement.joblib", artifacts)
     snap = FrozenSnapshot(json.loads((artifacts / "d4-agent-snapshot.json").read_text()))
     observation = snap.data["observations"][0]
+    wire = []
 
-    class Client:
-        async def chat(self, messages, tools, deadline):
-            if not any(m["role"] == "tool" for m in messages):
-                return {"role": "assistant", "content": "", "tool_calls": [{"id": "d4-call", "function": {"name": "get_incident",
-                        "arguments": json.dumps({"incident_id": "INC-MODEL-D4"})}}]}
-            return {"role": "assistant", "content": json.dumps({"facts": [{"source": "model_observation", "id": observation["observation_id"],
-                    "field": "score", "value": observation["score"]}], "hypotheses": [],
-                    "recommendations": ["Проверить, не выполняется ли штатная погрузка."]})}
+    def transport(request):
+        body = json.loads(request.content)
+        wire.append(body)
+        if len(wire) < 3:
+            name, args = (("get_incident", {"incident_id": snap.incident_id}) if len(wire) == 1
+                          else ("get_asset_policy", {"asset_id": "V1"}))
+            message = {"role": "assistant", "content": "", "tool_calls": [
+                {"id": f"d4-call-{len(wire)}", "type": "function", "function": {"name": name,
+                 "arguments": args if provider == "ollama" else json.dumps(args)}}]}
+        else:
+            assert not body["tools"]
+            assert (body.get("format") if provider == "ollama" else body.get("response_format"))
+            message = {"role": "assistant", "content": json.dumps({"facts": [
+                {"source": "model_observation", "id": observation["observation_id"],
+                 "field": field, "value": observation[field]} for field in ("score", "threshold", "status")],
+                "hypotheses": [], "recommendations": ["Проверить, не выполняется ли штатная погрузка."]})}
+        return httpx.Response(200, json={"message": message} if provider == "ollama"
+                              else {"choices": [{"message": message}]})
 
-    result = asyncio.run(run_analysis(Client(), snap, AgentConfig(model="language-test-double")))
+    async def run():
+        config = AgentConfig(provider=provider, model="language-test-double",
+                             base_url="http://127.0.0.1:11434" if provider == "ollama" else "http://127.0.0.1:1234/v1")
+        client = LocalModelClient(config, httpx.MockTransport(transport))
+        try:
+            return await run_analysis(client, snap, config)
+        finally:
+            await client.close()
+
+    result = asyncio.run(run())
+    assert len(wire) == 3
+    assert json.loads(wire[0]["messages"][1]["content"])["snapshot"] == snap.descriptor()
+    tool_messages = [m for m in wire[-1]["messages"] if m["role"] == "tool"]
+    incident_data, policy_data = [json.loads(m["content"]) for m in tool_messages]
+    assert incident_data["incident"] == snap.data["incident"]
+    assert incident_data["evidence"] == [snap.events[i] for i in observation["evidence_event_ids"]]
+    assert incident_data["observations"] == snap.data["observations"]
+    assert policy_data["policy"] == snap.policies["V1"]
+    assert all("snapshot" not in payload and "evidence_refs" not in payload
+               for payload in (incident_data, policy_data))
+    # D4 must retain every raw event and exact MLP value while removing significant
+    # repeated metadata from the actual request, rather than trimming the fixture.
+    full_session = ToolSession(snap)
+    legacy_chars = sum(len(json.dumps(full_session.execute(name, json.dumps(args)), ensure_ascii=False))
+                       for name, args in (("get_incident", {"incident_id": snap.incident_id}),
+                                          ("get_asset_policy", {"asset_id": "V1"})))
+    assert sum(len(m["content"]) for m in tool_messages) < .7 * legacy_chars
     assert result["facts"][0]["value"] == observation["score"]
+    assert result["facts"][1]["value"] == observation["threshold"]
     assert result["evidence_event_ids"] == sorted(observation["evidence_event_ids"])
+    assert {ref["id"] for ref in result["evidence_refs"] if ref["kind"] == "event"} == set(observation["evidence_event_ids"])
+    assert all(ref["as_of"] == snap.as_of for ref in result["evidence_refs"])
+    assert [row["tool"] for row in result["tool_trace"]] == ["get_incident", "get_asset_policy"]
     assert result["incident_snapshot"]["model_version"] == snap.data["model_version"]
