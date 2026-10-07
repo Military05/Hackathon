@@ -10,6 +10,9 @@
   const point=p=>Array.isArray(p)?{x:p[0],y:p[1]}:p;
   const validPoint=p=>p&&Number.isFinite(p.x)&&Number.isFinite(p.y);
   const workable=i=>i.status!=="closed"&&i.disposition!=="rejected_model_signal";
+  const incidentAssets=i=>[i?.asset_id,i?.other_asset_id,i?.details?.other_asset_id].filter(Boolean);
+  const redZone=zone=>zone.kind==="forbidden"||zone.kind==="restricted";
+  const vehicleTypeNames={forklift:"погрузчикам",service_vehicle:"служебному транспорту"};
   const sensorStatusNames={online:"На связи",offline:"Нет связи",unknown:"Связь ещё не подтверждена"};
   const sensorTypeNames={position:"Датчик положения",access:"Датчик прохода",heartbeat:"Контроль связи"};
   function isStale(asset,serverOffset=0,thresholdSeconds=5,now=Date.now()){
@@ -26,11 +29,16 @@
     return (site.site_areas||[]).filter(a=>a.responsible_sector_id===sectorId&&validRectangle(a.rectangle)).map(a=>a.rectangle);
   }
   function zoneStyle(zone){
-    return zone.kind==="forbidden"
+    return redZone(zone)
       ?{color:"#f37979",fillColor:"#b84b4b",fillOpacity:.23,weight:1.5,className:"enterprise-zone-forbidden"}
       :{color:"#e8b166",fillColor:"#c78b3a",fillOpacity:.16,weight:1.5,dashArray:"5 4",className:"enterprise-zone-permit"};
   }
-  function signalTime(stamp){const parsed=Date.parse(stamp);return Number.isFinite(parsed)?new Date(parsed).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}):"—";}
+  function zonePolicyText(zone){
+    if(zone.kind==="forbidden")return "Въезд запрещён всем транспортным средствам";
+    if(zone.kind==="restricted")return `Въезд запрещён ${(zone.restricted_vehicle_types||[]).map(type=>vehicleTypeNames[type]||type).join(", ")}. Остальной транспорт — по своим допускам`;
+    return "Въезд только по индивидуальному допуску";
+  }
+  function signalTime(stamp){const parsed=Date.parse(stamp);return Number.isFinite(parsed)?new Date(parsed).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit",hour12:false}):"—";}
   let instanceSequence=0;
   function estimatedLabelWidth(text,fontSize){
     return [...String(text)].reduce((total,c)=>total+(/[ilI1 .,:]/.test(c)?.3:/[MWШЩЖ]/.test(c)?.85:.61)*fontSize,0);
@@ -64,10 +72,10 @@
     const rectangleBounds=r=>[xy(r.x,r.y+r.height),xy(r.x+r.width,r.y)];
     const map=Leaflet.map(elementId,{crs:Leaflet.CRS.Simple,minZoom:0,maxZoom:5,zoomSnap:.1,attributionControl:false});
     const pane=(name,z)=>{map.createPane(name).style.zIndex=z;};
-    pane("enterpriseGrid",220);pane("enterpriseSectors",260);pane("enterpriseRoads",300);pane("enterpriseZones",330);pane("enterpriseObjects",360);pane("enterpriseLabels",420);pane("enterpriseHighlight",450);pane("enterpriseSensors",620);
-    const roads=[],buildings=new Map(),zones=new Map(),assets=new Map(),sensors=new Map(),sensorDefinitions=new Map((site.sensors||[]).map(s=>[s.id||s.sensor_id,s]));
+    pane("enterpriseGrid",220);pane("enterpriseSectors",260);pane("enterpriseRoads",300);pane("enterprisePedestrians",310);pane("enterpriseRoutes",320);pane("enterpriseZones",330);pane("enterpriseObjects",360);pane("enterpriseLabels",420);pane("enterpriseHighlight",450);pane("enterpriseSensors",620);
+    const roads=[],pedestrians=[],personalRoutes=new Map(),buildings=new Map(),zones=new Map(),assets=new Map(),sensors=new Map(),sensorDefinitions=new Map((site.sensors||[]).map(s=>[s.id||s.sensor_id,s]));
     const grid=Leaflet.layerGroup().addTo(map),highlightLayer=Leaflet.layerGroup().addTo(map);
-    let state={assets:[],sensors:[],incidents:[],serverOffset:0},selection=null,gridSignature="",destroyed=false,viewMode="all",focusedSectorId=null,settingView=false,animationFrame=null,lastPaint=0;
+    let state={assets:[],sensors:[],incidents:[],serverOffset:0},selection=null,selectedAsset=null,routesVisible=true,gridSignature="",destroyed=false,viewMode="all",focusedSectorId=null,settingView=false,animationFrame=null,lastPaint=0;
     const hatchId=`enterprise-forbidden-hatch-${++instanceSequence}`;
     const motionClock=()=>typeof performance!=="undefined"?performance.now():Date.now();
     const reducedMotion=typeof matchMedia!=="undefined"&&matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -82,16 +90,29 @@
       const source=road.points||road.path||[];
       const points=source.map(point).filter(validPoint).map(p=>xy(p.x,p.y));
       if(points.length<2)continue;
-      const style={pane:"enterpriseRoads",interactive:false,lineCap:"round",lineJoin:"round",smoothFactor:0};
+      const style={pane:"enterpriseRoads",interactive:false,lineCap:road.entrance_building_id?"butt":"round",lineJoin:"round",smoothFactor:0};
       const edge=Leaflet.polyline(points,{...style,color:"#425462",opacity:1}).addTo(map);
       roads.push({road,edge,points,style});
     }
     // All road edges precede all road fills: a junction remains one continuous surface.
     for(const road of roads)road.fill=Leaflet.polyline(road.points,{...road.style,color:"#293f4d",opacity:1}).addTo(map);
+    for(const path of site.pedestrian_paths||[]){
+      const points=(path.points||[]).map(point).filter(validPoint).map(p=>xy(p.x,p.y));if(points.length<2)continue;
+      const layer=Leaflet.polyline(points,{pane:"enterprisePedestrians",color:"#c6d2bc",opacity:.72,weight:1.5,dashArray:"3 5",lineCap:"butt",interactive:false,smoothFactor:0,className:"enterprise-pedestrian-path"}).addTo(map);
+      pedestrians.push({path,layer});
+    }
+    const routeColors=["#d7cc8b","#baaff1","#72ccb4"];
+    for(const [id,route] of Object.entries(site.safety_routes||site.demo_routes||site.routes||{})){
+      const points=route.map(point).filter(validPoint).map(p=>xy(p.x,p.y));if(points.length<2)continue;
+      const color=routeColors[personalRoutes.size%routeColors.length];
+      const layer=Leaflet.polyline(points,{pane:"enterpriseRoutes",color,opacity:.23,weight:1.5,dashArray:"5 7",lineCap:"round",interactive:false,smoothFactor:0,className:"enterprise-personal-route"}).addTo(map);
+      const destinations=(site.demo_route_destinations?.[id]||[]).map(destination=>(site.buildings||[]).find(b=>b.id===destination)).filter(b=>validPoint(b?.entrance)).map(building=>({building,marker:Leaflet.marker(xy(building.entrance.x,building.entrance.y),{pane:"enterpriseHighlight",interactive:false,keyboard:false,icon:Leaflet.divIcon({className:"enterprise-route-destination-marker",html:"",iconSize:[10,10],iconAnchor:[5,5]})}).addTo(map),signature:""}));
+      personalRoutes.set(id,{layer,color,destinations});
+    }
     for(const zone of site.zones||[]){
       if(!zone.rectangle)continue;
       const layer=Leaflet.rectangle(rectangleBounds(zone.rectangle),{pane:"enterpriseZones",...zoneStyle(zone)});
-      layer.addTo(map).bindTooltip(`${escape(zone.name||zone.id)}<br>${zone.kind==="forbidden"?"Въезд запрещён всем транспортным средствам":"Въезд только по индивидуальному допуску"}`);
+      layer.addTo(map).bindTooltip(`${escape(zone.name||zone.id)}<br>${escape(zonePolicyText(zone))}`);
       const r=zone.rectangle;
       const label=Leaflet.marker(xy(r.x+r.width/2,r.y+r.height/2),{pane:"enterpriseLabels",interactive:false,keyboard:false,icon:Leaflet.divIcon({className:"enterprise-zone-label-marker",html:"",iconSize:[0,0]})}).addTo(map);
       zones.set(zone.id,{zone,layer,label,labelSignature:""});
@@ -124,8 +145,8 @@
       for(const record of zones.values()){
         const r=record.zone.rectangle,p1=map.latLngToLayerPoint(xy(r.x,r.y)),p2=map.latLngToLayerPoint(xy(r.x+r.width,r.y+r.height));
         const m=labelMetrics({id:record.zone.id,name:record.zone.short_name||record.zone.id,short_name:record.zone.short_name||record.zone.id},Math.abs(p2.x-p1.x)-4,Math.abs(p2.y-p1.y)-4),signature=JSON.stringify(m);
-        if(signature!==record.labelSignature){record.labelSignature=signature;record.label.setIcon(Leaflet.divIcon({className:"enterprise-zone-label-marker",html:`<span class="enterprise-zone-label ${record.zone.kind==="forbidden"?"forbidden":"permit"}" style="width:${m.width}px;height:${m.height}px;font-size:${m.fontSize}px"><span>${escape(m.label)}</span></span>`,iconSize:[m.width,m.height],iconAnchor:[m.width/2,m.height/2]}));}
-        if(record.zone.kind==="forbidden")applyHatching(record.layer);
+        if(signature!==record.labelSignature){record.labelSignature=signature;record.label.setIcon(Leaflet.divIcon({className:"enterprise-zone-label-marker",html:`<span class="enterprise-zone-label ${redZone(record.zone)?"forbidden":"permit"}" style="width:${m.width}px;height:${m.height}px;font-size:${m.fontSize}px" title="${escape(zonePolicyText(record.zone))}"><span>${escape(m.label)}</span></span>`,iconSize:[m.width,m.height],iconAnchor:[m.width/2,m.height/2]}));}
+        if(redZone(record.zone))applyHatching(record.layer);
       }
       drawGrid(unit);
     }
@@ -153,17 +174,19 @@
       for(let y=bottom;y<=top;y+=step)Leaflet.polyline([[y,left],[y,right]],style).addTo(grid);
     }
     const sensorSvg='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="9" width="12" height="11" rx="2"/><path d="M12 9V4m-4 3a5 5 0 0 1 8 0M5 4a9 9 0 0 1 14 0M3 12h3m12 0h3M3 17h3m12 0h3"/><circle cx="12" cy="14" r="1.4"/></svg>';
-    function vehicleIcon(asset,alarm,stale){
+    function vehicleIcon(asset,alarm,stale,deviation){
       const color=stale?"stale":alarm?"alarm":"normal",id=asset.asset_id||asset.id;
       const symbol=asset.vehicle_type==="forklift"?"П":"С",name=symbol==="П"?"Погрузчик":"Служебный транспорт";
-      return Leaflet.divIcon({className:`enterprise-vehicle-marker ${color}`,html:`<span class="enterprise-vehicle-glyph"><span class="enterprise-vehicle-symbol" title="${name}">${symbol}</span><b>${escape(id)}</b><time class="enterprise-signal-time" title="Время последней полученной позиции">${escape(signalTime(asset.last_seen))}</time>${stale?'<small class="enterprise-stale-badge" title="Последняя известная позиция">?</small>':""}</span>`,iconSize:[36,50],iconAnchor:[18,20]});
+      return Leaflet.divIcon({className:`enterprise-vehicle-marker ${color}${deviation?" route-deviation":""}`,html:`<span class="enterprise-vehicle-glyph"><span class="enterprise-vehicle-symbol" title="${name}">${symbol}</span><b>${escape(id)}</b><time class="enterprise-signal-time" title="Последняя позиция: ${escape(asset.last_seen||"нет сигнала")}">${escape(signalTime(asset.last_seen))}</time>${stale?'<small class="enterprise-stale-badge" title="Последняя известная позиция">?</small>':deviation?'<small class="enterprise-route-warning" title="Отклонение от личного маршрута">!</small>':""}</span>`,iconSize:[36,50],iconAnchor:[18,20]});
     }
     function sensorIcon(sensor,status,mounted){
       const type=sensor.type||"heartbeat";
-      return Leaflet.divIcon({className:`enterprise-sensor-marker ${escape(status)} ${mounted?"mounted":"stationary"}`,html:`<span class="enterprise-sensor-glyph" title="${escape(sensorTypeNames[type]||"Датчик")}">${sensorSvg}</span>${mounted?"":`<time class="enterprise-sensor-time" title="Время последнего сигнала">${escape(signalTime(sensor.last_received_at))}</time>`}`,iconSize:mounted?[18,18]:[25,25],iconAnchor:mounted?[-10,25]:[12.5,12.5]});
+      return Leaflet.divIcon({className:`enterprise-sensor-marker ${escape(status)} ${mounted?"mounted":"stationary"}`,html:`<span class="enterprise-sensor-glyph" title="${escape(sensorTypeNames[type]||"Датчик")}">${sensorSvg}</span>${mounted?"":`<time class="enterprise-sensor-time" title="Последний сигнал: ${escape(sensor.last_received_at||"нет сигнала")}">${escape(signalTime(sensor.last_received_at))}</time>`}`,iconSize:mounted?[18,18]:[25,25],iconAnchor:mounted?[-10,25]:[12.5,12.5]});
     }
     function ageText(stamp){
-      const t=Date.parse(stamp);return Number.isFinite(t)?`${Math.max(0,Math.round((Date.now()+state.serverOffset-t)/1000))} сек. назад`:"сигнал ещё не получен";
+      const t=Date.parse(stamp);if(!Number.isFinite(t))return "сигнал ещё не получен";
+      const seconds=Math.max(0,Math.round((Date.now()+state.serverOffset-t)/1000));
+      return seconds<60?"только что":seconds<3600?`${Math.floor(seconds/60)} мин. назад`:`${Math.floor(seconds/3600)} ч. назад`;
     }
     function paintMotion(now){
       let moving=false;
@@ -188,18 +211,18 @@
       const liveSensors=new Map(nextSensors.map(s=>[s.sensor_id||s.id,s]));
       for(const asset of nextAssets){
         const id=asset.asset_id||asset.id;if(!id||!validPoint(asset))continue;
-        const alarm=nextIncidents.some(i=>i.asset_id===id&&i.condition_active&&workable(i)),stale=isStale(asset,serverOffset,site.dispatch_config?.position_stale_seconds||5);
-        const signature=[asset.vehicle_type,alarm,stale,signalTime(asset.last_seen)].join(":");
+        const alarm=nextIncidents.some(i=>incidentAssets(i).includes(id)&&i.condition_active&&workable(i)),stale=isStale(asset,serverOffset,site.dispatch_config?.position_stale_seconds||5),deviation=nextIncidents.some(i=>i.asset_id===id&&i.type==="route_deviation"&&i.condition_active&&workable(i));
+        const signature=[asset.vehicle_type,alarm,stale,deviation,signalTime(asset.last_seen)].join(":");
         let record=assets.get(id);
-        if(!record){const layer=Leaflet.marker(xy(asset.x,asset.y),{icon:vehicleIcon(asset,alarm,stale),riseOnHover:true}).addTo(map);layer.on("click",()=>onAsset(id));record={layer,signature,display:{x:asset.x,y:asset.y},stamp:asset.last_seen};assets.set(id,record);}
-        if(record.signature!==signature){record.layer.setIcon(vehicleIcon(asset,alarm,stale));record.signature=signature;}
+        if(!record){const layer=Leaflet.marker(xy(asset.x,asset.y),{icon:vehicleIcon(asset,alarm,stale,deviation),riseOnHover:true}).addTo(map);layer.on("click",()=>{selectAsset(id);onAsset(id);});record={layer,signature,display:{x:asset.x,y:asset.y},stamp:asset.last_seen};assets.set(id,record);}
+        if(record.signature!==signature){record.layer.setIcon(vehicleIcon(asset,alarm,stale,deviation));record.signature=signature;}
         if(record.stamp!==asset.last_seen||stale){
           const changed=record.display.x!==asset.x||record.display.y!==asset.y;
           if(changed&&!stale&&!reducedMotion&&typeof requestAnimationFrame!=="undefined")record.motion={from:{...record.display},to:{x:asset.x,y:asset.y},started:motionClock(),duration:750};
           else{record.motion=null;record.display={x:asset.x,y:asset.y};record.layer.setLatLng(xy(asset.x,asset.y));}
           record.stamp=asset.last_seen;
         }
-        record.layer.bindTooltip(`${escape(id)} · ${asset.vehicle_type==="forklift"?"Погрузчик":"Служебный транспорт"}<br>${stale?"Последняя известная позиция · текущее место неизвестно":"Полученная позиция"}<br>${ageText(asset.last_seen)}`);
+        record.layer.bindTooltip(`${escape(id)} · ${asset.vehicle_type==="forklift"?"Погрузчик":"Служебный транспорт"}<br>${stale?"Последняя известная позиция · текущее место неизвестно":"Полученная позиция"}<br>${ageText(asset.last_seen)} · ${escape(asset.last_seen||"—")}`);
       }
       for(const [id,record] of assets)if(!liveAssets.has(id)||!validPoint(liveAssets.get(id))){map.removeLayer(record.layer);assets.delete(id);}
       const shownSensors=new Set();
@@ -215,7 +238,7 @@
         if(signature!==record.signature){record.layer.setIcon(sensorIcon(sensor,status,mounted));record.signature=signature;}
         record.layer.setLatLng(xy(position.x,position.y));
         const location=mounted?` · на ${escape(definition.asset_id)}${isStale(asset,serverOffset,site.dispatch_config?.position_stale_seconds||5)?" · последнее известное место":""}`:"";
-        record.layer.bindTooltip(`${escape(sensorTypeNames[definition.type]||"Датчик")} ${escape(id)}${location}<br>${sensorStatusNames[status]} · ${ageText(runtime.last_received_at)}<br>Связь и свежесть измерений проверяются отдельно`);
+        record.layer.bindTooltip(`${escape(sensorTypeNames[definition.type]||"Датчик")} ${escape(id)}${location}<br>${sensorStatusNames[status]} · ${ageText(runtime.last_received_at)} · ${escape(runtime.last_received_at||"—")}<br>Связь и свежесть измерений проверяются отдельно`);
       }
       for(const [id,record] of sensors)if(!shownSensors.has(id)){map.removeLayer(record.layer);sensors.delete(id);}
       for(const [id,record] of buildings){const danger=nextIncidents.some(i=>i.building_id===id&&i.condition_active&&workable(i));record.layer.setStyle({color:danger?"#ff7c7c":record.borderColor});}
@@ -224,6 +247,7 @@
     function selectedGeometry(incident){
       const geometry=[];
       for(const field of ["zone_id","building_id","site_area_id"]){
+        if(field==="site_area_id"&&["collision","route_deviation"].includes(incident.type))continue;
         const collection=field==="zone_id"?site.zones:field==="building_id"?site.buildings:site.site_areas;
         const object=(collection||[]).find(o=>o.id===incident[field]);
         if(object?.rectangle){geometry.push(object.rectangle);break;}
@@ -233,21 +257,35 @@
     function selectionPoints(incident){
       const points=[];
       for(const r of selectedGeometry(incident))points.push(...rectangleBounds(r));
-      const asset=state.assets.find(a=>(a.asset_id||a.id)===incident.asset_id);
-      if(validPoint(asset))points.push(xy(asset.x,asset.y));
+      for(const id of incidentAssets(incident)){const asset=state.assets.find(a=>(a.asset_id||a.id)===id);if(validPoint(asset))points.push(xy(asset.x,asset.y));}
       const sensor=sensors.get(incident.sensor_id);if(sensor)points.push(sensor.layer.getLatLng());
       return points;
     }
     let geometrySignature="";
+    function drawPersonalRoutes(){
+      const selected=new Set(selection?incidentAssets(selection):selectedAsset?[selectedAsset]:[]);
+      for(const [id,record] of personalRoutes){
+        const focused=selected.has(id),deviation=state.incidents.some(i=>i.asset_id===id&&i.type==="route_deviation"&&i.condition_active&&workable(i));
+        const color=deviation?"#ff9696":record.color;
+        record.layer.setStyle({color,opacity:routesVisible?(focused?.95:.23):0,weight:focused?3:1.5,dashArray:focused?"6 4":"5 7"});
+        for(const destination of record.destinations){
+          const signature=[routesVisible,focused,color].join(":");if(signature===destination.signature)continue;destination.signature=signature;
+          destination.marker.setIcon(Leaflet.divIcon({className:"enterprise-route-destination-marker",html:routesVisible?`<span class="enterprise-route-endpoint${focused?" focused":""}" style="color:${color}" title="${escape(id)} → ${escape(destination.building.name)}"></span>`:"",iconSize:[10,10],iconAnchor:[5,5]}));
+        }
+      }
+    }
+    function setRoutesVisible(visible){routesVisible=Boolean(visible);drawPersonalRoutes();}
+    function selectAsset(id){selectedAsset=personalRoutes.has(id)?id:null;selection=null;applySelection();return Boolean(selectedAsset);}
     function applySelection(){
-      for(const [id,r] of assets)r.layer.getElement()?.classList.toggle("enterprise-selected",Boolean(selection&&(selection.asset_id===id||sensorDefinitions.get(selection.sensor_id)?.asset_id===id)));
+      for(const [id,r] of assets)r.layer.getElement()?.classList.toggle("enterprise-selected",Boolean(selection&&(incidentAssets(selection).includes(id)||sensorDefinitions.get(selection.sensor_id)?.asset_id===id)));
       for(const [id,r] of sensors)r.layer.getElement()?.classList.toggle("enterprise-selected",Boolean(selection&&selection.sensor_id===id));
+      drawPersonalRoutes();
       const rectangles=selection?selectedGeometry(selection):[],signature=JSON.stringify(rectangles);
       if(signature===geometrySignature)return;
       geometrySignature=signature;highlightLayer.clearLayers();
       for(const r of rectangles)Leaflet.rectangle(rectangleBounds(r),{pane:"enterpriseHighlight",className:"enterprise-incident-halo",color:"#ffd079",weight:3,fillOpacity:0,interactive:false}).addTo(highlightLayer);
     }
-    function highlight(incident){selection=incident||null;applySelection();return selectionPoints(incident||{}).length>0;}
+    function highlight(incident){selection=incident||null;selectedAsset=null;applySelection();return selectionPoints(incident||{}).length>0;}
     function clearHighlight(){selection=null;applySelection();}
     function fitAll(){viewMode="all";focusedSectorId=null;settingView=true;try{map.stop?.();map.fitBounds(frame,{padding:[24,24],animate:false});}finally{settingView=false;}}
     function focusSector(sectorId,{animate=false}={}){
@@ -270,7 +308,7 @@
     const resize=typeof ResizeObserver!=="undefined"?new ResizeObserver(()=>{if(!destroyed){map.invalidateSize({pan:false});if(viewMode==="all")fitAll();else if(viewMode==="sector")focusSector(focusedSectorId);redrawGeometry();}}):null;
     if(resize)resize.observe(map.getContainer());
     fitAll();redrawGeometry();update(state);
-    return {map,update,fitAll,focusSector,highlight,clearHighlight,showIncident,destroy(){destroyed=true;if(animationFrame!==null&&typeof cancelAnimationFrame!=="undefined")cancelAnimationFrame(animationFrame);resize?.disconnect();map.off("zoomend moveend",redrawGeometry);map.remove();},getLayerCounts(){return {buildings:buildings.size,roads:roads.length,assets:assets.size,sensors:sensors.size,grid:grid.getLayers().length};}};
+    return {map,update,fitAll,focusSector,highlight,clearHighlight,showIncident,setRoutesVisible,selectAsset,destroy(){destroyed=true;if(animationFrame!==null&&typeof cancelAnimationFrame!=="undefined")cancelAnimationFrame(animationFrame);resize?.disconnect();map.off("zoomend moveend",redrawGeometry);map.remove();},getLayerCounts(){return {buildings:buildings.size,roads:roads.length,pedestrians:pedestrians.length,routes:personalRoutes.size,assets:assets.size,sensors:sensors.size,grid:grid.getLayers().length};}};
   }
-  return {create,labelMetrics,estimatedLabelWidth,roadWidthPixels,isStale,interpolatePoint,sectorRectangles,zoneStyle,signalTime};
+  return {create,labelMetrics,estimatedLabelWidth,roadWidthPixels,isStale,interpolatePoint,sectorRectangles,zoneStyle,zonePolicyText,signalTime};
 });

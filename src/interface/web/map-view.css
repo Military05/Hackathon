@@ -19,6 +19,11 @@
 #map .enterprise-sensor-time{position:absolute;left:50%;top:27px;transform:translateX(-50%)}
 #map .enterprise-vehicle-marker.stale .enterprise-vehicle-symbol{border-style:dashed;opacity:.85}
 #map .enterprise-stale-badge{position:absolute;top:-5px;right:0;border-radius:50%;background:#efc05f;color:#1c2c39;font:bold 11px/15px sans-serif;width:15px;height:15px;text-align:center}
+#map .enterprise-route-warning{position:absolute;top:-5px;right:0;border-radius:50%;background:#ff9696;color:#242c35;font:bold 11px/15px sans-serif;width:15px;height:15px;text-align:center}
+#map .enterprise-route-destination-marker{border:0;background:none;pointer-events:none}
+#map .enterprise-route-endpoint{display:block;box-sizing:border-box;width:8px;height:8px;margin:1px;background:#142b38;border:1px solid currentColor;transform:rotate(45deg);opacity:.65}
+#map .enterprise-route-endpoint.focused{border-width:2px;opacity:1}
+#map .enterprise-pedestrian-path,#map .enterprise-personal-route{pointer-events:none}
 #map .enterprise-sensor-marker{--sensor-color:#efc05f}
 #map .enterprise-sensor-marker.online{--sensor-color:#66d6b4}
 #map .enterprise-sensor-marker.offline{--sensor-color:#ff8585}

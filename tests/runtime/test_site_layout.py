@@ -168,7 +168,14 @@ class SiteLayoutTests(unittest.TestCase):
         self.assertEqual(zones['Z1']['kind'], 'permit')
         self.assertEqual(zones['Z2']['kind'], 'permit')
         self.assertEqual(zones['Z3']['kind'], 'forbidden')
-        self.assertTrue(all(zone['kind'] in ('permit', 'forbidden') for zone in zones.values()))
+        self.assertEqual(self.site['policy_version'], 'demo-policy-v6')
+        self.assertTrue(all(zone['kind'] in ('permit', 'forbidden', 'restricted') for zone in zones.values()))
+        self.assertTrue(4 <= sum(zone['kind'] != 'permit' for zone in zones.values()) <= 6)
+        vehicle_types = {asset['vehicle_type'] for asset in self.site['assets'] if asset.get('vehicle_type')}
+        for zone in zones.values():
+            if zone['kind'] == 'restricted':
+                self.assertTrue(zone['restricted_vehicle_types'])
+                self.assertTrue(set(zone['restricted_vehicle_types']) <= vehicle_types)
         for permission in self.site['permissions']:
             self.assertNotIn('Z3', permission['allowed_zone_ids'])
         for index, zone in enumerate(self.site['zones']):
@@ -220,8 +227,66 @@ class SiteLayoutTests(unittest.TestCase):
                         road_clearance = dict(x=box['x'] - padding, y=box['y'] - padding,
                                               width=box['width'] + 2 * padding,
                                               height=box['height'] + 2 * padding)
+                        # A perpendicular doorway approach ends at the wall with a flat cap.
+                        if road.get('entrance_building_id') == building['id']:
+                            entrance = building['entrance']
+                            endpoint = [entrance['x'], entrance['y']]
+                            if endpoint in (start, end):
+                                self.assertFalse(segment_crosses_interior(start, end, box))
+                                if start[1] == end[1]:
+                                    self.assertIn(endpoint[0], (box['x'], box['x'] + box['width']))
+                                    road_clearance.update(x=box['x'], width=box['width'])
+                                elif start[0] == end[0]:
+                                    self.assertIn(endpoint[1], (box['y'], box['y'] + box['height']))
+                                    road_clearance.update(y=box['y'], height=box['height'])
+                                else:
+                                    self.fail('Doorway approaches must be perpendicular to the wall')
                         self.assertFalse(segment_crosses_interior(start, end, road_clearance),
                                          'The full road width must stay outside buildings')
+
+    def test_every_building_has_a_connected_entrance_and_a_separate_walking_network(self):
+        roads = {road['id']: road for road in self.site['roads']}
+        for building in self.site['buildings']:
+            entrance = building['entrance']
+            road = roads[entrance['road_id']]
+            self.assertEqual(road['entrance_building_id'], building['id'])
+            self.assertEqual(road['points'][-1], [entrance['x'], entrance['y']])
+            self.assertFalse(inside(road['points'][-1], building['rectangle']))
+        paths = self.site['pedestrian_paths']
+        self.assertGreaterEqual(len(paths), 4)
+        vertices = [{tuple(point) for point in path['points']} for path in paths]
+        self.assertTrue(all(points & vertices[0] for points in vertices[1:]))
+        self.assertTrue({'O1', 'C1', 'P3'} <= {path.get('building_id') for path in paths})
+        road_segments = [(a, b) for road in roads.values() for a, b in zip(road['points'], road['points'][1:])]
+        for path in paths:
+            for a, b in zip(path['points'], path['points'][1:]):
+                for building in self.site['buildings']:
+                    self.assertFalse(segment_crosses_interior(a, b, building['rectangle']), (path['id'], building['id']))
+                self.assertTrue(all(collinear_overlap((a, b), segment) < 1e-7 for segment in road_segments),
+                                'Pedestrian paths must not reuse vehicle centerlines')
+
+    def test_personal_routes_and_safety_scenarios_use_real_roads_and_return_to_own_route(self):
+        self.assertEqual(self.site['safety_routes'], self.site['demo_routes'])
+        road_segments = [(a, b) for road in self.site['roads'] for a, b in zip(road['points'], road['points'][1:])]
+        def assert_on_roads(a, b):
+            subdivisions = max(1, math.ceil(math.dist(a, b) / .5))
+            for index in range(subdivisions + 1):
+                point = [a[axis] + (b[axis] - a[axis]) * index / subdivisions for axis in range(2)]
+                self.assertLess(min(point_segment_distance(point, c, d) for c, d in road_segments), 1e-7, point)
+        for asset, route in self.site['demo_routes'].items():
+            self.assertEqual(route[0], route[-1])
+            for a, b in zip(route, route[1:]):
+                assert_on_roads(a, b)
+                for zone in self.site['zones']:
+                    self.assertFalse(segment_crosses_interior(a, b, zone['rectangle']), (asset, zone['id']))
+        for scenario in self.site['demo_safety_scenarios'].values():
+            for asset, waypoints in scenario['asset_paths'].items():
+                for a, b in zip(waypoints, waypoints[1:]):
+                    self.assertLess(a['at'], b['at'])
+                    assert_on_roads(a['point'], b['point'])
+                route = self.site['demo_routes'][asset]
+                self.assertLess(min(point_segment_distance(waypoints[-1]['point'], a, b) for a, b in zip(route, route[1:])), 1e-7)
+                self.assertLessEqual(waypoints[-1]['at'], scenario['duration_seconds'])
 
     def test_normal_routes_do_not_enter_forbidden_zones(self):
         permissions = {item["asset_id"]: item for item in self.site["permissions"] if "asset_id" in item}

@@ -172,3 +172,47 @@ test("resizing retains the selected sector while a manual view remains untouched
     h.handlers["dragstart zoomstart"]();const manualCount=h.fits.length;resize();assert.equal(h.fits.length,manualCount);h.instance.destroy();
   }finally{if(original)globalThis.ResizeObserver=original;else delete globalThis.ResizeObserver;}
 });
+
+test("typed prohibitions are red and identify precisely which vehicle types are restricted",()=>{
+  const h=harness(),red=h.layers.filter(l=>l.options.pane==="enterpriseZones"&&l.options.className==="enterprise-zone-forbidden");
+  assert.equal(red.length,site.zones.filter(z=>["forbidden","restricted"].includes(z.kind)).length);
+  assert.ok(red.some(l=>/погрузчикам/.test(l.tooltip)));assert.ok(red.some(l=>/служебному транспорту/.test(l.tooltip)));
+  assert.deepEqual(api.zoneStyle({kind:"restricted"}),api.zoneStyle({kind:"forbidden"}));
+  assert.match(api.zonePolicyText({kind:"restricted",restricted_vehicle_types:["forklift"]}),/погрузчикам/);
+});
+
+test("entrance roads end at the building wall with flat caps and walking paths stay separate",()=>{
+  const h=harness(),roads=h.layers.filter(l=>l.options.pane==="enterpriseRoads"&&l.options.color==="#293f4d");
+  site.roads.forEach((road,index)=>assert.equal(roads[index].options.lineCap,road.entrance_building_id?"butt":"round"));
+  const walking=h.layers.filter(l=>l.options.pane==="enterprisePedestrians");assert.equal(walking.length,site.pedestrian_paths.length);
+  assert.ok(walking.every(l=>l.options.dashArray&&l.options.interactive===false));
+});
+
+test("personal routes are subtle by default, selected independently, and toggle without rebuilding layers",()=>{
+  const h=harness(),routes=h.layers.filter(l=>l.options.pane==="enterpriseRoutes"),count=h.layers.length,fitCount=h.fits.length;
+  assert.equal(routes.length,3);assert.ok(routes.every(l=>l.options.opacity===.23&&l.options.dashArray));
+  assert.deepEqual(routes[0].points,site.safety_routes.V1.map(p=>[100-p[1],p[0]]));
+  assert.equal(h.instance.selectAsset("V2"),true);assert.equal(routes[1].options.opacity,.95);assert.equal(routes[0].options.opacity,.23);
+  h.instance.setRoutesVisible(false);assert.ok(routes.every(l=>l.options.opacity===0));
+  const endpoints=h.layers.filter(l=>l.options.icon?.className==="enterprise-route-destination-marker");assert.ok(endpoints.every(l=>l.options.icon.html===""));
+  h.instance.setRoutesVisible(true);assert.equal(routes[1].options.opacity,.95);assert.ok(endpoints.some(l=>l.options.icon.html.includes("focused")));
+  assert.equal(h.layers.length,count);assert.equal(h.fits.length,fitCount);
+});
+
+test("collision selection includes both received vehicle positions without framing the whole road area",()=>{
+  const h=harness(),other={...freshAsset,asset_id:"V3",vehicle_type:"service_vehicle",x:40.8,y:74};
+  const collision={type:"collision",asset_id:"V1",other_asset_id:"V3",site_area_id:"common-roads",status:"open",condition_active:true};
+  h.instance.update({assets:[{...freshAsset,x:40,y:74},other],incidents:[collision]});h.instance.showIncident(collision);
+  const vehicles=h.layers.filter(l=>l.options.icon?.className?.includes("vehicle-marker"));
+  assert.equal(vehicles.length,2);assert.ok(vehicles.every(l=>l.classes.has("enterprise-selected")));assert.ok(vehicles.every(l=>l.options.icon.className.includes("alarm")));
+  assert.deepEqual(h.fits.at(-1).points,[[26,40],[26,40.8]]);h.instance.clearHighlight();assert.ok(vehicles.every(l=>!l.classes.has("enterprise-selected")));
+});
+
+test("route deviation is warned on the affected vehicle and HH:MM signals avoid second-by-second icon churn",()=>{
+  const h=harness(),incident={type:"route_deviation",asset_id:"V1",status:"open",condition_active:true};
+  h.instance.update({assets:[freshAsset],incidents:[incident]});
+  const vehicle=h.layers.find(l=>l.options.icon?.className?.includes("vehicle-marker"));assert.match(vehicle.options.icon.html,/enterprise-route-warning/);
+  const route=h.layers.find(l=>l.options.pane==="enterpriseRoutes");assert.equal(route.options.color,"#ff9696");
+  assert.match(api.signalTime("2026-10-07T10:12:13Z"),/^\d{2}:\d{2}$/);
+  assert.doesNotMatch(vehicle.tooltip,/сек\. назад/);assert.match(vehicle.tooltip,/только что/);
+});
