@@ -1,6 +1,6 @@
 "use strict";
 const $ = id => document.getElementById(id);
-const titles = {forbidden_zone:"Въезд в запрещённую зону",unauthorized_access:"Подтверждённый проход без допуска",sensor_offline:"Нет сигнала датчика",model_anomaly:"Необычное движение"};
+const titles = {forbidden_zone:"Въезд в запрещённую зону",unauthorized_access:"Подтверждённый проход без допуска",sensor_offline:"Нет сигнала датчика",model_anomaly:"Необычное движение",route_deviation:"Отклонение от маршрута",collision:"Пересечение транспорта"};
 const labels = {open:"Не принято",acknowledged:"Принято",closed:"Завершено",active:"Условие активно",restored:"Условие восстановлено",unknown:"Нужно проверить",online:"На связи",offline:"Нет связи",rejected_model_signal:"Подозрение отклонено"};
 const sectorNames = {logistics:"Логистика и склады",production:"Производство",coordination:"КПП"};
 const actionNames = {detected:"Обнаружено",claim:"Ответственность принята",record_response:"Реакция записана",condition_restored:"Условие восстановлено",escalation:"Эскалация",request_transfer:"Передача предложена",accept_transfer:"Передача принята",cancel_transfer:"Передача отменена",reassign_unavailable:"Переназначение отсутствующего оператора",dismiss_model:"Модельное подозрение отклонено",close:"Обработка завершена"};
@@ -33,7 +33,7 @@ async function api(path,method="GET",body,operator=S.operator){
 }
 function array(v,key){const a=Array.isArray(v)?v:v[key];if(!Array.isArray(a))throw Error(`Некорректный список ${key}`);return a;}
 function xy(x,y){return [100-y,x];}
-function age(t){if(!t)return "Сигнал ещё не получен";const n=Math.max(0,Math.round((Date.now()+S.serverOffset-Date.parse(t))/1000));return `${n} сек. назад`;}
+function age(t){if(!t)return "Сигнал ещё не получен";const n=Math.max(0,Math.round((Date.now()+S.serverOffset-Date.parse(t))/1000));return n<60?"Только что":n<3600?`${Math.floor(n/60)} мин. назад`:`${Math.floor(n/3600)} ч. назад`;}
 function workable(i){return i.status!=="closed"&&i.disposition!=="rejected_model_signal";}
 function assetStale(a){return !a?.last_seen||Date.now()+S.serverOffset-Date.parse(a.last_seen)>=(S.site.dispatch_config?.position_stale_seconds||5)*1000;}
 function compareIncidents(a,b){
@@ -47,7 +47,7 @@ function named(rows,id){const row=(rows||[]).find(x=>(x.id||x.asset_id||x.sensor
 function operatorName(id){return id?S.profiles.find(p=>(p.operator_id||p.id)===id)?.name||id:"Ответственный не назначен";}
 function placeName(i){return named(S.site?.zones,i.zone_id)||named(S.site?.buildings,i.building_id)||named(S.site?.site_areas,i.site_area_id)||"Место не определено";}
 function entityName(i){return named(S.site?.assets,i.asset_id||i.employee_id)||named(S.site?.sensors,i.sensor_id)||"Источник не определён";}
-function clock(t){if(!t)return "—";const value=new Date(t);return Number.isNaN(value.getTime())?"—":value.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit",second:"2-digit"});}
+function clock(t){if(!t)return "—";const value=new Date(t);return Number.isNaN(value.getTime())?"—":value.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"});}
 function transferClock(i){if(i.pending_transfer?.status!=="pending")return "";const until=i.pending_transfer.expires_at||i.pending_transfer.deadline_at;if(!until)return "Ожидается ответ получателя";const seconds=Math.max(0,Math.ceil((Date.parse(until)-Date.now()-S.serverOffset)/1000));return Number.isFinite(seconds)?seconds?`Ответить за ${seconds} сек.`:"Срок истёк · ожидается подтверждение сервера":"Ожидается ответ получателя";}
 function focusSector(animate=false){
   const sector=S.profiles.find(p=>(p.operator_id||p.id)===S.operator)?.sector_id;
@@ -63,13 +63,14 @@ function initMap(){
 }
 function relatedIncidents(kind,id){return S.incidents.filter(i=>workable(i)&&(i[`${kind}_id`]===id||(kind==="building"&&i.site_area_id===S.site.buildings?.find(b=>b.id===id)?.site_area_id)));}
 function objectInfo(text,kind,id,sensorIds=[]){
-  S.objectSelection={kind,id};const rows=relatedIncidents(kind,id);
+  $("asset-info").hidden=false;S.objectSelection={kind,id};const rows=relatedIncidents(kind,id);
   $("asset-info").textContent=text;
   if(rows.length||sensorIds.length){$("asset-info").innerHTML=`<p>${esc(text)}</p><div class="object-links">${rows.map(i=>`<button data-related="${esc(i.incident_id)}">${esc(titles[i.type]||i.type)} · ${esc(clock(i.detected_at))}</button>`).join("")}${sensorIds.map(sensorId=>`<button data-sensor="${esc(sensorId)}">Проверить ${esc(named(S.site.sensors,sensorId))}</button>`).join("")}</div>`;
   $("asset-info").querySelectorAll("[data-related]").forEach(b=>b.onclick=()=>selectIncident(b.dataset.related).catch(showError));
   $("asset-info").querySelectorAll("[data-sensor]").forEach(b=>b.onclick=()=>showSensor(b.dataset.sensor,true));}
 }
 function showAsset(id){
+  S.mapRenderer?.selectAsset?.(id);
   const a=S.assets.find(x=>x.asset_id===id);
   if(!a){$("asset-info").textContent="Объект отсутствует в текущих данных.";return;}
   const coordinates=Number.isFinite(a.x)&&Number.isFinite(a.y)?`(${a.x.toFixed(1)}, ${a.y.toFixed(1)})`:"не получена";
@@ -307,6 +308,7 @@ function bindControls(){
   $("ready").onchange=presence;$("all").onchange=refresh;$("history-toggle").onchange=renderIncidents;
   $("fit").onclick=()=>S.mapRenderer?S.mapRenderer.fitAll():S.map.fitBounds([[0,0],[100,100]]);
   if($("my-sector"))$("my-sector").onclick=()=>focusSector(true);
+  if($("show-routes"))$("show-routes").onchange=()=>S.mapRenderer?.setRoutesVisible?.($("show-routes").checked);
   for(const id of ["filter-type","filter-state"])if($(id))$(id).onchange=renderIncidents;
   if($("search-incidents"))$("search-incidents").oninput=renderIncidents;
   $("start").onclick=()=>runDemo("start");
