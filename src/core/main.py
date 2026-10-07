@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 log = logging.getLogger("dispatch")
 
 
-def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None):
+def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, enable_auth=None):
     service_kwargs = {"clock": clock} if clock else {}
     service = Service(db_path or os.environ.get("DISPATCH_DB", str(ROOT / "data/runtime/dispatch.db")),
                       site_path or ROOT / "data/demo/site.json", **service_kwargs)
@@ -99,6 +99,9 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None):
     app.state.ml = model
     app.state.demo = demo
     service.agent = manager
+    from src.core.auth import add_auth
+    auth_enabled = (os.environ.get("DISPATCH_ENABLE_AUTH", "1") != "0") if enable_auth is None else bool(enable_auth)
+    auth = add_auth(app, service, enabled=auth_enabled)
 
     @app.exception_handler(ApiError)
     async def api_error(request: Request, exc: ApiError):
@@ -116,7 +119,8 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None):
                 "rules": {"status": "ready", "version": service.rule_version},
                 "ml": model.health() if model else {"status": "unavailable"},
                 "agent": manager.health() if manager else {"status": "unavailable"},
-                "storage": "sqlite", "single_worker_required": True}
+                "storage": "sqlite", "single_worker_required": True,
+                "auth": {"enabled": auth_enabled, "configured": auth.configured() if auth else False}}
 
     @app.get("/api/site")
     def site():
