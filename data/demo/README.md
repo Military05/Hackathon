@@ -1,5 +1,9 @@
 # data/demo
 
+## Обновлённая цель v2
+
+Егор С. создаёт site.json с site_areas/sectors/operator_profiles/dispatch_config вместе с buildings/zones/assets/sensors/permissions. logistics/production/coordination, unknown явный, сроки demo из ../../docs/DISPATCH_OPERATIONS.md.
+
 Если слово незнакомо, открой [словарь простыми словами](../../docs/GLOSSARY.md). Команды и названия полей не переводим: в коде они должны остаться точными.
 
 Егор С. (A1) создаёт site.json по docs/CONTRACTS.md: buildings,zones,assets,sensors,permissions. Геометрия/ids общие для API/UI/simulator. Синтетические данные явно demo (демонстрационные данные); никаких реальных персональных данных.

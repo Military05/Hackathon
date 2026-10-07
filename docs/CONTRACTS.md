@@ -1,6 +1,8 @@
-# Контракт v1 — задание №3
+# Контракт v2 — задание №3, три диспетчера
 
-Этот документ — согласованная цель реализации, не описание уже работающего API. Изменение поля обсуждаем с Егором С. (A1) / Егором М. (A2) / Гаджи (B1) / Гришей (B2) и Лией (QA — тестировщик) до кода; несовместимое изменение получает новую версию.
+> Обязательные уточнения после аудита: [PREBUILD_FIXES](PREBUILD_FIXES.md). Нормативное дополнение v2; при расхождении старого текста действуют эти уточнения. Наличие инструкции не подтверждает реализацию.
+
+Обновлено 7 октября 2026. Этот документ — согласованная цель реализации, не описание уже работающего API. Операции координации, поля и примеры полностью определены в [DISPATCH_OPERATIONS](DISPATCH_OPERATIONS.md), разделах 5–9; они являются частью v2. Старый PATCH только со status несовместим с v2. Изменение поля обсуждаем с Егором С. (A1) / Егором М. (A2) / Гаджи (B1) / Гришей (B2) и Лией (QA — тестировщик) до кода; несовместимое изменение получает новую версию.
 
 ## Как читать этот технический документ
 
@@ -23,9 +25,9 @@
 
 ## Общие правила
 
-HTTP JSON, prefix /api. UTC ISO 8601 с Z; event_time — время источника, received_at — время сервера. Все id — строки. demo=true во всех синтетических данных. Координаты x/y от 0 до 100 в условных единицах плана, не метры. Граница зоны включена.
+HTTP JSON, prefix /api. UTC ISO 8601 с Z; event_time — время источника, received_at — время сервера. Все id — строки. demo=true во всех синтетических данных. Координаты x/y от 0 до 100 в условных единицах плана, не метры. Граница зоны включена; восстановление выхода подтверждается двумя последовательными свежими position по PREBUILD_FIXES.
 
-Егор С. (A1) создаёт data/demo/site.json: buildings (id, name, rectangle), zones (id, rectangle), assets (id, type), sensors (id, type, asset_id), permissions (asset_id/employee_id и allowed zone/building ids). Перечень идентификаторов должен совпадать у симулятора, API и карты. Начальные здания W1,W2,P1,P2,O1,G1; зоны Z1,Z2; машины V1–V3; сотрудники U1–U3. Датчики получают явные id в конфигурации.
+Егор С. (A1) создаёт data/demo/site.json: buildings (id, name, rectangle), zones (id, rectangle), assets (id, type), sensors (id, type, asset_id), permissions (asset_id/employee_id и allowed zone/building ids), site_areas, sectors, operator_profiles и dispatch_config по DISPATCH_OPERATIONS. Перечень идентификаторов должен совпадать у симулятора, API и карты. Начальные здания W1,W2,P1,P2,O1,G1; зоны Z1,Z2; машины V1–V3; сотрудники U1–U3. Датчики получают явные id в конфигурации.
 
 ## Событие (Event)
 
@@ -43,7 +45,7 @@ HTTP JSON, prefix /api. UTC ISO 8601 с Z; event_time — время источ�
 ~~~
 
 - position: payload asset_id,x,y; датчик соответствует asset_id.
-- access: payload employee_id,building_id,direction (in/out). Это наблюдение прохода; отсутствие разрешения проверяет правило.
+- access: payload employee_id,building_id,direction (in/out). Это подтверждённое наблюдение прохода (passage_confirmed), не запрос карточки и не отказ; отсутствие разрешения проверяет правило.
 - heartbeat: payload {}; состояние датчика связано с sensor_id.
 - Duplicate: одинаковый event_id и нормализованный payload → 200 duplicate=true, повторных side effects нет; другой payload или другие поля события при том же id → 409.
 - Новый Event → 201 с event_id,received_at,duplicate=false.
@@ -54,7 +56,7 @@ HTTP JSON, prefix /api. UTC ISO 8601 с Z; event_time — время источ�
 
 | Метод | Путь | Результат |
 | --- | --- | --- |
-| GET | /api/health | rules, ml, agent, версии; без секретов |
+| GET | /api/health | contract_version=2, rules, ml, agent, версии; без секретов |
 | GET | /api/site | геометрия, объекты, конфигурация demo |
 | POST | /api/events | приём одного события |
 | GET | /api/assets | текущие позиции и last_seen |
@@ -62,22 +64,22 @@ HTTP JSON, prefix /api. UTC ISO 8601 с Z; event_time — время источ�
 | GET | /api/events?asset_id=...&since=...&until=...&limit=... | история, сортировка по времени |
 | GET | /api/incidents?status=... | журнал |
 | GET | /api/incidents/{id} | карточка + evidence |
-| PATCH | /api/incidents/{id} | только операторский status: acknowledged/closed; история изменения |
+| PATCH | /api/incidents/{id} | action, expected_revision, request_id; атомарное принятие/передача/закрытие; DISPATCH_OPERATIONS §8 |
 | GET | /api/model-observations?asset_id=... | оценки MLP |
-| POST | /api/incidents/{id}/analysis | 202 с job_id,status; 503 если модель недоступна |
+| POST | /api/incidents/{id}/analysis | X-Demo-Operator; 202 job_id,status; 503 unavailable; 429 queue_full |
 | GET | /api/agent-jobs/{job_id} | queued/running/completed/failed + result/error |
 
 История limit default=100,max=500; tools agent max=100. Даты since/until валидируем, since<=until. Ошибка JSON: code,message,details без traceback. Ошибка API не выглядит как пустой успешный список.
 
 ## Происшествие (Incident) и его состояния
 
-Поля: incident_id,type,asset_id или employee_id,sensor_id при наличии,building_id/zone_id при наличии,severity,detected_at,status,condition_active,rule_version,evidence_event_ids,details,demo.
+Поля: incident_id,type,asset_id или employee_id,sensor_id при наличии,building_id/zone_id при наличии,severity,detected_at,status,condition_active,rule_version,evidence_event_ids,details,demo; дополнительно site_area_id,responsible_sector_id,assigned_operator_id,acknowledged_at,dispatch_revision,pending_transfer,escalation_level по DISPATCH_OPERATIONS.
 
 type: forbidden_zone,unauthorized_access,sensor_offline,model_anomaly.
 severity: info,warning,critical; demo defaults forbidden_zone/unauthorized_access=critical, sensor_offline/model_anomaly=warning. Это приоритет внимания диспетчера, не сертифицированная оценка риска.
-status: open,acknowledged,closed. condition_active — отдельное поле: закрытие оператором не меняет факт нарушения.
+status: open,acknowledged,closed. claim атомарно назначает оператора и acknowledged. close допускается только назначенным оператором при condition_active=false, condition_state!=unknown и без pending transfer; иначе 409. Для разового unauthorized_access condition_active=false с создания, но обработка остаётся open. У зоны/heartbeat/ML восстановление определяется детектором.
 Одна ongoing condition → одно происшествие. Выход из зоны/возврат heartbeat помечает восстановление и время, историю сохраняем. Новый вход после восстановления — новый случай. Unauthorized_access привязан к уникальному access event.
-Offline: last_received_at,detected_at,threshold_seconds=5; timer раз в секунду, часы received_at. До первого heartbeat sensor=unknown, а не автоматически offline; после первого начинается отсчёт.
+Offline: last_received_at,detected_at,threshold_seconds=5; timer раз в секунду, часы received_at. До первого heartbeat sensor=unknown в пределах startup_sensor_grace_seconds=10. Если ожидаемый источник так и не начал передачу, создаётся sensor_offline с details.cause=never_started и last_received_at=null; это не потеря ранее существовавшей связи. После первого сигнала начинается обычный отсчёт.
 Model anomaly: reuse активного incident на тот же asset; закрытие условия после двух последовательных достаточных normal окон. insufficient_data не считается normal. Параметр сохраняем в конфигурации и отчёте.
 
 ## movement-v1 — единая функция вычисления признаков Гриша (B2)
@@ -112,7 +114,17 @@ ModelObservation: observation_id,asset_id,window_start,window_end,status,score (
 AgentResult: summary,facts[],hypotheses[],recommendations[],evidence_event_ids[],tool_trace[],model_name,created_at,incident_snapshot.
 Факты о событиях должны ссылаться на evidence, полученные tools; факты о допуске дополнительно ссылаются на policy_version из get_asset_policy; гипотезы отдельно и с уровнем уверенности/ограничениями. Версии правил/модели и набор evidence определяют snapshot; после изменения старый analysis помечаем stale.
 
-Один worker, max 3 model requests, max 6 tool calls, общий бюджет 60 секунд. Финальный ответ без валидных evidence не публикуем как успешный анализ. tool_trace показывает функцию, допустимые аргументы, длительность и полученные id; секреты не пишем.
+Одна running job для всех профилей, максимум 2 queued, ожидание до 120 секунд, выполнение до 60 секунд; max 3 model requests и max 6 tool calls. Кэш по incident_id+snapshot общий; requested_by_operator_id хранится отдельно от assigned_operator_id. Поведение restart/timeout — DISPATCH_OPERATIONS §9. Финальный ответ без валидных evidence не публикуем как успешный анализ. tool_trace показывает функцию, допустимые аргументы, длительность и полученные id; секреты не пишем.
+
+## Дополнения v2: обязательная координация
+
+[DISPATCH_OPERATIONS](DISPATCH_OPERATIONS.md) нормативно определяет SiteArea/Sector/OperatorProfile/Presence/Notification/Transfer/DispatchHistory и API /api/operator-profiles, /api/operator-presence, /api/dispatch-summary, /api/site-areas/summary, /api/dispatch-notifications. Все профили/сектора/пороги в site.json; назначение автоматическое по месту, не по ответу ИИ.
+
+GET /api/incidents принимает scope=workstation/all и site_area_id; workstation требует X-Demo-Operator и включает свой сектор плюс адресованные передачи/эскалации/назначенные случаи. Без scope старый общий список сохраняется для read-only QA. status — дополнительный фильтр. Новые read-only поля не ломают старый шестисценарный runner; его POST analysis нужно адаптировать к обязательному профилю отдельно.
+
+DispatchHistory: history_id,incident_id,action,actor_operator_id (null для timer),from_operator_id,to_operator_id,reason,created_at,dispatch_revision,request_id. accepted transfer/claim/close и история — одна транзакция. Смена владельца не меняет sector и snapshot ML/agent. Одна новая позиция не создаёт новую dispatch revision без координационного изменения.
+
+Конкурентная запись: expected_revision + идемпотентный request_id, один победитель claim. Передача сохраняет прежнего до accept; исчезнувший оператор не означает освобождение ownership. Просрочка и отсутствие реакции создают Notification, не Incident. Header профиля — demo-идентификация, не обещание аутентификации.
 
 ## Изменения
 
