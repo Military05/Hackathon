@@ -2,7 +2,7 @@
 
 > Обязательные уточнения после аудита: [PREBUILD_FIXES](PREBUILD_FIXES.md). Нормативное дополнение v2; при расхождении старого текста действуют эти уточнения. Наличие инструкции не подтверждает реализацию.
 
-Обновлено 7 октября 2026. Этот документ — согласованная цель реализации, не описание уже работающего API. Операции координации, поля и примеры полностью определены в [DISPATCH_OPERATIONS](DISPATCH_OPERATIONS.md), разделах 5–9; они являются частью v2. Старый PATCH только со status несовместим с v2. Изменение поля обсуждаем с Егором С. (A1) / Егором М. (A2) / Гаджи (B1) / Гришей (B2) и Лией (QA — тестировщик) до кода; несовместимое изменение получает новую версию.
+Обновлено 7 октября 2026. Базовые Event/Incident и координация реализованы сервером Егора С.; ML и агент остаются отдельной областью владельцев, наличие их спецификации не подтверждает подключение. Версия продукта v5 добавляет авторизацию и КПП по прямому поручению координатора: [PRODUCT_V5](PRODUCT_V5.md), [AUTH_SECURITY_V5](AUTH_SECURITY_V5.md), [GATE_SHIFT_V5](GATE_SHIFT_V5.md). Эти требования заменяют прежние исключения «без аккаунтов/смен». Публичный JSON Event и contract_version=2 сохранены. Операции координации определены в [DISPATCH_OPERATIONS](DISPATCH_OPERATIONS.md), разделах 5–9. Старый PATCH только со status несовместим с v2. Несовместимое изменение согласуют владельцы и оно получает новую версию.
 
 ## Как читать этот технический документ
 
@@ -27,7 +27,24 @@
 
 HTTP JSON, prefix /api. UTC ISO 8601 с Z; event_time — время источника, received_at — время сервера. Все id — строки. demo=true во всех синтетических данных. Координаты x/y от 0 до 100 в условных единицах плана, не метры. Граница зоны включена; восстановление выхода подтверждается двумя последовательными свежими position по PREBUILD_FIXES.
 
-Егор С. (A1) создаёт data/demo/site.json: buildings (id, name, rectangle), zones (id, rectangle), assets (id, type), sensors (id, type, asset_id), permissions (asset_id/employee_id и allowed zone/building ids), site_areas, sectors, operator_profiles и dispatch_config по DISPATCH_OPERATIONS. Перечень идентификаторов должен совпадать у симулятора, API и карты. Начальные здания W1,W2,P1,P2,O1,G1; зоны Z1,Z2; машины V1–V3; сотрудники U1–U3. Датчики получают явные id в конфигурации.
+Егор С. (A1) ведёт data/demo/site.json: buildings (id, name, rectangle), zones (id, rectangle, kind), assets (id, type), sensors (id, type, asset_id/building_id), permissions, site_areas, sectors, operator_profiles и dispatch_config. Перечень идентификаторов совпадает у источника, API и карты. Текущая карта: 18 объектов с сохранёнными W1/W2/P1/P2/O1/G1, машины V1–V3, сотрудники U1–U4, новый ACCESS-G1. Z1/Z2 имеют kind=permit, Z3 — forbidden без разрешённых машин. sectors.focus_bounds задаёт наведение камеры, а не маршрутизацию. shift_employees задаёт ожидаемых зарегистрированных сотрудников с допуском G1. [MAP_V5](MAP_V5.md).
+
+## Доступ к HTTP в продукте v5
+
+Авторизация включена по умолчанию. Без сессии доступны /api/health,
+/api/auth/status и формы POST /api/auth/login, /api/auth/register. Остальные
+операторские чтения требуют активной серверной сессии, изменения — также
+X-CSRF-Token и допустимый Origin. Middleware подставляет профиль сессии вместо
+X-Demo-Operator; URL operator не определяет личность. X-Expected-User с user.id
+на чтении/записи/CSV выявляет общую cookie, изменённую другой вкладкой:
+409 session_identity_changed. Он не является заменой сессии.
+
+Внешний POST /api/events требует отдельный X-Source-Key, а не аккаунт
+диспетчера. Без настройки DISPATCH_SOURCE_KEY (от 24 символов) — 503,
+неправильный ключ — 401. Внутренний источник вызывает Service напрямую.
+Удалённый HTTP отклоняется, нужен HTTPS/проверенный защищённый туннель.
+Полный контракт аккаунтов/сессии и безопасного запуска — AUTH_SECURITY_V5.
+DISPATCH_ENABLE_AUTH=0 разрешён только для изолированных localhost-тестов.
 
 ## Событие (Event)
 
@@ -58,7 +75,7 @@ HTTP JSON, prefix /api. UTC ISO 8601 с Z; event_time — время источ�
 | --- | --- | --- |
 | GET | /api/health | contract_version=2, rules, ml, agent, версии; без секретов |
 | GET | /api/site | геометрия, объекты, конфигурация demo |
-| POST | /api/events | приём одного события |
+| POST | /api/events | приём одного события, внешний X-Source-Key |
 | GET | /api/assets | текущие позиции и last_seen |
 | GET | /api/sensors | здоровье датчиков |
 | GET | /api/events?asset_id=...&since=...&until=...&limit=... | история, сортировка по времени |
@@ -66,14 +83,19 @@ HTTP JSON, prefix /api. UTC ISO 8601 с Z; event_time — время источ�
 | GET | /api/incidents/{id} | карточка + evidence |
 | PATCH | /api/incidents/{id} | action, expected_revision, request_id; атомарное принятие/передача/закрытие; DISPATCH_OPERATIONS §8 |
 | GET | /api/model-observations?asset_id=... | оценки MLP |
-| POST | /api/incidents/{id}/analysis | X-Demo-Operator; 202 job_id,status; 503 unavailable; 429 queue_full |
+| POST | /api/incidents/{id}/analysis | сессия/CSRF; профиль подставляет сервер; подключённый модуль: 202 job_id,status; без него 503 unavailable |
 | GET | /api/agent-jobs/{job_id} | queued/running/completed/failed + result/error |
+| GET | /api/checkpoint/journal | фильтры q,direction,permission,since,until; limit default50/max200,offset |
+| GET | /api/checkpoint/export.csv | те же фильтры, limit default200/max200, UTF-8 BOM |
+| GET | /api/shifts/current | последняя смена или null |
+| GET | /api/operator-activity | успешные действия текущего профиля |
+| GET | /api/dispatch-history/export.csv | scope=mine default,limit default1000/max2000; scope=all только admin |
 
 История limit default=100,max=500; tools agent max=100. Даты since/until валидируем, since<=until. Ошибка JSON: code,message,details без traceback. Ошибка API не выглядит как пустой успешный список.
 
 ## Происшествие (Incident) и его состояния
 
-Поля: incident_id,type,asset_id или employee_id,sensor_id при наличии,building_id/zone_id при наличии,severity,detected_at,status,condition_active,rule_version,evidence_event_ids,details,demo; дополнительно site_area_id,responsible_sector_id,assigned_operator_id,acknowledged_at,dispatch_revision,pending_transfer,escalation_level по DISPATCH_OPERATIONS.
+Поля: incident_id,type,asset_id или employee_id,sensor_id при наличии,building_id/zone_id при наличии,severity,detected_at,status,condition_active,rule_version,evidence_event_ids,details,demo; дополнительно site_area_id,responsible_sector_id,assigned_operator_id,acknowledged_at,dispatch_revision,pending_transfer,escalation_level по DISPATCH_OPERATIONS. can_claim — вычисляемое read-only поле для текущего профиля: свой сектор либо адресованное уведомление резерва/эскалации, рабочий и ещё не принятый случай. Оно не хранится в Event и не заменяет проверку PATCH.
 
 type: forbidden_zone,unauthorized_access,sensor_offline,model_anomaly.
 severity: info,warning,critical; demo defaults forbidden_zone/unauthorized_access=critical, sensor_offline/model_anomaly=warning. Это приоритет внимания диспетчера, не сертифицированная оценка риска.
@@ -120,11 +142,22 @@ AgentResult: summary,facts[],hypotheses[],recommendations[],evidence_event_ids[]
 
 [DISPATCH_OPERATIONS](DISPATCH_OPERATIONS.md) нормативно определяет SiteArea/Sector/OperatorProfile/Presence/Notification/Transfer/DispatchHistory и API /api/operator-profiles, /api/operator-presence, /api/dispatch-summary, /api/site-areas/summary, /api/dispatch-notifications. Все профили/сектора/пороги в site.json; назначение автоматическое по месту, не по ответу ИИ.
 
-GET /api/incidents принимает scope=workstation/all и site_area_id; workstation требует X-Demo-Operator и включает свой сектор плюс адресованные передачи/эскалации/назначенные случаи. Без scope старый общий список сохраняется для read-only QA. status — дополнительный фильтр. Новые read-only поля не ломают старый шестисценарный runner; его POST analysis нужно адаптировать к обязательному профилю отдельно.
+GET /api/incidents принимает scope=workstation/all и site_area_id; профиль берётся из сессии. workstation включает свой сектор плюс адресованные передачи/эскалации/назначенные случаи. Без scope общий список сохраняется для авторизованного обзора; status — дополнительный фильтр. Старый шестисценарный runner требует HTTP-сессию/CSRF для операторских запросов или явно изолированный тестовый режим, не открытый рабочий сервер.
 
 DispatchHistory: history_id,incident_id,action,actor_operator_id (null для timer),from_operator_id,to_operator_id,reason,created_at,dispatch_revision,request_id. accepted transfer/claim/close и история — одна транзакция. Смена владельца не меняет sector и snapshot ML/agent. Одна новая позиция не создаёт новую dispatch revision без координационного изменения.
 
-Конкурентная запись: expected_revision + идемпотентный request_id, один победитель claim. Передача сохраняет прежнего до accept; исчезнувший оператор не означает освобождение ownership. Просрочка и отсутствие реакции создают Notification, не Incident. Header профиля — demo-идентификация, не обещание аутентификации.
+Конкурентная запись: expected_revision + идемпотентный request_id, один победитель claim. Передача сохраняет прежнего до accept; исчезнувший оператор не означает освобождение ownership. Просрочка и отсутствие реакции создают Notification, не Incident. В рабочей v5 личность обеспечивает серверная сессия; внутренний demo header — совместимость существующих роутеров, не доверенный пользовательский ввод.
+
+## КПП и смена v5 без изменения Event
+
+ACCESS-G1 сообщает подтверждённые проходы G1, обычный разрешённый проход
+сохраняется без Incident, U4 без допуска создаёт unauthorized_access.
+Сценарий shift ждёт уникальные разрешённые входы U1/U2/U3 перед фазой transport.
+Service.ingest_event(event, shift_id=...) используется только внутренним
+источником: событие и корреляция сохраняются в одной транзакции, публичный
+payload не получает shift_id. Heartbeat не является проверкой человека.
+Журнал/фильтры, observed-only occupancy, поля shift и ограниченный CSV описаны
+в GATE_SHIFT_V5. Обычный источник — 3 position + 3 heartbeat в секунду.
 
 ## Изменения
 
