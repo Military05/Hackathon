@@ -27,7 +27,7 @@
 
 HTTP JSON, prefix /api. UTC ISO 8601 с Z; event_time — время источника, received_at — время сервера. Все id — строки. demo=true во всех синтетических данных. Координаты x/y от 0 до 100 в условных единицах плана, не метры. Граница зоны включена; восстановление выхода подтверждается двумя последовательными свежими position по PREBUILD_FIXES.
 
-Егор С. (A1) ведёт data/demo/site.json: buildings (id, name, rectangle), zones (id, rectangle, kind), assets (id, type), sensors (id, type, asset_id/building_id), permissions, site_areas, sectors, operator_profiles и dispatch_config. Перечень идентификаторов совпадает у источника, API и карты. Текущая карта: 18 объектов с сохранёнными W1/W2/P1/P2/O1/G1, машины V1–V3, сотрудники U1–U4, новый ACCESS-G1. Z1/Z2 имеют kind=permit, Z3 — forbidden без разрешённых машин. sectors.focus_bounds задаёт наведение камеры, а не маршрутизацию. shift_employees задаёт ожидаемых зарегистрированных сотрудников с допуском G1. [MAP_V5](MAP_V5.md).
+Егор С. (A1) ведёт data/demo/site.json: buildings (id, name, rectangle), zones (id, rectangle, kind), assets (id, type), sensors (id, type, asset_id/building_id), permissions, site_areas, sectors, operator_profiles и dispatch_config. Перечень идентификаторов совпадает у источника, API и карты. Текущая карта: 18 объектов с сохранёнными W1/W2/P1/P2/O1/G1, машины V1–V3, сотрудники U1–U4, ACCESS-G1. Z1/Z2 имеют kind=permit, Z3/Z6 — forbidden, Z4/Z5/Z7 — restricted с restricted_vehicle_types. V6 дополняет site личными demo_routes/safety_routes, pedestrian_paths и demo_safety_scenarios. sectors.focus_bounds задаёт наведение камеры, а не маршрутизацию. shift_employees задаёт ожидаемых зарегистрированных сотрудников с допуском G1. [FACTORY_V6](FACTORY_V6.md).
 
 ## Доступ к HTTP в продукте v5
 
@@ -86,10 +86,10 @@ DISPATCH_ENABLE_AUTH=0 разрешён только для изолирован
 | POST | /api/incidents/{id}/analysis | сессия/CSRF; профиль подставляет сервер; подключённый модуль: 202 job_id,status; без него 503 unavailable |
 | GET | /api/agent-jobs/{job_id} | queued/running/completed/failed + result/error |
 | GET | /api/checkpoint/journal | фильтры q,direction,permission,since,until; limit default50/max200,offset |
-| GET | /api/checkpoint/export.csv | те же фильтры, limit default200/max200, UTF-8 BOM |
+| GET | /api/checkpoint/export.csv | те же фильтры, limit default200/max200, UTF-8 BOM, разделитель ;, русские колонки |
 | GET | /api/shifts/current | последняя смена или null |
 | GET | /api/operator-activity | успешные действия текущего профиля |
-| GET | /api/dispatch-history/export.csv | scope=mine default,limit default1000/max2000; scope=all только admin |
+| GET | /api/dispatch-history/export.csv | scope=mine default,limit default1000/max2000; scope=all только admin; CSV v6 русские колонки/значения, время МСК |
 
 История limit default=100,max=500; tools agent max=100. Даты since/until валидируем, since<=until. Ошибка JSON: code,message,details без traceback. Ошибка API не выглядит как пустой успешный список.
 
@@ -97,7 +97,13 @@ DISPATCH_ENABLE_AUTH=0 разрешён только для изолирован
 
 Поля: incident_id,type,asset_id или employee_id,sensor_id при наличии,building_id/zone_id при наличии,severity,detected_at,status,condition_active,rule_version,evidence_event_ids,details,demo; дополнительно site_area_id,responsible_sector_id,assigned_operator_id,acknowledged_at,dispatch_revision,pending_transfer,escalation_level по DISPATCH_OPERATIONS. can_claim — вычисляемое read-only поле для текущего профиля: свой сектор либо адресованное уведомление резерва/эскалации, рабочий и ещё не принятый случай. Оно не хранится в Event и не заменяет проверку PATCH.
 
-type: forbidden_zone,unauthorized_access,sensor_offline,model_anomaly.
+type: forbidden_zone,unauthorized_access,sensor_offline,model_anomaly,
+route_deviation,collision (дополнение v2.2, Event не меняется).
+collision дополнительно содержит other_asset_id, details.asset_ids, distance_units,
+threshold_units,detection_mode и evidence обоих объектов; severity=critical.
+route_deviation severity=warning, details.route_id,distance_units,threshold_units.
+Правила/свежесть/восстановление — FACTORY_V6. Координаты условные; collision не
+прогнозирует реальную аварию. Старые analysis после rules-v2.2-safety устаревают.
 severity: info,warning,critical; demo defaults forbidden_zone/unauthorized_access=critical, sensor_offline/model_anomaly=warning. Это приоритет внимания диспетчера, не сертифицированная оценка риска.
 status: open,acknowledged,closed. claim атомарно назначает оператора и acknowledged. close допускается только назначенным оператором при condition_active=false, condition_state!=unknown и без pending transfer; иначе 409. Для разового unauthorized_access condition_active=false с создания, но обработка остаётся open. У зоны/heartbeat/ML восстановление определяется детектором.
 Одна ongoing condition → одно происшествие. Выход из зоны/возврат heartbeat помечает восстановление и время, историю сохраняем. Новый вход после восстановления — новый случай. Unauthorized_access привязан к уникальному access event.
@@ -128,7 +134,11 @@ ModelObservation: observation_id,asset_id,window_start,window_end,status,score (
 
 - get_incident(incident_id): карточка с evidence.
 - get_event_history(asset_id,since,until,limit): максимум 100 событий.
-- get_asset_policy(asset_id): разрешения объекта или сотрудника и policy_version. U1–U3 также зарегистрированы в assets с type=employee.
+- get_asset_policy(asset_id): разрешения объекта или сотрудника и policy_version.
+  V6 также отдаёт vehicle_type, forbidden_zone_ids, personal_route_id и
+  personal_route_points (если назначены). Красные restricted зоны запрещают
+  указанные restricted_vehicle_types, forbidden запрещает всем независимо от допуска.
+  U1–U3 также зарегистрированы в assets с type=employee.
 - get_sensor_health(sensor_id): last_received_at, состояние и threshold.
 
 Егор С. (A1) предоставляет query функции, Гаджи (B1) регистрирует схемы и валидирует arguments. Tools доступны только из явного registry. Идентификаторы должны существовать; временные диапазоны и количество ограничены. Никакого arbitrary SQL, shell или управления оборудованием.

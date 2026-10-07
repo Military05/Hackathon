@@ -35,7 +35,7 @@
   }
   function zonePolicyText(zone){
     if(zone.kind==="forbidden")return "Въезд запрещён всем транспортным средствам";
-    if(zone.kind==="restricted")return `Въезд запрещён ${(zone.restricted_vehicle_types||[]).map(type=>vehicleTypeNames[type]||type).join(", ")}. Остальной транспорт — по своим допускам`;
+    if(zone.kind==="restricted")return `Въезд запрещён ${(zone.restricted_vehicle_types||[]).map(type=>vehicleTypeNames[type]||type).join(", ")}. Другим типам въезд в этот участок разрешён`;
     return "Въезд только по индивидуальному допуску";
   }
   function signalTime(stamp){const parsed=Date.parse(stamp);return Number.isFinite(parsed)?new Date(parsed).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit",hour12:false}):"—";}

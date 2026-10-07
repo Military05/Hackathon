@@ -2,7 +2,8 @@
 
 Read README.md, docs/DEVELOPMENT_STAGES.md, docs/RUNTIME_QUICKSTART.md,
 docs/RELEASE.md, docs/CONTRACTS.md, docs/PREBUILD_FIXES.md, docs/PRODUCT_V5.md
-and your role guide first. Current v5 account/checkpoint requirements replace old
+and your role guide first. Read docs/FACTORY_V6.md for current map/safety/scenarios.
+Current v5 account/checkpoint requirements replace old
 "no accounts/no shifts/demo header login" exceptions in historical planning files.
 Report the branch and full source commit SHA. Never claim tests were run unless they were.
 
@@ -53,3 +54,12 @@ one worker and SQLite without GPU/heavy installations. CSV exports are bounded:
 gate <=200, dispatcher history default1000/max2000; all-history scope requires admin.
 Do not claim target hardware, trusted remote TLS or ML/AI end-to-end acceptance
 without the actual corresponding report.
+
+V6 extends Incident v2 with route_deviation and collision (optional other_asset_id).
+VehicleSafety uses fresh stored positions, never client animation. Keep unknown
+on stale data and require two fresh confirmations for recovery. site safety_routes,
+typed restricted zones and policy_version must match demo routes and asset_policy.
+Rules remain independent of ML. Reports use Russian headers/values, UTF-8 BOM and
+semicolon; JSON contract field names stay unchanged. Checkbox "На смене" publishes
+the existing readiness lease; removing it requires a replacement for away/reserve.
+AI/remote handoff: docs/AI_INTEGRATION_V6.md and docs/REMOTE_CLIENT_V6.md.

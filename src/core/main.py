@@ -118,7 +118,7 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
 
     @app.get("/api/health")
     def health():
-        return {"status": "ok", "contract_version": 2, "contract_revision": "2.1-audit",
+        return {"status": "ok", "contract_version": 2, "contract_revision": "2.2-factory-safety",
                 "demo": True, "as_of": stamp(service.clock()),
                 "rules": {"status": "ready", "version": service.rule_version},
                 "ml": model.health() if model else {"status": "unavailable"},

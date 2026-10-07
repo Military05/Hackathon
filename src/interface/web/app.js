@@ -8,7 +8,7 @@ const S = {site:null,map:null,assets:[],sensors:[],incidents:[],profiles:[],summ
 Object.assign(S,{mapRenderer:null,diagnostics:null,noticeRows:[],objectSelection:null,demoBusy:false,demo:null});
 const scenarioNames={normal:"Штатная работа завода",logistics:"Доставка комплектующих",shift:"Начало смены",service:"Обход служебного транспорта","forbidden-zone":"Въезд в закрытую зону","unauthorized-access":"Проход без допуска","sensor-offline":"Потеря сигнала датчика",simultaneous:"Несколько происшествий","unusual-movement":"Необычное движение"};
 const notificationNames={new_incident:"Новое происшествие",reminder:"Случай ожидает реакции",escalation:"Случай передан на следующий уровень",transfer_requested:"Предложена передача",transfer_accepted:"Передача принята",transfer_cancelled:"Передача отменена",transfer_expired:"Срок передачи истёк",operator_unavailable:"Ответственный отсутствует",active_review:"Пора повторно проверить случай"};
-const vehicleNames={forklift:"Погрузчик",service:"Служебный автомобиль",truck:"Грузовик"};
+const vehicleNames={forklift:"Погрузчик",service_vehicle:"Служебный автомобиль",service:"Служебный автомобиль",truck:"Грузовик"};
 const esc = x => String(x??"—").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function showError(e){
   const message=e.code==="session_identity_changed"?"Аккаунт изменён в другой вкладке. Войдите заново; для разных диспетчеров используйте отдельные профили браузера.":e.status===401?"Сессия завершена. Войдите заново.":e.message||String(e);
@@ -46,7 +46,7 @@ function initialOperator(search){const value=new URLSearchParams(search).get("op
 function named(rows,id){const row=(rows||[]).find(x=>(x.id||x.asset_id||x.sensor_id||x.employee_id)===id);return row?.name||row?.short_name||id;}
 function operatorName(id){return id?S.profiles.find(p=>(p.operator_id||p.id)===id)?.name||id:"Ответственный не назначен";}
 function placeName(i){return named(S.site?.zones,i.zone_id)||named(S.site?.buildings,i.building_id)||named(S.site?.site_areas,i.site_area_id)||"Место не определено";}
-function entityName(i){return named(S.site?.assets,i.asset_id||i.employee_id)||named(S.site?.sensors,i.sensor_id)||"Источник не определён";}
+function entityName(i){const first=named(S.site?.assets,i.asset_id||i.employee_id)||named(S.site?.sensors,i.sensor_id)||"Источник не определён";return i.other_asset_id?`${first} ↔ ${named(S.site?.assets,i.other_asset_id)}`:first;}
 function clock(t){if(!t)return "—";const value=new Date(t);return Number.isNaN(value.getTime())?"—":value.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"});}
 function transferClock(i){if(i.pending_transfer?.status!=="pending")return "";const until=i.pending_transfer.expires_at||i.pending_transfer.deadline_at;if(!until)return "Ожидается ответ получателя";const seconds=Math.max(0,Math.ceil((Date.parse(until)-Date.now()-S.serverOffset)/1000));return Number.isFinite(seconds)?seconds?`Ответить за ${seconds} сек.`:"Срок истёк · ожидается подтверждение сервера":"Ожидается ответ получателя";}
 function focusSector(animate=false){
@@ -61,7 +61,7 @@ function initMap(){
   S.mapRenderer=EnterpriseMap.create({elementId:"map",site:S.site,onAsset:showAsset,onSensor:showSensor,onBuilding:showBuilding});
   S.map=S.mapRenderer.map;drawAssets();
 }
-function relatedIncidents(kind,id){return S.incidents.filter(i=>workable(i)&&(i[`${kind}_id`]===id||(kind==="building"&&i.site_area_id===S.site.buildings?.find(b=>b.id===id)?.site_area_id)));}
+function relatedIncidents(kind,id){return S.incidents.filter(i=>workable(i)&&(i[`${kind}_id`]===id||(kind==="asset"&&i.other_asset_id===id)||(kind==="building"&&i.site_area_id===S.site.buildings?.find(b=>b.id===id)?.site_area_id)));}
 function objectInfo(text,kind,id,sensorIds=[]){
   $("asset-info").hidden=false;S.objectSelection={kind,id};const rows=relatedIncidents(kind,id);
   $("asset-info").textContent=text;
@@ -75,7 +75,9 @@ function showAsset(id){
   if(!a){$("asset-info").textContent="Объект отсутствует в текущих данных.";return;}
   const coordinates=Number.isFinite(a.x)&&Number.isFinite(a.y)?`(${a.x.toFixed(1)}, ${a.y.toFixed(1)})`:"не получена";
   const policy=(S.site.permissions||[]).find(p=>p.asset_id===id),allowed=(policy?.allowed_zone_ids||[]).map(zone=>named(S.site.zones,zone));
-  objectInfo(`${entityName({asset_id:id})} · ${vehicleNames[a.vehicle_type||a.type]||"Транспорт"} · Цель: ${named(S.site.buildings,a.destination)||"не задана"} · Последний сигнал: ${clock(a.last_seen)} (${age(a.last_seen)}), позиция ${coordinates}. Допуск в зоны: ${allowed.join(", ")||"нет"}. ${assetStale(a)?"Текущее место не подтверждено.":""}`,"asset",id,(S.site.sensors||[]).filter(s=>s.asset_id===id).map(s=>s.id||s.sensor_id));
+  const vehicleType=a.vehicle_type||(S.site.assets||[]).find(x=>x.id===id)?.vehicle_type||a.type;
+  const forbidden=(S.site.zones||[]).filter(z=>z.kind==="forbidden"||(z.kind==="restricted"&&(z.restricted_vehicle_types||[]).includes(vehicleType))).map(z=>z.name||z.id);
+  objectInfo(`${entityName({asset_id:id})} · ${vehicleNames[vehicleType]||"Транспорт"} · Цель: ${named(S.site.buildings,a.destination)||"не задана"} · Последний сигнал: ${clock(a.last_seen)} (${age(a.last_seen)}), позиция ${coordinates}. Допуск: ${allowed.join(", ")||"нет"}. Запрещено: ${forbidden.join(", ")||"нет"}. ${assetStale(a)?"Текущее место не подтверждено.":""}`,"asset",id,(S.site.sensors||[]).filter(s=>s.asset_id===id).map(s=>s.id||s.sensor_id));
 }
 function showBuilding(id){const b=S.site.buildings.find(x=>x.id===id);if(!b)return;objectInfo(`${b.name}. Рабочих происшествий: ${relatedIncidents("building",id).length}.`,"building",id,(S.site.sensors||[]).filter(s=>s.building_id===id).map(s=>s.id||s.sensor_id));}
 function showSensor(id,inspect=false){const s=S.sensors.find(x=>x.sensor_id===id);objectInfo(`${named(S.site.sensors,id)} · ${labels[s?.status]||"Сигнал ещё не получен"} · ${age(s?.last_received_at)}. Проверка связи не подтверждает физическую исправность датчика.`,"sensor",id);if(inspect)S.diagnostics?.inspectSensor?.(id);}
@@ -92,7 +94,7 @@ function renderIncidents(){
     if(!$("history-toggle").checked&&!workable(i))return false;
     if(type&&type!=="all"&&i.type!==type)return false;
     if(state&&state!=="all"&&(state==="unclaimed"?Boolean(i.assigned_operator_id)||!workable(i):state==="mine"?i.assigned_operator_id!==S.operator:state==="escalated"?!i.escalation_level:state==="pending"?i.pending_transfer?.status!=="pending":i.condition_state!==state&&i.status!==state))return false;
-    return !query||[titles[i.type],entityName(i),placeName(i),operatorName(i.assigned_operator_id),i.incident_id,i.asset_id,i.sensor_id,i.building_id,i.zone_id].join(" ").toLocaleLowerCase("ru-RU").includes(query);
+    return !query||[titles[i.type],entityName(i),placeName(i),operatorName(i.assigned_operator_id),i.incident_id,i.asset_id,i.other_asset_id,i.sensor_id,i.building_id,i.zone_id].join(" ").toLocaleLowerCase("ru-RU").includes(query);
   }).sort(compareIncidents);
   setMarkup("incidents",rows.length?rows.map(i=>`<button class="incident ${esc(i.severity)} ${!workable(i)?"archived":""} ${i.incident_id===S.selected?"selected":""}" data-id="${esc(i.incident_id)}"><strong>${esc(titles[i.type]||i.type)}</strong><p>${esc(entityName(i))} · ${esc(placeName(i))}</p><small>${esc(labels[i.disposition]||labels[i.status]||i.status)} · ${esc(operatorName(i.assigned_operator_id))}</small><span class="pill">${esc(labels[i.condition_state]||i.condition_state||"active")}</span>${i.escalation_level?`<span class="pill escalated">Эскалация ${i.escalation_level}</span>`:""}<time datetime="${esc(i.detected_at)}">${esc(clock(i.detected_at))} · ${esc(age(i.detected_at))}</time></button>`).join(""):"<p class='muted'>Нет случаев по выбранным условиям. Завершённые и отклонённые доступны в истории.</p>");
   $("incidents").querySelectorAll("[data-id]").forEach(b=>b.onclick=()=>selectIncident(b.dataset.id).catch(showError));
@@ -169,7 +171,7 @@ function applyDetails(i){
   }
   S.detail=i;$("selected-id").textContent=i.incident_id;
   setMarkup("detail-facts",`<div><label>Причина</label>${esc(titles[i.type]||i.type)}</div><div><label>Место и объект</label>${esc(placeName(i))} · ${esc(entityName(i))}</div><div><label>Условие / обработка</label>${esc(labels[i.condition_state]||i.condition_state)} / ${esc(labels[i.disposition]||labels[i.status]||i.status)}</div><div><label>Ответственный</label>${esc(operatorName(i.assigned_operator_id))}</div><div><label>Обнаружено</label>${esc(clock(i.detected_at))} · ${esc(age(i.detected_at))}</div>`);
-  setMarkup("detail-technical",`<p>Случай ${esc(i.incident_id)} · ревизия ${esc(i.dispatch_revision)}</p><p>Источник: ${esc(i.asset_id||i.employee_id||i.sensor_id)} · участок ${esc(i.site_area_id)} · зона ${esc(i.zone_id)} · здание ${esc(i.building_id)}</p>`);
+  setMarkup("detail-technical",`<p>Случай ${esc(i.incident_id)} · ревизия ${esc(i.dispatch_revision)}</p><p>Источник: ${esc(i.asset_id||i.employee_id||i.sensor_id)}${i.other_asset_id?` ↔ ${esc(i.other_asset_id)}`:""} · участок ${esc(i.site_area_id)} · зона ${esc(i.zone_id)} · здание ${esc(i.building_id)}</p>`);
   S.mapRenderer?.highlight(i,{recenter:false});
   const plan=i.response_plan||{},steps=Array.isArray(plan.steps)?plan.steps:[plan.steps||i.response_instruction||i.details?.response_instruction||"Принять случай, проверить свежие наблюдения и записать реакцию."];
   setMarkup("response-plan",`<strong>Связаться: ${esc(plan.contact||"Ответственная роль участка")}</strong><ol>${steps.map(step=>`<li>${esc(step)}</li>`).join("")}</ol>`);
@@ -214,12 +216,15 @@ function renderNotifications(){
   $("notifications").innerHTML=rows.map(n=>`<button class="notification-item" data-notification="${esc(n.incident_id)}">${esc(notificationNames[n.kind]||"Изменение обработки")}<small>${esc(n.incident_id)} · ${esc(clock(n.created_at))} · открыть карточку</small></button>`).join("");
   $("notifications").querySelectorAll("[data-notification]").forEach(b=>b.onclick=()=>selectIncident(b.dataset.notification).catch(showError));
 }
+function demoScenarioName(id){return S.demo?.scenario_options?.find(s=>s.id===id)?.name||scenarioNames[id]||id;}
+function renderScenarioExpectation(){const el=$("scenario-expectation");if(!el)return;const option=S.demo?.scenario_options?.find(s=>s.id===$("scenario").value);el.textContent=option?.expected_alarm?`Ожидается: ${option.expected_alarm}`:"";el.hidden=!el.textContent;}
 function renderDemo(demo){
   S.demo=demo;const available=demo.available!==false&&demo.status!=="unavailable";
   const select=$("scenario"),scenarios=Array.isArray(demo.scenarios)?demo.scenarios:[];
-  const signature=scenarios.join("|");
-  if(available&&scenarios.length&&select.dataset.scenarios!==signature){const previous=select.value;select.innerHTML=scenarios.map(id=>`<option value="${esc(id)}">${esc(scenarioNames[id]||id)}</option>`).join("");select.value=scenarios.includes(previous)?previous:scenarios.includes(demo.scenario)?demo.scenario:scenarios[0];select.dataset.scenarios=signature;}
-  $("sim-status").textContent=demo.error?`Ошибка источника: ${demo.error}`:!available?"Источник движения пока не подключён":demo.running?`${scenarioNames[demo.scenario]||demo.scenario} · ${demo.events_sent??demo.event_count??0} событий`:"Сценарий остановлен · новые сигналы не поступают";
+  const signature=scenarios.map(id=>`${id}:${demoScenarioName(id)}`).join("|");
+  if(available&&scenarios.length&&select.dataset.scenarios!==signature){const previous=select.value;select.innerHTML=scenarios.map(id=>`<option value="${esc(id)}">${esc(demoScenarioName(id))}</option>`).join("");select.value=scenarios.includes(previous)?previous:scenarios.includes(demo.scenario)?demo.scenario:scenarios[0];select.dataset.scenarios=signature;}
+  select.onchange=renderScenarioExpectation;renderScenarioExpectation();
+  $("sim-status").textContent=demo.error?`Ошибка источника: ${demo.error}`:!available?"Источник движения пока не подключён":demo.running?`${demoScenarioName(demo.scenario)} · ${demo.events_sent??demo.event_count??0} событий`:"Сценарий остановлен · новые сигналы не поступают";
   $("start").disabled=!available||S.demoBusy;$("stop").disabled=!available||!demo.running||S.demoBusy;select.disabled=!available||S.demoBusy;
   $("start").title=available?"Запустить выбранный сценарий для всех рабочих мест":"Источник движения не подключён. Карта и ручная обработка доступны.";
 }
