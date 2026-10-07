@@ -37,6 +37,7 @@ Demo-профили не являются авторизацией для пуб
 .\.venv\Scripts\python.exe -m unittest discover -s tests/runtime -p 'test_*.py' -v
 node --check src/interface/web/app.js
 node --test tests/interface/*.cjs
+node --test tests/interface.test.js
 ```
 
 Node используется для проверки интерфейса; приложению он не нужен.

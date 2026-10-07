@@ -20,3 +20,4 @@ jobs:
           node-version: '22'
       - run: node --check src/interface/web/app.js
       - run: node --test tests/interface/*.cjs
+      - run: node --test tests/interface.test.js

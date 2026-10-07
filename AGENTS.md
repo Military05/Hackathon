@@ -28,6 +28,7 @@ python -m unittest discover -s tests/runtime -p 'test_*.py' -v
 python -m unittest discover -s tests/qa -p 'test_*.py' -v
 node --check src/interface/web/app.js
 node --test tests/interface/*.cjs
+node --test tests/interface.test.js
 
 Show missing prerequisites as unavailable or NOT RUN. CI success is not a target
 laptop benchmark or proof that a real LLM is connected.

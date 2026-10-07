@@ -13,3 +13,11 @@
 ## Интерфейс после аудита
 
 `node --test tests/interface/dispatch.test.cjs` — 16 проверок policy/provider/mock. Проверки общей БД/серверных гонок/передачи/эскалации/реального агента выполняются отдельно на живом backend. Уточнения A1–A12: [PREBUILD_FIXES](../docs/PREBUILD_FIXES.md).
+
+
+## Реализованные этапы Егора С./М.
+
+31 тест backend/API в tests/runtime; 16 текущих UI-тестов tests/interface.test.js.
+Команды в docs/RUNTIME_QUICKSTART.md. GitHub Actions запускает их при push/PR.
+Старые tests/interface/*.cjs относятся к сохранённому mock/provider prototype.
+Ни один test double не доказывает готовность реального ML/LLM или ноутбука.

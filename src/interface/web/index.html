@@ -1,88 +1,17 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Мониторинг предприятия</title>
-    <link rel="stylesheet" href="styles.css">
-</head>
-
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Контур — мониторинг предприятия</title>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css"><link rel="stylesheet" href="styles.css"></head>
 <body>
-
-<header class="header">
-    <div>
-        <h1>Мониторинг предприятия</h1>
-        <p>Наблюдение, ответственность и реакция оператора</p>
-    </div>
-
-    <div id="system-status" role="status" aria-live="polite">
-        Система загружается...
-    </div>
-</header>
-
-<section class="workstation" aria-label="Рабочее место">
-    <p id="mode-label" class="notice"></p>
-    <div class="controls">
-        <label>Рабочее место <select id="operator"></select></label>
-        <label>Готовность <select id="availability"><option value="ready">Принимаю новые случаи</option><option value="away">Временно недоступен</option></select></label>
-        <label><input id="sound" type="checkbox"> Разрешить короткий звук</label>
-        <a id="api-link" href="?mode=api">API</a><a id="mock-link" href="?mode=mock">Mock</a>
-    </div>
-    <small id="presence-status">Связь с рабочим местом не доказывает присутствие человека.</small>
-    <div id="dispatch-summary" class="summary" aria-label="Общая сводка"></div>
-    <p id="notifications" role="status" aria-live="polite"></p>
-    <p id="action-message" role="alert" class="notice"></p>
-    <div id="mock-controls" class="controls" hidden>
-        <span>Только тестовые сценарии:</span><button id="mock-burst" type="button">Ещё два случая на складах</button><button id="mock-loss" type="button">Потеря позиции V1</button>
-    </div>
-</section>
-<main class="dashboard">
-
-    <section class="map-panel">
-        <h2>Карта предприятия</h2>
-        <label><input id="all-map" type="checkbox"> Вся территория</label>
-
-        <div class="map-wrapper">
-            <svg
-                id="site-map"
-                viewBox="0 0 100 100"
-                aria-label="Карта предприятия"
-            >
-            </svg>
-        </div>
-        <p class="legend">● Зелёный: актуальная позиция · ● Жёлтый: последнее известное место. Красный контур: контролируемая зона.</p>
-    </section>
-
-    <aside class="incidents-panel">
-        <h2>Происшествия <span id="incident-count">0</span></h2>
-        <div class="controls"><label><input id="all-incidents" type="checkbox"> Общий журнал</label><label><input id="show-history" type="checkbox"> Включить обработанные</label></div>
-
-        <div id="incidents-list">
-            Загрузка...
-        </div>
-
-        <div id="incident-details" class="incident-details">
-        <h3>Подробности происшествия</h3>
-        <p>Выберите происшествие из списка</p>
-        </div>
-    </aside>
-
-</main>
-
-
-
-<section class="sensors-panel">
-    <h2>Датчики</h2>
-
-    <div id="sensors-list">
-        Загрузка...
-    </div>
-</section>
-
-<section class="sensors-panel"><h2>Анализ выбранного случая</h2><p id="agent-result">Агент не подключён.</p></section>
-<script src="dispatch-core.js"></script>
-<script src="provider.js"></script>
-<script src="app.js"></script>
-
-</body>
-</html>
+<header><div class="brand"><span class="brand-icon">К</span><div><strong>КОНТУР</strong><small>Центр мониторинга предприятия</small></div></div>
+<div class="operator"><label for="operator">Рабочее место</label><select id="operator"><option value="dispatcher-1">Логистика · Диспетчер 1</option><option value="dispatcher-2">Производство · Диспетчер 2</option><option value="dispatcher-3">Координация · Диспетчер 3</option></select><label><input type="checkbox" id="ready" checked>Принимаю случаи</label></div>
+<span id="connection" role="status">Подключение…</span></header>
+<div id="error" class="error" hidden role="alert"></div>
+<section class="toolbar"><div><strong>Демонстрационное предприятие</strong><span class="tag">Симуляция · координаты 0–100</span></div><div class="simulation"><select id="scenario" aria-label="Сценарий"><option value="normal">Штатная работа</option><option value="forbidden-zone">D1 · Запрещённая зона</option><option value="unauthorized-access">D2 · Проход без допуска</option><option value="sensor-offline">D3 · Потеря связи</option><option value="unusual-movement">D4 · Необычное движение</option><option value="simultaneous">D5 · Три происшествия</option></select><button id="start" class="primary">Запустить сценарий</button><button id="stop">Остановить</button><button id="sound">Включить звук</button></div></section>
+<section id="summary" class="summary" aria-label="Сводка секторов"></section>
+<main><section class="map-shell"><div class="section-head"><h1>План предприятия</h1><button id="fit">Весь план</button></div><div id="map" aria-label="Интерактивная карта предприятия"></div>
+<div class="legend"><span><i class="dot vehicle"></i>Транспорт</span><span><i class="dot sensor"></i>Датчик</span><span><i class="dot alarm"></i>Активное нарушение</span><span><i class="dot stale"></i>Нет свежих данных</span><span id="sim-status">Сценарий остановлен</span></div><div id="asset-info" class="asset-info">Выберите транспорт или датчик на карте. Дороги показаны серым; офис находится в центре.</div></section>
+<aside><div class="section-head"><h2>Происшествия</h2><label class="all"><input type="checkbox" id="all">Всё предприятие</label></div><div class="journal-controls"><label><input type="checkbox" id="history-toggle">Завершённые и отклонённые</label><small>Приоритет: важность, эскалация, ожидание принятия, время</small></div><div id="notifications" class="notifications" role="status"></div><div id="incidents" class="incidents"><p>Загрузка…</p></div></aside></main>
+<section class="bottom"><article class="detail"><div class="section-head"><h2>Карточка происшествия</h2><span id="selected-id"></span></div><div id="details"><p>Выберите случай в журнале. Принятие назначает ответственного; восстановление определяется показаниями.</p></div></article><article class="sensor-panel"><div class="section-head"><h2>Источники данных</h2><span id="ml-status"></span></div><div id="sensors"></div></article></section>
+<footer>Данные синтетические. Система обнаруживает нарушения и помогает организовать реакцию; команды транспорту и автоматический вызов охраны не выполняются.</footer>
+<script src="vendor/leaflet/leaflet.js"></script><script src="app.js"></script></body></html>
