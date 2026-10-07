@@ -52,10 +52,12 @@ class LocalModelClient:
         if self.config.model not in await self.list_models():
             raise AgentError("unavailable", "Configured local model is not available.", 503)
 
-    async def chat(self, messages, tools, deadline):
+    async def chat(self, messages, tools, deadline, response_schema=None):
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise AgentError("execution_timeout", "Analysis execution budget expired.")
+        if response_schema is not None and tools:
+            raise AgentError("invalid_config", "A structured final answer cannot request tools.")
         if self.config.provider == "ollama":
             wire_messages = []
             for message in messages:
@@ -69,16 +71,21 @@ class LocalModelClient:
                     item.pop("tool_call_id", None)
                     item["tool_name"] = item.pop("name")
                 wire_messages.append(item)
-            data = await self._json("POST", "api/chat", remaining,
-                                    json={"model": self.config.model, "messages": wire_messages,
-                                          "tools": tools, "stream": False, "think": False,
-                                          "options": {"temperature": 0, "num_predict": 4096}})
+            body = {"model": self.config.model, "messages": wire_messages,
+                    "tools": tools, "stream": False, "think": False,
+                    "options": {"temperature": 0, "num_predict": 4096}}
+            if response_schema is not None:
+                body["format"] = response_schema
+            data = await self._json("POST", "api/chat", remaining, json=body)
             message = data.get("message") if isinstance(data, dict) else None
         else:
-            data = await self._json("POST", "chat/completions", remaining,
-                                    json={"model": self.config.model, "messages": messages,
-                                          "tools": tools, "stream": False, "temperature": 0,
-                                          "max_tokens": 4096})
+            body = {"model": self.config.model, "messages": messages,
+                    "tools": tools, "stream": False, "temperature": 0,
+                    "max_tokens": 4096}
+            if response_schema is not None:
+                body["response_format"] = {"type": "json_schema", "json_schema": {
+                    "name": "dispatcher_answer", "strict": True, "schema": response_schema}}
+            data = await self._json("POST", "chat/completions", remaining, json=body)
             try:
                 message = data["choices"][0]["message"]
             except (KeyError, TypeError, IndexError):

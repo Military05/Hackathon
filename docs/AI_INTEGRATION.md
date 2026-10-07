@@ -47,6 +47,15 @@ PASS требует реальную модель, обычный ответ, н
 недоступен: живой Qwen здесь не подтверждён. Qwen работает только диспетчером; собственное
 обучение относится к MLP, новая языковая модель с нуля не требуется.
 
+Финальный запрос передаёт схему `ModelAnswer` через `response_format.json_schema` в LM Studio
+или `format` в Ollama. Tool-запросы и обычный ответ probe остаются без этой схемы. Ошибочный
+ранний JSON можно повторить один раз со схемой в пределах тех же трёх запросов и 60 секунд;
+ошибки подтверждения фактов не исправляются автоматически. `source` — одно значение из
+enum, а каждая гипотеза обязана иметь непустой массив `limitations`. Python по-прежнему
+сверяет ID, путь и значение с фактически выполненными tools. Изменение prompt version
+исключает использование кэша старой инструкции. Новые причины отказа содержат имена
+неподходящих полей без копирования непроверенного ответа в API-ошибку.
+
 Резерв Ollama: LOCAL_LLM_PROVIDER=ollama, LOCAL_LLM_BASE_URL=http://127.0.0.1:11434,
 LOCAL_LLM_MODEL=qwen3:4b. Сначала проверить уже установленные модели через /api/tags.
 Автоматического скачивания, замены модели и cloud fallback нет.
@@ -148,14 +157,18 @@ stale и error. Facts/hypotheses/recommendations готовы для следу�
     .\.venv\Scripts\python.exe -m pip install -r requirements-ai-dev.txt
     .\.venv\Scripts\python.exe -m pytest tests/ml tests/agent tests/qa -q
 
-63 теста прошли: модульная логика, реальная обученная MLP → snapshot → tools → validator,
+74 теста прошли: модульная логика, реальная обученная MLP → snapshot → tools → validator,
 HTTP protocol на явной model test double, 202/poll/cache/ошибки API. TestClient даёт одно
 предупреждение о будущем переходе Starlette на httpx2; проверки проходят с текущими версиями.
 Это не свидетельство настоящего Qwen или полного D1–D10 через общий backend.
+Регрессии формата проверяют source enum, непустые limitations, передачу схемы только в
+финальной фазе, отказ при неверных фактах и сохранение исходного deadline при повторе.
 
 От владельца/команды: запустить скачанную Qwen и probe на своей машине, перенести артефакт
 на ноутбук; A1 подключить snapshot query/router/inference; затем Лия проверяет полный путь,
 offline cold start и laptop latency. Необходимые архитектурные параметры уже взяты из инструкций.
 
 Официальные API: [LM Studio tools](https://lmstudio.ai/docs/developer/openai-compat/tools),
-[Ollama chat](https://docs.ollama.com/api/chat).
+[LM Studio JSON schema](https://lmstudio.ai/docs/developer/openai-compat/structured-output),
+[Ollama chat](https://docs.ollama.com/api/chat),
+[Ollama JSON schema](https://docs.ollama.com/capabilities/structured-outputs).

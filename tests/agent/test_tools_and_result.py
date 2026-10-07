@@ -109,3 +109,22 @@ def test_evidence_must_exist_in_capture():
     data["incident"]["evidence_event_ids"] = ["invented"]
     with pytest.raises(AgentError):
         FrozenSnapshot(data)
+
+
+@pytest.mark.parametrize("invalid_field", ["source", "limitations"])
+def test_laptop_qwen_format_failure_remains_rejected_with_field_diagnostics(invalid_field):
+    session = ToolSession(snapshot())
+    execute(session, "get_incident", incident_id="INC-ZONE-1")
+    claim = {"source": "event", "id": "demo-position-0010", "field": "payload.x", "value": 20.0}
+    content = json.loads(answer([claim]))
+    if invalid_field == "source":
+        content["facts"][0]["source"] = "event|policy|sensor_health|model_observation"
+        expected_field = "facts.0.source"
+    else:
+        content["hypotheses"][0]["limitations"] = []
+        expected_field = "hypotheses.0.limitations"
+    with pytest.raises(AgentError) as exc:
+        validate_result(json.dumps(content), session, "test-double")
+    assert exc.value.code == "model_reply_invalid"
+    assert exc.value.details["issues"][0]["field"] == expected_field
+    assert "input" not in exc.value.details["issues"][0]

@@ -48,8 +48,14 @@ def validate_result(content, session: ToolSession, model_name):
         if stripped.startswith("```json\n") and stripped.endswith("```"):
             stripped = stripped[8:-3].strip()
         answer = ModelAnswer.model_validate(json.loads(stripped))
-    except (ValueError, ValidationError, TypeError) as exc:
-        raise AgentError("model_reply_invalid", "Final answer does not match the verified-facts schema.") from exc
+    except ValidationError as exc:
+        issues = [{"field": ".".join(map(str, error["loc"])), "code": error["type"]}
+                  for error in exc.errors(include_url=False, include_input=False)[:5]]
+        raise AgentError("model_reply_invalid", "Final answer does not match the verified-facts schema.",
+                         details={"issues": issues}) from exc
+    except (ValueError, TypeError) as exc:
+        raise AgentError("model_reply_invalid", "Final answer does not match the verified-facts schema.",
+                         details={"reason": "invalid_json"}) from exc
     facts, refs, event_ids = [], {}, set()
     for claim in answer.facts:
         row = session.records[claim.source].get(claim.id)

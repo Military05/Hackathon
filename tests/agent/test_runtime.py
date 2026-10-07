@@ -195,3 +195,149 @@ def test_service_snapshot_cache_stale_and_nonblocking_worker(tmp_path):
 def test_no_remote_model_fallback(url):
     with pytest.raises(AgentError):
         AgentConfig(base_url=url)
+
+
+@pytest.mark.parametrize("provider", ["openai_compatible", "ollama"])
+@pytest.mark.parametrize("early_invalid", [False, True])
+def test_schema_final_after_tools_and_bounded_format_retry(provider, early_invalid):
+    """The real laptop failure must not be repaired by rewriting evidence in Python."""
+    wire = []
+    claim = {"source": "event", "id": "demo-position-0010", "field": "payload.x", "value": 20.0}
+
+    def transport(request):
+        body = json.loads(request.content)
+        wire.append(body)
+        schema = body.get("format") if provider == "ollama" else body.get("response_format", {}).get("json_schema", {}).get("schema")
+        if len(wire) == 1:
+            assert schema is None and body["tools"]
+            message = {"role": "assistant", "content": "", "tool_calls": [tool_call(native=provider == "ollama")]}
+        elif len(wire) == 2:
+            assert schema is None and body["tools"]
+            if early_invalid:
+                invalid = json.loads(answer([{**claim, "source": "event|policy|sensor_health|model_observation"}]))
+                invalid["hypotheses"][0]["limitations"] = []
+                message = {"role": "assistant", "content": json.dumps(invalid)}
+            else:
+                message = {"role": "assistant", "content": "", "tool_calls": [
+                    tool_call("get_asset_policy", {"asset_id": "V1"}, native=provider == "ollama")]}
+        else:
+            assert len(wire) == 3 and not body["tools"]
+            assert schema["$defs"]["FactClaim"]["properties"]["source"]["enum"] == [
+                "event", "policy", "sensor_health", "model_observation"]
+            assert schema["$defs"]["Hypothesis"]["properties"]["limitations"]["minItems"] == 1
+            assert schema["additionalProperties"] is False
+            if provider == "openai_compatible":
+                assert body["response_format"]["type"] == "json_schema"
+                assert body["response_format"]["json_schema"]["strict"] is True
+            message = {"role": "assistant", "content": answer([claim])}
+        return httpx.Response(200, json={"choices": [{"message": message}]} if provider == "openai_compatible"
+                              else {"message": message})
+
+    async def run():
+        config = AgentConfig(provider=provider, base_url="http://127.0.0.1:1234/v1" if provider == "openai_compatible"
+                             else "http://127.0.0.1:11434", model="test-double")
+        client = LocalModelClient(config, httpx.MockTransport(transport))
+        try:
+            result = await run_analysis(client, snapshot(), config)
+            assert result["facts"][0]["source"] == "event"
+            assert result["facts"][0]["value"] == 20.0
+            assert len(wire) == config.max_model_requests == 3
+            assert [row["tool"] for row in result["tool_trace"]] == (
+                ["get_incident"] if early_invalid else ["get_incident", "get_asset_policy"])
+        finally:
+            await client.close()
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("final_value,expected_code", [(None, "model_reply_invalid"), (999, "invalid_evidence")])
+def test_structured_final_cannot_bypass_validation_or_request_budget(final_value, expected_code):
+    wire = []
+
+    def transport(request):
+        body = json.loads(request.content)
+        wire.append(body)
+        if len(wire) < 3:
+            message = {"role": "assistant", "content": "", "tool_calls": [tool_call()]}
+        else:
+            content = "{}" if final_value is None else answer([
+                {"source": "event", "id": "demo-position-0010", "field": "payload.x", "value": final_value}])
+            message = {"role": "assistant", "content": content}
+        return httpx.Response(200, json={"choices": [{"message": message}]})
+
+    async def run():
+        config = AgentConfig(model="test-double")
+        client = LocalModelClient(config, httpx.MockTransport(transport))
+        try:
+            with pytest.raises(AgentError) as exc:
+                await run_analysis(client, snapshot(), config)
+            assert exc.value.code == expected_code
+            assert len(wire) == 3
+        finally:
+            await client.close()
+    asyncio.run(run())
+
+
+def test_ordinary_reply_is_not_forced_to_json_and_schema_is_not_combined_with_tools():
+    wire = []
+
+    def transport(request):
+        body = json.loads(request.content)
+        wire.append(body)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "READY"}}]})
+
+    async def run():
+        client = LocalModelClient(AgentConfig(model="test-double"), httpx.MockTransport(transport))
+        try:
+            reply = await client.chat([{"role": "user", "content": "READY"}], [], time.monotonic() + 1)
+            assert reply["content"] == "READY" and "response_format" not in wire[0]
+            with pytest.raises(AgentError) as exc:
+                await client.chat([], [{}], time.monotonic() + 1, response_schema={"type": "object"})
+            assert exc.value.code == "invalid_config" and len(wire) == 1
+        finally:
+            await client.close()
+    asyncio.run(run())
+
+
+def test_early_false_evidence_is_rejected_without_format_retry():
+    wire = []
+
+    def transport(request):
+        wire.append(json.loads(request.content))
+        message = {"role": "assistant", "content": "", "tool_calls": [tool_call()]} if len(wire) == 1 else {
+            "role": "assistant", "content": answer([
+                {"source": "event", "id": "demo-position-0010", "field": "payload.x", "value": 999}])}
+        return httpx.Response(200, json={"choices": [{"message": message}]})
+
+    async def run():
+        config = AgentConfig(model="test-double")
+        client = LocalModelClient(config, httpx.MockTransport(transport))
+        try:
+            with pytest.raises(AgentError) as exc:
+                await run_analysis(client, snapshot(), config)
+            assert exc.value.code == "invalid_evidence" and len(wire) == 2
+        finally:
+            await client.close()
+    asyncio.run(run())
+
+
+def test_format_retry_keeps_the_original_whole_analysis_deadline():
+    class SlowFinal:
+        def __init__(self):
+            self.deadlines = []
+
+        async def chat(self, messages, tools, deadline, response_schema=None):
+            self.deadlines.append(deadline)
+            if len(self.deadlines) == 1:
+                return {"role": "assistant", "content": "", "tool_calls": [tool_call()]}
+            if len(self.deadlines) == 2:
+                return {"role": "assistant", "content": "{}"}
+            assert response_schema is not None and not tools
+            await asyncio.sleep(1)
+
+    async def run():
+        client = SlowFinal()
+        with pytest.raises(AgentError) as exc:
+            await run_analysis(client, snapshot(), AgentConfig(max_execution_seconds=.1))
+        assert exc.value.code == "execution_timeout"
+        assert len(client.deadlines) == 3 and len(set(client.deadlines)) == 1
+    asyncio.run(run())
