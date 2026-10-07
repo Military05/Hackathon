@@ -28,7 +28,7 @@ def main():
     if operator not in OPERATORS:
         print("Неизвестный диспетчерский профиль", file=sys.stderr)
         return 1
-    password = getpass.getpass("Пароль (15–128 символов): ")
+    password = getpass.getpass("Пароль (8–128 символов): ")
     confirmation = getpass.getpass("Повторите пароль: ")
     if password != confirmation:
         print("Пароли не совпадают", file=sys.stderr)

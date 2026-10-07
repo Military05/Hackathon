@@ -5,7 +5,7 @@
   const names={"dispatcher-1":"Логистика и склады","dispatcher-2":"Производство","dispatcher-3":"КПП"};
   let pending=false,lastKey="",offset=0,total=0,version=0,refreshCallback=null,adminBusy=false;
   function filters(){const query=new URLSearchParams({limit:"12",offset:String(offset)});for(const [id,key] of [["gate-search","q"],["gate-direction","direction"],["gate-permission","permission"],["gate-since","since"],["gate-until","until"]]){const value=$(id)?.value;if(value)query.set(key,key==="since"||key==="until"?new Date(value).toISOString():value);}return query;}
-  function humanTime(value){return value?new Date(value).toLocaleTimeString("ru-RU"):"—";}
+  function humanTime(value){return value?new Date(value).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"}):"—";}
   function renderGate(data){
     total=data.total||0;
     const rows=data.items||[];
@@ -46,11 +46,15 @@
   }
   function bind(request,onError){
     let timer;refreshCallback=()=>update(request);
+    async function exportFile(path,name){
+      try{await ProductAuth.download(path,`${name}_${new Date().toLocaleDateString("ru-RU")}.csv`);$("export-status").hidden=false;$("export-status").textContent="CSV подготовлен: русские колонки, UTF-8, разделитель ;";}
+      catch(error){onError(error);}
+    }
     for(const id of ["gate-search","gate-direction","gate-permission","gate-since","gate-until"]){$(id).addEventListener(id==="gate-search"?"input":"change",()=>{clearTimeout(timer);offset=0;version++;timer=setTimeout(refreshCallback,250);});}
     $("gate-prev").onclick=()=>{offset=Math.max(0,offset-12);version++;refreshCallback();};
     $("gate-next").onclick=()=>{offset+=12;version++;refreshCallback();};
-    $("gate-export").onclick=()=>{const query=filters();query.set("limit","200");query.set("offset","0");ProductAuth.download(`/checkpoint/export.csv?${query}`,"checkpoint.csv").catch(onError);};
-    $("activity-export").onclick=()=>ProductAuth.download("/dispatch-history/export.csv","dispatcher-actions.csv").catch(onError);
+    $("gate-export").onclick=()=>{const query=filters();query.set("limit","200");query.set("offset","0");exportFile(`/checkpoint/export.csv?${query}`,"Журнал_проходов_КПП");};
+    $("activity-export").onclick=()=>exportFile("/dispatch-history/export.csv","Журнал_действий_диспетчера");
     $("admin-open").onclick=()=>{$("admin-dialog").showModal();admin(request);};
     $("admin-close").onclick=()=>$("admin-dialog").close();
     $("admin-refresh").onclick=()=>admin(request);

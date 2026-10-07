@@ -24,8 +24,8 @@ OPERATORS = ("dispatcher-1", "dispatcher-2", "dispatcher-3")
 
 
 def password_hash(password):
-    if not isinstance(password, str) or not 15 <= len(password) <= 128:
-        raise ApiError(422, "invalid_password", "Пароль должен содержать от 15 до 128 символов")
+    if not isinstance(password, str) or not 8 <= len(password) <= 128:
+        raise ApiError(422, "invalid_password", "Пароль должен содержать от 8 до 128 символов")
     try:
         encoded_password = password.encode("utf-8")
     except UnicodeEncodeError as exc:
