@@ -110,7 +110,7 @@ class BackendAcceptance(unittest.TestCase):
     def test_zone_boundary_hysteresis_and_new_episode(self):
         incident = self.zone()
         self.position(x=12, y=43)  # Included boundary.
-        self.assertEqual(len(self.service.list_incidents()), 1)
+        self.assertEqual(sum(item["type"] == "forbidden_zone" for item in self.service.list_incidents()), 1)
         self.clock.advance(0.5)
         self.position(x=39, y=58)
         self.assertTrue(self.service.get_incident(incident["incident_id"])["condition_active"])
@@ -119,7 +119,7 @@ class BackendAcceptance(unittest.TestCase):
         self.assertFalse(self.service.get_incident(incident["incident_id"])["condition_active"])
         self.clock.advance(0.5)
         self.position()
-        self.assertEqual(len(self.service.list_incidents()), 2)
+        self.assertEqual(sum(item["type"] == "forbidden_zone" for item in self.service.list_incidents()), 2)
 
     def test_old_measurement_preserved_without_rolling_back_position(self):
         event = self.position(x=39, y=85)

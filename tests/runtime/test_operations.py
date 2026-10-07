@@ -123,8 +123,8 @@ class OperationsAcceptance(unittest.TestCase):
         self.assertTrue(all(row["text"].startswith("'") for row in rows[:5]))
         self.assertEqual(rows[-1]["text"], "Обычный")
         self.access("U2")
-        result = list(csv.DictReader(io.StringIO(self.operations.checkpoint_csv(q="U2").decode("utf-8-sig"))))
-        self.assertEqual(result[0]["employee_id"], "U2")
+        result = list(csv.DictReader(io.StringIO(self.operations.checkpoint_csv(q="U2").decode("utf-8-sig")), delimiter=";"))
+        self.assertEqual(result[0]["Табельный номер"], "U2")
 
     def test_shift_correlation_is_atomic_idempotent_and_survives_restart(self):
         shift_id = self.operations.start_shift(["U1", "U2", "U3"])
@@ -180,10 +180,10 @@ class OperationsAcceptance(unittest.TestCase):
         own = self.operations.dispatch_activity("dispatcher-3")
         self.assertEqual((own["claimed"], own["responses"], own["transferred"], own["closed"]), (1, 1, 1, 0))
         self.assertEqual(self.operations.dispatch_activity("dispatcher-1")["closed"], 1)
-        exported = list(csv.DictReader(io.StringIO(self.operations.dispatch_history_csv("dispatcher-3").decode("utf-8-sig"))))
+        exported = list(csv.DictReader(io.StringIO(self.operations.dispatch_history_csv("dispatcher-3").decode("utf-8-sig")), delimiter=";"))
         self.assertEqual(len(exported), 3)
-        self.assertTrue(all(row["actor_operator_id"] == "dispatcher-3" for row in exported))
-        self.assertTrue(exported[0]["reason"].startswith("'="))
+        self.assertTrue(all(row["Диспетчер"] == "Диспетчер 3 — КПП" for row in exported))
+        self.assertTrue(exported[0]["Комментарий"].startswith("'="))
 
     def test_dispatcher_three_cannot_claim_unaddressed_other_sector(self):
         self.service.ingest_event({"event_id": "position-zone", "event_time": stamp(self.clock()), "sensor_id": "POS-V1", "type": "position",

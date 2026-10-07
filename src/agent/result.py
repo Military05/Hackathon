@@ -84,6 +84,13 @@ def validate_result(content, session: ToolSession, model_name):
         facts.append({**claim.model_dump(), "text": f"{claim.source} {claim.id}: {claim.field} = {canonical(claim.value)}",
                       "evidence_event_ids": fact_events, "evidence_refs": fact_refs})
     incident = session.snapshot.data["incident"]
+    if incident.get("type") == "collision":
+        pair = {incident.get("asset_id"), incident.get("other_asset_id")}
+        verified_assets = {session.records["event"][event_id].get("payload", {}).get("asset_id")
+                           for event_id in event_ids
+                           if event_id in incident.get("evidence_event_ids", [])}
+        if None in pair or len(pair) != 2 or not pair <= verified_assets:
+            raise AgentError("invalid_evidence", "Для парного происшествия необходимы измеренные события обеих машин.")
     if incident.get("type") == "model_anomaly":
         linked_id = incident.get("details", {}).get("observation_id")
         observed = {fact["field"] for fact in facts

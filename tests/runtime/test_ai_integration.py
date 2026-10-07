@@ -92,6 +92,26 @@ class AIIntegrationTests(unittest.TestCase):
         resumed.register_model_observation(again)
         self.assertEqual(len(resumed.model_observations("V1")), 1)
 
+    def test_v6_collision_requires_evidence_and_policies_of_both_vehicles(self):
+        service = Service(Path(self.temp.name) / "collision.db", ROOT / "data/demo/site.json", clock=lambda: self.now)
+        for asset, y in (("V1", 74), ("V3", 74.5)):
+            service.ingest_event({"event_id": "pair-" + asset, "event_time": stamp(self.now),
+                                  "sensor_id": "POS-" + asset, "type": "position", "demo": True,
+                                  "payload": {"asset_id": asset, "x": 40, "y": y}})
+        incident = next(item for item in service.list_incidents() if item["type"] == "collision")
+        session = ToolSession(FrozenSnapshot(capture_snapshot(service, incident["incident_id"])))
+        self.assertEqual(set(session.snapshot.policies), {"V1", "V3"})
+        session.execute("get_incident", json.dumps({"incident_id": incident["incident_id"]}))
+        facts = [{"source": "event", "id": event["event_id"], "field": "payload.x", "value": event["payload"]["x"]}
+                 for event in session.records["event"].values()]
+        answer = {"facts": facts[:1], "hypotheses": [], "recommendations": ["Проверьте измеренное сближение обеих машин."]}
+        with self.assertRaises(AgentError) as caught:
+            validate_result(json.dumps(answer), session, "test-model")
+        self.assertEqual(caught.exception.code, "invalid_evidence")
+        answer["facts"] = facts
+        result = validate_result(json.dumps(answer), session, "test-model")
+        self.assertEqual(set(result["evidence_event_ids"]), {"pair-V1", "pair-V3"})
+
     def test_polling_time_does_not_make_snapshot_stale_but_new_measurement_does(self):
         before = FrozenSnapshot(capture_snapshot(self.service, self.incident["incident_id"]))
         self.now += timedelta(seconds=1)

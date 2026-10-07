@@ -47,7 +47,7 @@ class ApiError(Exception):
 
 
 class Service:
-    rule_version = "rules-v2.1"
+    rule_version = "rules-v2.2-safety"
 
     def __init__(self, db_path, site_path, clock=utcnow):
         self.site = json.loads(Path(site_path).read_text(encoding="utf-8"))
@@ -61,6 +61,8 @@ class Service:
         self.profiles = {p.get("operator_id") or p.get("id"): p for p in self.site["operator_profiles"]}
         self.buildings = {b["id"]: b for b in self.site["buildings"]}
         self.model_version = "not_loaded"
+        from src.core.vehicle_safety import VehicleSafety
+        self.vehicle_safety = VehicleSafety(self)
         with self.store.transaction() as db:
             # Capture already expired leases before invalidating browser sessions.
             # Otherwise a restart between timer cycles erases the start of an absence.
@@ -176,9 +178,11 @@ class Service:
         contact = {"forbidden_zone": "Диспетчер участка и служба безопасности",
                    "unauthorized_access": "Служба безопасности",
                    "sensor_offline": "Ответственный за датчики",
-                   "model_anomaly": "Диспетчер участка"}[kind]
+                   "model_anomaly": "Диспетчер участка",
+                   "route_deviation": "Диспетчер транспорта и ответственный за маршрут",
+                   "collision": "Диспетчер участка и служба безопасности"}[kind]
         item = {"incident_id": uid("incident"), "type": kind,
-                "severity": "critical" if kind in {"forbidden_zone", "unauthorized_access"} else "warning",
+                "severity": "critical" if kind in {"forbidden_zone", "unauthorized_access", "collision"} else "warning",
                 "detected_at": stamp(self.clock()), "status": "open", "condition_active": active,
                 "condition_state": "active" if active else "restored", "rule_version": self.rule_version,
                 "evidence_event_ids": list(evidence), "details": {}, "demo": True,
@@ -316,6 +320,7 @@ class Service:
                  "position_state": "fresh" if fresh else "unknown"}
         db.execute("INSERT INTO asset_state VALUES (?,?) ON CONFLICT(asset_id) DO UPDATE SET body=excluded.body",
                    (asset_id, canonical(state)))
+        self.vehicle_safety.observe(db, event, previous)
         if not fresh:
             return
         allowed = self.asset_policy(asset_id)["allowed_zone_ids"]
@@ -325,7 +330,10 @@ class Service:
             or (self.clock() - parse_time(previous["last_seen"])).total_seconds() >= self.config["position_stale_seconds"]
         )
         for zone in self.site["zones"]:
-            if zone["id"] in allowed:
+            restricted_types = zone.get("restricted_vehicle_types", [])
+            denied = (zone.get("kind") == "forbidden" or
+                      (self.assets_by_id[asset_id].get("vehicle_type") in restricted_types if zone.get("kind") == "restricted" else zone["id"] not in allowed))
+            if not denied:
                 continue
             key = "zone:" + asset_id + ":" + zone["id"]
             incident = self._ongoing(db, key)
@@ -365,10 +373,15 @@ class Service:
             return result
 
     def asset_policy(self, asset_id):
-        self._require(asset_id, self.assets_by_id, "asset")
+        asset = self._require(asset_id, self.assets_by_id, "asset")
         item = next((p for p in self.site["permissions"] if p.get("asset_id", p.get("employee_id")) == asset_id), {})
+        forbidden = [zone["id"] for zone in self.site["zones"] if asset["type"] == "vehicle" and
+                     (zone.get("kind") == "forbidden" or (zone.get("kind") == "restricted" and asset.get("vehicle_type") in zone.get("restricted_vehicle_types", [])))]
+        route = self.site.get("safety_routes", {}).get(asset_id)
         return {"asset_id": asset_id, "allowed_zone_ids": item.get("allowed_zone_ids", []),
-                "allowed_building_ids": item.get("allowed_building_ids", []), "policy_version": self.site["policy_version"]}
+                "allowed_building_ids": item.get("allowed_building_ids", []), "policy_version": self.site["policy_version"],
+                "vehicle_type": asset.get("vehicle_type"), "forbidden_zone_ids": forbidden,
+                **({"personal_route_id": asset_id, "personal_route_points": route.get("points", []) if isinstance(route, dict) else route} if route else {})}
 
     def _sensor_health(self, db, sensor_id):
         sensor = self._require(sensor_id, self.sensors_by_id, "sensor")
@@ -696,6 +709,7 @@ class Service:
         """One global 1 Hz timer. All deadlines and de-duplication survive restart."""
         now = self.clock()
         with self.store.transaction() as db:
+            self.vehicle_safety.tick(db)
             for sid, sensor in self.sensors_by_id.items():
                 health = self._sensor_health(db, sid)
                 incident = self._ongoing(db, "offline:" + sid)

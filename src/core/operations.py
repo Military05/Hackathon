@@ -2,15 +2,16 @@
 import csv
 import io
 import json
+from datetime import timezone, timedelta
 
 from src.core.service import ApiError, canonical, parse_time, stamp, uid
 
 
-def csv_bytes(columns, rows):
+def csv_bytes(columns, rows, *, labels=None, delimiter=","):
     """UTF-8 BOM for spreadsheet readers; text never becomes a spreadsheet formula."""
     output = io.StringIO(newline="")
-    writer = csv.writer(output)
-    writer.writerow(columns)
+    writer = csv.writer(output, delimiter=delimiter)
+    writer.writerow([labels.get(column, column) for column in columns] if labels else columns)
     for row in rows:
         values = []
         for column in columns:
@@ -21,6 +22,14 @@ def csv_bytes(columns, rows):
             values.append(value)
         writer.writerow(values)
     return ("\ufeff" + output.getvalue()).encode("utf-8")
+
+
+def report_time(value):
+    return parse_time(value).astimezone(timezone(timedelta(hours=3))).strftime("%d.%m.%Y %H:%M:%S") if value else ""
+
+
+OPERATOR_NAMES = {"dispatcher-1": "Диспетчер 1 — логистика", "dispatcher-2": "Диспетчер 2 — производство", "dispatcher-3": "Диспетчер 3 — КПП"}
+ACTION_NAMES = {"detected": "Обнаружено", "claim": "Принята ответственность", "record_response": "Записана реакция", "condition_restored": "Условие восстановлено", "close": "Обработка завершена", "request_transfer": "Предложена передача", "accept_transfer": "Передача принята", "cancel_transfer": "Передача отменена", "transfer_expired": "Срок передачи истёк", "reassign_unavailable": "Назначен резерв", "dismiss_model": "Подозрение модели отклонено", "escalation": "Эскалация"}
 
 
 def correlate_event(db, shift_id, event):
@@ -131,8 +140,15 @@ class Operations:
 
     def checkpoint_csv(self, **filters):
         filters.setdefault("limit", 200)
-        return csv_bytes(["event_id", "event_time", "received_at", "employee_id", "employee_name", "building_id",
-                          "direction", "permission", "shift_id", "scenario"], self.journal(**filters)["items"])
+        rows = self.journal(**filters)["items"]
+        for row in rows:
+            row.update(event_time=report_time(row["event_time"]), received_at=report_time(row["received_at"]),
+                       direction={"in": "Вход", "out": "Выход"}.get(row["direction"], row["direction"]),
+                       permission={"allowed": "Разрешён", "violation": "Без допуска"}.get(row["permission"], row["permission"]),
+                       building_id=self.service.buildings.get(row["building_id"], {}).get("name", row["building_id"]),
+                       scenario="Начало смены" if row["scenario"] == "shift" else row["scenario"])
+        labels = {"event_time": "Время прохода (МСК)", "employee_name": "Сотрудник", "employee_id": "Табельный номер", "direction": "Направление", "permission": "Допуск", "building_id": "Пункт прохода", "shift_id": "Номер смены", "scenario": "Сценарий", "received_at": "Получено сервером (МСК)", "event_id": "Номер события"}
+        return csv_bytes(list(labels), rows, labels=labels, delimiter=";")
 
     def start_shift(self, employee_ids):
         ids = list(dict.fromkeys(employee_ids))
@@ -218,4 +234,11 @@ class Operations:
         parameters = (operator_id, limit) if operator_id else (limit,)
         with self.service.store.read() as db:
             rows = [json.loads(row[0]) for row in db.execute("SELECT body FROM dispatch_history" + where + " ORDER BY rowid DESC LIMIT ?", parameters)]
-        return csv_bytes(["history_id", "created_at", "incident_id", "action", "actor_operator_id", "from_operator_id", "to_operator_id", "reason", "response_code"], rows)
+        for row in rows:
+            row["created_at"] = report_time(row.get("created_at"))
+            row["action"] = ACTION_NAMES.get(row.get("action"), row.get("action"))
+            for field in ("actor_operator_id", "from_operator_id", "to_operator_id"):
+                row[field] = OPERATOR_NAMES.get(row.get(field), row.get(field))
+            row["response_code"] = {"contacted": "Связался", "inspection_requested": "Запросил проверку"}.get(row.get("response_code"), row.get("response_code"))
+        labels = {"created_at": "Время действия (МСК)", "action": "Действие", "actor_operator_id": "Диспетчер", "incident_id": "Номер происшествия", "reason": "Комментарий", "response_code": "Реакция", "from_operator_id": "Передано от", "to_operator_id": "Передано кому", "history_id": "Номер записи"}
+        return csv_bytes(list(labels), rows, labels=labels, delimiter=";")

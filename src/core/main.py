@@ -5,6 +5,7 @@ from datetime import timedelta
 import logging
 import os
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import Body, FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -118,7 +119,7 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
 
     @app.get("/api/health")
     def health():
-        return {"status": "ok", "contract_version": 2, "contract_revision": "2.1-audit",
+        return {"status": "ok", "contract_version": 2, "contract_revision": "2.2-factory-safety",
                 "demo": True, "as_of": stamp(service.clock()),
                 "rules": {"status": "ready", "version": service.rule_version},
                 "ml": model.health() if model else {"status": "unavailable"},
@@ -227,7 +228,7 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
                           limit: int = Query(default=200, ge=1, le=200), offset: int = Query(default=0, ge=0, le=100000)):
         payload = operations.checkpoint_csv(q=q, direction=direction, permission=permission, since=since, until=until,
                                              limit=limit, offset=offset)
-        return Response(payload, media_type="text/csv; charset=utf-8", headers={"Content-Disposition": 'attachment; filename="checkpoint.csv"',
+        return Response(payload, media_type="text/csv; charset=utf-8", headers={"Content-Disposition": "attachment; filename=checkpoint.csv; filename*=UTF-8''" + quote("Журнал_проходов_КПП.csv"),
                         "X-Export-Limit": str(limit), "X-Export-Offset": str(offset)})
 
     @app.get("/api/shifts/current")
@@ -247,7 +248,7 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
             raise ApiError(403, "admin_required", "Общий журнал доступен администратору")
         operator = service.validate_operator(x_demo_operator) if scope == "mine" else None
         return Response(operations.dispatch_history_csv(operator, limit), media_type="text/csv; charset=utf-8",
-                        headers={"Content-Disposition": 'attachment; filename="dispatcher-actions.csv"', "X-Export-Limit": str(limit)})
+                        headers={"Content-Disposition": "attachment; filename=dispatcher-actions.csv; filename*=UTF-8''" + quote("Журнал_действий_диспетчера.csv"), "X-Export-Limit": str(limit)})
 
     if manager:
         app.include_router(make_router(manager, service.validate_operator))

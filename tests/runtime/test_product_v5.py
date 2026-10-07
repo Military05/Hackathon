@@ -118,8 +118,8 @@ class ProductV5Acceptance(unittest.TestCase):
             self.assertEqual(summary.json()["claimed"], int(number == 3))
             exported = client.get("/api/dispatch-history/export.csv", headers={"X-Demo-Operator": "dispatcher-3"})
             self.assertEqual(exported.status_code, 200, exported.text)
-            rows = list(csv.DictReader(io.StringIO(exported.content.decode("utf-8-sig"))))
-            self.assertTrue(all(row["actor_operator_id"] == "dispatcher-" + str(number) for row in rows))
+            rows = list(csv.DictReader(io.StringIO(exported.content.decode("utf-8-sig")), delimiter=";"))
+            self.assertTrue(all(row["Диспетчер"] == {1:"Диспетчер 1 — логистика",2:"Диспетчер 2 — производство",3:"Диспетчер 3 — КПП"}[number] for row in rows))
             self.assertEqual(len(rows), int(number == 3))
 
     def test_global_dispatch_csv_is_admin_only_and_includes_real_operator_history(self):
@@ -132,9 +132,9 @@ class ProductV5Acceptance(unittest.TestCase):
         admin, _ = self.client(admin=True)
         response = admin.get("/api/dispatch-history/export.csv?scope=all")
         self.assertEqual(response.status_code, 200, response.text)
-        rows = list(csv.DictReader(io.StringIO(response.content.decode("utf-8-sig"))))
-        self.assertTrue(any(row["action"] == "detected" for row in rows))
-        self.assertTrue(any(row["action"] == "claim" and row["actor_operator_id"] == "dispatcher-3" for row in rows))
+        rows = list(csv.DictReader(io.StringIO(response.content.decode("utf-8-sig")), delimiter=";"))
+        self.assertTrue(any(row["Действие"] == "Обнаружено" for row in rows))
+        self.assertTrue(any(row["Действие"] == "Принята ответственность" and row["Диспетчер"] == "Диспетчер 3 — КПП" for row in rows))
         self.assertEqual(response.headers["x-export-limit"], "1000")
 
     def test_csrf_rejection_does_not_create_dispatch_history_and_correct_token_works(self):
@@ -180,8 +180,8 @@ class ProductV5Acceptance(unittest.TestCase):
         self.assertTrue(exported.headers["content-type"].startswith("text/csv"))
         self.assertEqual(exported.headers["x-export-limit"], "200")
         self.assertEqual(exported.headers["x-export-offset"], "0")
-        rows = list(csv.DictReader(io.StringIO(exported.content.decode("utf-8-sig"))))
-        self.assertEqual([row["event_id"] for row in rows], [last["event_id"]])
+        rows = list(csv.DictReader(io.StringIO(exported.content.decode("utf-8-sig")), delimiter=";"))
+        self.assertEqual([row["Номер события"] for row in rows], [last["event_id"]])
         for endpoint in ("/api/checkpoint/journal", "/api/checkpoint/export.csv"):
             for parameters in ({"limit": 201}, {"offset": 100001}, {"q": "x" * 101}, {"direction": "enter"},
                                {"permission": "denied"}, {"since": "bad"}):
@@ -200,8 +200,8 @@ class ProductV5Acceptance(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         exported = dispatcher.get("/api/dispatch-history/export.csv")
         self.assertEqual(exported.status_code, 200, exported.text)
-        rows = list(csv.DictReader(io.StringIO(exported.content.decode("utf-8-sig"))))
-        self.assertEqual(rows[0]["reason"], "'" + reason)
+        rows = list(csv.DictReader(io.StringIO(exported.content.decode("utf-8-sig")), delimiter=";"))
+        self.assertEqual(rows[0]["Комментарий"], "'" + reason)
 
     def test_shift_api_links_confirmed_people_to_actual_transport_without_early_motion(self):
         dispatcher, _ = self.client(3)

@@ -125,7 +125,7 @@ class TrafficAcceptance(unittest.TestCase):
                 self.assertLessEqual(math.dist(previous, position), 1.801)
             previous = position
             active_seen |= any(incident["condition_active"] for incident in self.service.list_incidents())
-        incidents = self.service.list_incidents()
+        incidents = [item for item in self.service.list_incidents() if item["type"] == "forbidden_zone"]
         self.assertTrue(active_seen)
         self.assertEqual(len(incidents), 1)
         incident = incidents[0]
@@ -172,11 +172,11 @@ class TrafficAcceptance(unittest.TestCase):
         self.assertEqual(self.service.sensor_health("HB-QA")["status"], "online")
         self.assertFalse(self.service.list_incidents()[0]["condition_active"])
 
-    def test_simultaneous_uses_three_real_rule_types_and_finishes_fault_episode(self):
+    def test_simultaneous_uses_four_real_rule_types_and_finishes_fault_episode(self):
         self.run_frames("simultaneous", 32)
         incidents = self.service.list_incidents()
-        self.assertEqual({incident["type"] for incident in incidents}, {"forbidden_zone", "unauthorized_access", "sensor_offline"})
-        self.assertEqual(len(incidents), 3)
+        self.assertEqual({incident["type"] for incident in incidents}, {"forbidden_zone", "unauthorized_access", "sensor_offline", "route_deviation"})
+        self.assertEqual(len(incidents), 4)
         self.assertTrue(all(not incident["condition_active"] for incident in incidents))
         self.assertTrue(all(incident["demo"] for incident in incidents))
 

@@ -26,12 +26,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", default=str(ROOT / ".env"))
     parser.add_argument("--output", default=str(ROOT / "artifacts/local/qwen-backend-live.json"))
+    parser.add_argument("--scenario", choices=("d4", "collision"), default="d4")
     args = parser.parse_args()
     load_env_file(args.env_file)
     os.environ.update(DISPATCH_ENABLE_AUTH="1", DISPATCH_ENABLE_AGENT="1", DISPATCH_ENABLE_ML="1",
                       DISPATCH_ENABLE_DEMO_TRAFFIC="0", DISPATCH_SOURCE_KEY=secrets.token_urlsafe(32))
     report = {"status": "FAIL", "live_backend": True, "real_model_requests": True,
-              "transport": "loopback HTTP via uvicorn", "data": "explicit synthetic D4",
+              "transport": "loopback HTTP via uvicorn", "data": "explicit synthetic " + args.scenario,
               "scheduler": False, "inference": "real adapter on stored events, invoked directly",
               "checked_at": stamp()}
     started = time.monotonic()
@@ -65,23 +66,34 @@ def main():
                 login.raise_for_status()
                 headers = {"X-CSRF-Token": login.json()["csrf_token"],
                            "X-Expected-User": login.json()["user"]["id"]}
-                episode = json.loads((ROOT / "artifacts/local/d4-episode.json").read_text(encoding="utf-8"))
-                original = json.loads((ROOT / "artifacts/local/d4-agent-snapshot.json").read_text(encoding="utf-8"))["observations"][0]
                 end = datetime.now(timezone.utc)
                 end = end.fromtimestamp(int(end.timestamp()) // 5 * 5, tz=timezone.utc) - timedelta(seconds=5)
-                shift = end - parse_time(original["window_end"])
-                events = [event for event in episode["events"] if parse_time(event["event_time"]) <= parse_time(original["window_end"])]
+                if args.scenario == "d4":
+                    episode = json.loads((ROOT / "artifacts/local/d4-episode.json").read_text(encoding="utf-8"))
+                    original = json.loads((ROOT / "artifacts/local/d4-agent-snapshot.json").read_text(encoding="utf-8"))["observations"][0]
+                    shift = end - parse_time(original["window_end"])
+                    events = [event for event in episode["events"] if parse_time(event["event_time"]) <= parse_time(original["window_end"])]
+                else:
+                    end = datetime.now(timezone.utc) - timedelta(milliseconds=100)
+                    shift = timedelta(0)
+                    events = [{"event_id": "live-pair-" + asset, "event_time": stamp(end),
+                               "sensor_id": "POS-" + asset, "type": "position", "demo": True,
+                               "payload": {"asset_id": asset, "x": 40, "y": y}}
+                              for asset, y in (("V1", 74), ("V3", 74.5))]
                 for event in events:
                     event = {**event, "event_time": stamp(parse_time(event["event_time"]) + shift)}
                     response = client.post("/api/events", json=event, headers={"X-Source-Key": os.environ["DISPATCH_SOURCE_KEY"]})
                     response.raise_for_status()
                 backend = app.state.service
-                saved = backend.event_history("V1", stamp(end-timedelta(seconds=10)), stamp(end), 100)
-                observation = app.state.ml.evaluate("V1", saved, stamp(end))
-                backend.register_model_observation(observation)
-                if observation["status"] != "anomaly":
-                    raise RuntimeError("Перенесённая MLP не подтвердила D4")
-                incident = next(item for item in backend.list_incidents() if item["type"] == "model_anomaly")
+                observation = None
+                if args.scenario == "d4":
+                    saved = backend.event_history("V1", stamp(end-timedelta(seconds=10)), stamp(end), 100)
+                    observation = app.state.ml.evaluate("V1", saved, stamp(end))
+                    backend.register_model_observation(observation)
+                    if observation["status"] != "anomaly":
+                        raise RuntimeError("Перенесённая MLP не подтвердила D4")
+                incident = next(item for item in backend.list_incidents()
+                                if item["type"] == ("model_anomaly" if args.scenario == "d4" else "collision"))
                 response = client.post(f"/api/incidents/{incident['incident_id']}/analysis", headers=headers)
                 response.raise_for_status()
                 job_id = response.json()["job_id"]
@@ -97,10 +109,13 @@ def main():
                               stored_events=len(events), auth_enabled=client.get("/api/health").json()["auth"]["enabled"])
                 if job["status"] != "completed":
                     raise RuntimeError("Анализ Qwen завершился ошибкой: " + json.dumps(job.get("error"), ensure_ascii=False))
-                verified = {fact["field"] for fact in job["result"]["facts"]
-                            if fact["source"] == "model_observation" and fact["id"] == observation["observation_id"]}
-                if not {"status", "score", "threshold"} <= verified:
-                    raise RuntimeError("В отчёте нет обязательных фактов MLP")
+                if args.scenario == "d4":
+                    verified = {fact["field"] for fact in job["result"]["facts"]
+                                if fact["source"] == "model_observation" and fact["id"] == observation["observation_id"]}
+                    if not {"status", "score", "threshold"} <= verified:
+                        raise RuntimeError("В отчёте нет обязательных фактов MLP")
+                elif not {event["event_id"] for event in events} <= set(job["result"]["evidence_event_ids"]):
+                    raise RuntimeError("В отчёте нет доказательств обеих машин")
                 report["status"] = "PASS"
         except Exception as error:
             report["error"] = str(error)

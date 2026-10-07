@@ -22,9 +22,9 @@ $loaded = @($loadedModels | Where-Object {
     $_.identifier -eq 'hackathon-qwen3-4b'
 })
 if (!$loaded.Count) {
-    & $localCliPath load qwen3-4b --identifier hackathon-qwen3-4b --context-length 4096 --gpu max --parallel 1
+    & $localCliPath load qwen3-4b --identifier hackathon-qwen3-4b --context-length 8192 --gpu max --parallel 1
     if ($LASTEXITCODE -ne 0) { throw 'Не удалось загрузить Qwen3 4B' }
-} elseif ($loaded[0].modelKey -ne 'qwen3-4b' -or $loaded[0].contextLength -ne 4096) {
+} elseif ($loaded[0].modelKey -ne 'qwen3-4b' -or $loaded[0].contextLength -ne 8192) {
     throw 'API-идентификатор занят другой конфигурацией. Проверьте lms ps перед запуском'
 }
 & $localCliPath server start --port 1234 --bind 127.0.0.1

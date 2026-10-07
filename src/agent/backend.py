@@ -13,6 +13,8 @@ def capture_snapshot(service, incident_id):
             raise AgentError("not_found", "Происшествие не найдено.", 404)
         as_of = stamp(service.clock())
         subject = incident.get("asset_id") or incident.get("employee_id")
+        subjects = list(dict.fromkeys(value for value in
+                        (subject, incident.get("other_asset_id")) if value))
         observation_id = incident.get("details", {}).get("observation_id")
         observations = []
         if observation_id:
@@ -39,15 +41,15 @@ def capture_snapshot(service, incident_id):
             if not event:
                 raise AgentError("snapshot_invalid", "Исходное событие отсутствует в базе.")
             events[event_id] = event
-        if subject:
+        for subject_id in subjects:
             for row in db.execute("SELECT body FROM events WHERE asset_id=? "
-                                  "ORDER BY event_time DESC,event_id DESC LIMIT 100", (subject,)):
+                                  "ORDER BY event_time DESC,event_id DESC LIMIT 100", (subject_id,)):
                 event = json.loads(row[0])
                 if len(events) >= 100:
                     break
                 events.setdefault(event["event_id"], event)
         rows = sorted(events.values(), key=lambda event: (event["event_time"], event["event_id"]))
-        policies = {subject: service.asset_policy(subject)} if subject else {}
+        policies = {subject_id: service.asset_policy(subject_id) for subject_id in subjects}
         sensor_id = incident.get("sensor_id")
         health = {}
         if sensor_id:
