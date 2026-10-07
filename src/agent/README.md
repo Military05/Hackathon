@@ -1,11 +1,29 @@
-# src/agent
+# B1: общий локальный диспетчер
 
-## Обновлённая цель v2
+Реализованы LM Studio/OpenAI-compatible и Ollama adapters, четыре read-only tools,
+сохранённый snapshot, проверка ID/полей/значений, общий SQLite job store и async worker.
+После аудита: 1 running, 2 queued, 120 с ожидания, 60 с всего выполнения, 3 обращения
+к модели, 6 tools. Ожидаемое время проверяется до приёма и строго меньше queue budget.
 
-Гаджи: Bionic Local → проверенный LM Studio/openai_compatible API; Ollama резерв. Общая очередь 1 running/20 queued/120 секунд ожидания/60 выполнения; tools/evidence/cache/restart. Не выполняет координационные действия. ../../docs/DISPATCH_OPERATIONS.md.
+Qwen3 4B — готовая локальная языковая модель только для диспетчера. Собственная обучаемая
+нейросеть — src/ml. Веса Qwen здесь не обучаются, облачного fallback нет.
 
-Если слово незнакомо, открой [словарь простыми словами](../../docs/GLOSSARY.md). Команды и названия полей не переводим: в коде они должны остаться точными.
+    python -m src.agent.probe --env-file .env
+    python -m src.agent.main --env-file .env --fixture tests/fixtures/agent_v2.json
 
-Гаджи (B1): LocalModelClient, tools (инструменты агента) registry (список разрешённых инструментов), bounded orchestrator, async job queue, evidence (исходные события, подтверждающие вывод) validator. Один active job, max3model/max6tools/deadline60. Read-only (только для чтения) tools; реальный trace (журнал действий). Формат в ../../docs/CONTRACTS.md.
+Сначала уже скачанная Qwen в Local/Bionic/LM Studio с API; точный model ID из /v1/models.
+Ollama qwen3:4b — резерв. Probe требует настоящую модель, tool call, Python-исполнение
+и валидный результат; test double и недоступный runtime не получают PASS.
+Main требует явный fixture и запускает только стенд B1 на 8001.
 
-Сейчас здесь инструкция; реализованный модуль ещё отсутствует.
+A1 подключает CaptureProvider, build_router и service в существующий lifespan и SQLite.
+Таблиц Incident/Asset/Policy здесь нет. Смена владельца не меняет snapshot. Новые данные
+и версии дают stale. Кэш общий; автор запроса хранится отдельно. Restart: running
+failed/interrupted, queued сохраняют оригинальный deadline. Конфигурацию сохранённого
+задания нельзя незаметно заменить; один worker защищён файловым lock.
+
+Текст измеренных фактов формирует программа из проверенных значений; гипотезы Qwen
+имеют confidence/limitations, рекомендации адресованы человеку. Tools не выполняют
+SQL, shell, управление оборудованием, звонки или координацию.
+
+Схемы и команды Windows: [AI_INTEGRATION](../../docs/AI_INTEGRATION.md).

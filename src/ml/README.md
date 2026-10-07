@@ -1,11 +1,20 @@
-# src/ml
+# B2: обученная модель движения
 
-## Обновлённая цель v2
+Реализованы генератор независимых эпизодов, единый movement-v1 extractor, обучение
+StandardScaler → MLPClassifier(16,8), выбор порога на validation, baseline,
+inference и экспорт независимого D4. Результаты: [ML_REPORT](../../docs/ML_REPORT.md).
 
-Гриша: D4 movement-v1, Pipeline/порог/версии/hash и независимые метрики; перенос готового артефакта на ноутбук. Три профиля видят общий ModelObservation. Не прогноз столкновения. ../../docs/CONTRACTS.md.
+    python -m src.ml.generate --seed 42 --test-seed 20261007 --output data/generated
+    python -m src.ml.train --input data/generated --output artifacts/local
+    python -m src.ml.evaluate --input data/generated --model artifacts/local/movement.joblib
+    python -m src.ml.demo --input data/generated --model artifacts/local/movement.joblib
 
-Если слово незнакомо, открой [словарь простыми словами](../../docs/GLOSSARY.md). Команды и названия полей не переводим: в коде они должны остаться точными.
+Для готового артефакта обучение не требуется. MovementModel загружается один раз.
+WindowEvaluator публикует окна на UTC сетке 5 секунд; fresh=False запрещает повторный
+lifecycle. Backend сохраняет/восстанавливает watermark и AnomalyState. Два достаточных
+normal окна завершают условие; insufficient_data не normal. Dismiss сохраняет raw
+observation и подавляет повтор внутри эпизода до восстановления.
 
-Гриша (B2): общий movement-v1 extractor (функция вычисления признаков) для offline/online, episode split (разделение данных), Pipeline scaler+MLP (небольшая многослойная нейросеть)(16,8), train/evaluate/inference. Отчёт docs/ML_REPORT.md. Не обучать в HTTP (протокол обмена с сервером) handler (обработчик запроса). Артефакты artifacts/local не в Git.
-
-Сейчас здесь инструкция; реализованный модуль ещё отсутствует.
+Веса/данные исключены из Git согласно инструкции проекта. Перенос и подключение:
+[AI_INTEGRATION](../../docs/AI_INTEGRATION.md). Оценка unusual movement на синтетике
+не устанавливает качество настоящего предприятия или вероятность столкновения.
