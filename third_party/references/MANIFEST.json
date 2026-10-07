@@ -1,0 +1,87 @@
+{
+  "retrieved_at": "2026-10-07",
+  "method": "GitHub plugin fetch_file with fixed commit SHA",
+  "note": "Source references are not platform runtime installations. Runtime adaptation is documented in docs/UPSTREAM_REUSE.md.",
+  "files": [
+    {
+      "repository": "ExperienceLovelace/ha-floorplan",
+      "ref": "56b969418215e99081650534194990d061cdf35a",
+      "source_path": "LICENSE",
+      "source_git_blob_sha": "a228d27ed5957b0547e579bb1ac9ff036bda5b4d",
+      "local_path": "third_party/references/ha-floorplan/LICENSE",
+      "url": "https://github.com/ExperienceLovelace/ha-floorplan/blob/56b969418215e99081650534194990d061cdf35a/LICENSE",
+      "kind": "verbatim_reference",
+      "runtime": false
+    },
+    {
+      "repository": "ExperienceLovelace/ha-floorplan",
+      "ref": "56b969418215e99081650534194990d061cdf35a",
+      "source_path": "docs/_docs/floorplan/examples/home/home.css",
+      "source_git_blob_sha": "437f41cb2b4a774e1f70a39616e18cf400074755",
+      "local_path": "third_party/references/ha-floorplan/home.css",
+      "url": "https://github.com/ExperienceLovelace/ha-floorplan/blob/56b969418215e99081650534194990d061cdf35a/docs/_docs/floorplan/examples/home/home.css",
+      "kind": "verbatim_reference",
+      "runtime": false
+    },
+    {
+      "repository": "thingsboard/thingsboard",
+      "ref": "258298131ca811fd50008636e08dc384867936ce",
+      "source_path": "LICENSE",
+      "source_git_blob_sha": "c8f142f0bf9312fe669e9294da541b36ad2e48f2",
+      "local_path": "third_party/references/thingsboard/LICENSE",
+      "url": "https://github.com/thingsboard/thingsboard/blob/258298131ca811fd50008636e08dc384867936ce/LICENSE",
+      "kind": "verbatim_reference",
+      "runtime": false
+    },
+    {
+      "repository": "thingsboard/thingsboard",
+      "ref": "258298131ca811fd50008636e08dc384867936ce",
+      "source_path": "common/data/src/main/java/org/thingsboard/server/common/data/alarm/AlarmStatus.java",
+      "source_git_blob_sha": "bb445875d2696b8999df974f0f926f4ae2eed87a",
+      "local_path": "third_party/references/thingsboard/AlarmStatus.java",
+      "url": "https://github.com/thingsboard/thingsboard/blob/258298131ca811fd50008636e08dc384867936ce/common/data/src/main/java/org/thingsboard/server/common/data/alarm/AlarmStatus.java",
+      "kind": "verbatim_reference",
+      "runtime": false
+    },
+    {
+      "repository": "thingsboard/thingsboard",
+      "ref": "258298131ca811fd50008636e08dc384867936ce",
+      "source_path": "common/data/src/main/java/org/thingsboard/server/common/data/alarm/AlarmSeverity.java",
+      "source_git_blob_sha": "ddfd0544a5011fbe2194b09f0aa19bed27d85bd3",
+      "local_path": "third_party/references/thingsboard/AlarmSeverity.java",
+      "url": "https://github.com/thingsboard/thingsboard/blob/258298131ca811fd50008636e08dc384867936ce/common/data/src/main/java/org/thingsboard/server/common/data/alarm/AlarmSeverity.java",
+      "kind": "verbatim_reference",
+      "runtime": false
+    },
+    {
+      "repository": "traccar/traccar",
+      "ref": "b89a69251bded7036488c765ec17499cb5e88346",
+      "source_path": "LICENSE.txt",
+      "source_git_blob_sha": "d645695673349e3947e8e5ae42332d0ac3164cd7",
+      "local_path": "third_party/references/traccar/LICENSE.txt",
+      "url": "https://github.com/traccar/traccar/blob/b89a69251bded7036488c765ec17499cb5e88346/LICENSE.txt",
+      "kind": "verbatim_reference",
+      "runtime": false
+    },
+    {
+      "repository": "traccar/traccar",
+      "ref": "b89a69251bded7036488c765ec17499cb5e88346",
+      "source_path": "src/main/java/org/traccar/geofence/GeofencePolygon.java",
+      "source_git_blob_sha": "13f6658ef17adff3a885cb61f9730522adeaa3ec",
+      "local_path": "third_party/references/traccar/GeofencePolygon.java",
+      "url": "https://github.com/traccar/traccar/blob/b89a69251bded7036488c765ec17499cb5e88346/src/main/java/org/traccar/geofence/GeofencePolygon.java",
+      "kind": "verbatim_reference",
+      "runtime": false
+    },
+    {
+      "repository": "traccar/traccar",
+      "ref": "b89a69251bded7036488c765ec17499cb5e88346",
+      "source_path": "src/test/java/org/traccar/geofence/GeofencePolygonTest.java",
+      "source_git_blob_sha": "bbf19cc381ed727d6f3d77f2500c0d4ca64fcd67",
+      "local_path": "third_party/references/traccar/GeofencePolygonTest.java",
+      "url": "https://github.com/traccar/traccar/blob/b89a69251bded7036488c765ec17499cb5e88346/src/test/java/org/traccar/geofence/GeofencePolygonTest.java",
+      "kind": "verbatim_reference",
+      "runtime": false
+    }
+  ]
+}
