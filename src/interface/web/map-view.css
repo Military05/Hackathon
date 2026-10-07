@@ -2,6 +2,14 @@
 #map .enterprise-label-marker{border:0;background:none;pointer-events:none}
 #map .enterprise-building-label{display:flex;align-items:center;justify-content:center;padding:2px;box-sizing:border-box;overflow:hidden;text-align:center;color:#e2edf6;font-weight:600;line-height:1.15;text-shadow:0 1px 2px #142637;white-space:normal}
 #map .enterprise-building-label>span{display:block;max-width:100%;max-height:100%;overflow:hidden;overflow-wrap:anywhere}
+#map .enterprise-building-label.controlled{flex-direction:column;gap:2px}
+#map .enterprise-building-label.controlled .enterprise-building-name{flex:0 1 auto;min-height:0;min-width:0}
+#map .enterprise-building-control{flex:none;max-width:100%;box-sizing:border-box;padding:0 2px;border-radius:2px;line-height:10px;color:#d7e8f3;background:#10283766;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#map .enterprise-building-control[data-operator-id="dispatcher-1"]{color:#c4e3ff}
+#map .enterprise-building-control[data-operator-id="dispatcher-2"]{color:#c7f1d6}
+#map .enterprise-building-control[data-operator-id="dispatcher-3"]{color:#ead7ff}
+#map .enterprise-building-label.controlled.compact{flex-direction:row;gap:3px;white-space:nowrap}
+#map .enterprise-building-label.controlled.compact .enterprise-building-name{white-space:nowrap;text-overflow:ellipsis}
 #map .enterprise-sector-label-marker,#map .enterprise-zone-label-marker{background:none;border:0;pointer-events:none}
 #map .enterprise-sector-label{display:block;text-align:center;white-space:nowrap;color:#c1cecf;font-size:10px;line-height:15px;font-weight:600;text-shadow:0 1px 2px #132b38}
 #map .enterprise-zone-label{display:flex;align-items:center;justify-content:center;padding:2px;box-sizing:border-box;overflow:hidden;text-align:center;font-weight:600;line-height:1.15;text-shadow:0 1px 2px #182b35}
