@@ -86,13 +86,13 @@ D4: настоящий ML-артефакт, независимые метрик�
 
 | Поле | Заполняет интегратор |
 | --- | --- |
-| Проверенная ветка и полный SHA | — |
-| Дата, проверявший и команды | — |
-| Runtime/QA/JS результаты | — |
-| Live browser: входы, сценарии, карта, CSV, page errors | — |
-| Ссылка на main/commit после объединения | — |
-| Неисправленные ошибки и NOT RUN | — |
-| Отдельные ML/ИИ SHA и измерения, если поставлены | — |
+| Проверенная ветка и полный SHA | codex/factory-v5, 50801c392eff751053d9c977e946132b60d1da15; последующие изменения только документация |
+| Дата, проверявший и команды | 2026-10-07, Codex; unittest discover tests/runtime (89 + test_product_v5 7), tests/qa; node --test interface/map/sensors; node --check и git diff --check |
+| Runtime/QA/JS результаты | 96 / 18 / 65 PASS; журналы runtime/v5-runtime-final.log, v5-product-final.log, v5-qa-final.log, v5-ui-final.log локальные, не в Git |
+| Live browser: входы, сценарии, карта, CSV, page errors | Диспетчер 2: вход и сектор, shift 3/3 и транспорт, поиск U2; HTTP CSV PASS, сохранение ОС из IAB NOT RUN; консоль без error/warn при просмотре |
+| Ссылка на main/commit после объединения | [Код проверенного этапа](https://github.com/Military05/Hackathon/commit/50801c392eff751053d9c977e946132b60d1da15); финальный merge SHA сообщается координатору, ветка [main](https://github.com/Military05/Hackathon/tree/main) |
+| Неисправленные ошибки и NOT RUN | Известных блокирующих дефектов в проверенном базовом пути нет. Полный живой показ трёх аккаунтов, целевые ноутбуки, удалённый TLS, сохранение CSV ОС и общий ML/ИИ NOT RUN |
+| Отдельные ML/ИИ SHA и измерения, если поставлены | Не включались в эту поставку; исходники src/agent, src/ml, src/simulator не изменены |
 
 В main объединяется проверенный код по поручению координатора, без force push
 и без изменения чужих модулей. Если код изменился после проверки, повторяются
