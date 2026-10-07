@@ -1,0 +1,73 @@
+{
+  "model_version": "movement-mlp-v1-724859bc62cc",
+  "dataset_sha256": "724859bc62cc1d08dfa6d7412e8551e09ac764aefb1f5645405c5e3e8ad2ceda",
+  "artifact_sha256": "24b808dd0a513fc701862df96bbcd5fff9df6e048ad40d7e5ed3ae96cec351a7",
+  "test_used_for_threshold": false,
+  "mlp": {
+    "threshold": 0.5576280463791088,
+    "windows": 800,
+    "precision": 0.9828767123287672,
+    "recall": 0.9965277777777778,
+    "f1": 0.9896551724137931,
+    "confusion_matrix": [
+      [
+        507,
+        5
+      ],
+      [
+        1,
+        287
+      ]
+    ],
+    "confusion_order": [
+      "normal",
+      "anomaly"
+    ],
+    "episodes": 64,
+    "anomaly_episodes": 32,
+    "detected_anomaly_episodes": 32,
+    "episodes_with_false_alarm": 3,
+    "false_incidents": 3,
+    "missed_anomaly_episodes": 0,
+    "latency_seconds_median": 10.0,
+    "latency_seconds_max": 10.0,
+    "latency_scope": "event-time onset to first positive homogeneous window; includes 10s window accumulation"
+  },
+  "baseline": {
+    "threshold": 1.6576603808291348,
+    "windows": 800,
+    "precision": 0.9681978798586572,
+    "recall": 0.9513888888888888,
+    "f1": 0.9597197898423818,
+    "confusion_matrix": [
+      [
+        503,
+        9
+      ],
+      [
+        14,
+        274
+      ]
+    ],
+    "confusion_order": [
+      "normal",
+      "anomaly"
+    ],
+    "episodes": 64,
+    "anomaly_episodes": 32,
+    "detected_anomaly_episodes": 32,
+    "episodes_with_false_alarm": 7,
+    "false_incidents": 7,
+    "missed_anomaly_episodes": 0,
+    "latency_seconds_median": 10.0,
+    "latency_seconds_max": 30.0,
+    "latency_scope": "event-time onset to first positive homogeneous window; includes 10s window accumulation"
+  },
+  "inference_milliseconds": {
+    "samples": 104,
+    "median": 0.542099995072931,
+    "p95": 0.7558450510259718,
+    "max": 0.8229999803006649,
+    "machine": "Codex execution environment, not the target laptop"
+  }
+}

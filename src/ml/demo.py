@@ -41,7 +41,7 @@ def export_demo(input_directory, artifact, output_directory):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", default="data/generated")
-    parser.add_argument("--model", default="artifacts/local/movement.joblib")
+    parser.add_argument("--model", default="models/movement-v1/movement.joblib")
     parser.add_argument("--output", default="artifacts/local")
     args = parser.parse_args()
     print(json.dumps(export_demo(args.input, args.model, args.output), indent=2))

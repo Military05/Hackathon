@@ -35,6 +35,12 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class AIIntegrationTests(unittest.TestCase):
+    def test_repository_model_is_ready_without_local_transfer(self):
+        with patch.dict(os.environ, {}, clear=True):
+            model = MovementModel()
+        self.assertEqual(model.health()["status"], "ready")
+        self.assertEqual(model.artifact, ROOT / "models/movement-v1/movement.joblib")
+
     @classmethod
     def setUpClass(cls):
         cls.experiment = tempfile.TemporaryDirectory()

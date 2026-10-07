@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 class MovementModel(PipelineModel):
     def __init__(self, service=None, artifact=None):
         super().__init__(artifact or os.environ.get(
-            "DISPATCH_ML_ARTIFACT", str(ROOT / "artifacts/local/movement.joblib")))
+            "DISPATCH_ML_ARTIFACT", str(ROOT / "models/movement-v1/movement.joblib")))
         self.service = service
         self.lock = threading.Lock()
 
