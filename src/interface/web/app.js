@@ -222,7 +222,7 @@ function renderDemo(demo){
   S.demo=demo;const available=demo.available!==false&&demo.status!=="unavailable";
   const select=$("scenario"),scenarios=Array.isArray(demo.scenarios)?demo.scenarios:[];
   const signature=scenarios.map(id=>`${id}:${demoScenarioName(id)}`).join("|");
-  if(available&&scenarios.length&&select.dataset.scenarios!==signature){const previous=select.value;select.innerHTML=scenarios.map(id=>`<option value="${esc(id)}">${esc(demoScenarioName(id))}</option>`).join("");select.value=scenarios.includes(previous)?previous:scenarios.includes(demo.scenario)?demo.scenario:scenarios[0];select.dataset.scenarios=signature;}
+  if(available&&scenarios.length&&select.dataset.scenarios!==signature){const previous=select.dataset.scenarios?select.value:null;select.innerHTML=scenarios.map(id=>`<option value="${esc(id)}">${esc(demoScenarioName(id))}</option>`).join("");select.value=scenarios.includes(previous)?previous:scenarios.includes(demo.scenario)?demo.scenario:scenarios[0];select.dataset.scenarios=signature;}
   select.onchange=renderScenarioExpectation;renderScenarioExpectation();
   $("sim-status").textContent=demo.error?`Ошибка источника: ${demo.error}`:!available?"Источник движения пока не подключён":demo.running?`${demoScenarioName(demo.scenario)} · ${demo.events_sent??demo.event_count??0} событий`:"Сценарий остановлен · новые сигналы не поступают";
   $("start").disabled=!available||S.demoBusy;$("stop").disabled=!available||!demo.running||S.demoBusy;select.disabled=!available||S.demoBusy;
