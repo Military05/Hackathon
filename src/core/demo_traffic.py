@@ -23,7 +23,28 @@ SCENARIOS = {
     "forbidden-zone": "Въезд в закрытую зону",
     "unauthorized-access": "Проход без допуска",
     "sensor-offline": "Потеря связи с датчиком",
-    "simultaneous": "Три одновременных происшествия",
+    "simultaneous": "Несколько одновременных происшествий",
+    "route-deviation": "Отклонение транспорта от маршрута",
+    "collision": "Пересечение транспорта на проезде",
+    "safe-passing": "Безопасный разъезд транспорта",
+    "production-zone": "Погрузчик в производственной зоне",
+    "service-zone": "Служебный транспорт в закрытой зоне",
+}
+
+SCENARIO_INFO = {
+    "normal": ("Три машины следуют личным маршрутам с остановками у назначения.", "Нарушений не ожидается."),
+    "logistics": ("Погрузка, движение по складскому маршруту и отгрузка.", "Нарушений не ожидается."),
+    "shift": ("Сначала три подтверждённых прохода через КПП, затем движение транспорта.", "Разрешённые проходы; транспорт ждёт проверки людей."),
+    "service": ("Объезд служебного транспорта по личному маршруту.", "Нарушений не ожидается."),
+    "forbidden-zone": ("Машина въезжает в зону без допуска, затем выезжает.", "Въезд без допуска; возможно отклонение от личного маршрута."),
+    "unauthorized-access": ("Датчик КПП фиксирует вход U4 без допуска и выход.", "Подтверждённый проход без допуска."),
+    "sensor-offline": ("Источник HB-QA прекращает передачу с 5-й до 17-й секунды.", "Потеря сигнала датчика; восстановление после настоящего heartbeat."),
+    "simultaneous": ("Нарушение зоны, проход КПП и потеря источника в одном запуске.", "Несколько независимых правил, включая контроль личного маршрута."),
+    "route-deviation": ("Машина движется по дороге за пределами своего личного маршрута и возвращается.", "Отклонение после двух полученных точек."),
+    "collision": ("Две машины сближаются на проезде и затем расходятся.", "Пересечение транспорта по свежим позициям; возможное отклонение от маршрута."),
+    "safe-passing": ("Две машины разъезжаются с достаточным расстоянием.", "Пересечение транспорта не должно фиксироваться."),
+    "production-zone": ("Погрузчик входит в красную зону запрета для своего типа и выходит.", "Запрет для типа транспорта; возможно отклонение от личного маршрута."),
+    "service-zone": ("Служебная машина входит в запрещённый для неё участок и возвращается.", "Запрет для служебного транспорта и отклонение от личного маршрута."),
 }
 
 
@@ -111,6 +132,8 @@ class DemoRunner:
         self._shift_employees = []
         self._transport_elapsed = None
         self._gate_sensor = None
+        self._safety_paths = {}
+        self._safety_returns = {}
 
     def status(self):
         return {
@@ -126,7 +149,9 @@ class DemoRunner:
             "update_interval_seconds": self.interval,
             "error": self.error,
             "vehicle_states": dict(self._vehicles),
-            "scenario_options": [{"id": key, "name": name} for key, name in SCENARIOS.items()],
+            "scenario_options": [{"id": key, "name": name, "description": SCENARIO_INFO[key][0], "expected_alarm": SCENARIO_INFO[key][1]} for key, name in SCENARIOS.items()],
+            "scenario_description": SCENARIO_INFO.get(self.scenario, (None, None))[0],
+            "expected_alarm": SCENARIO_INFO.get(self.scenario, (None, None))[1],
             "shift": self.operations.shift(self._shift_id) if self._shift_id else None,
         }
 
@@ -137,6 +162,8 @@ class DemoRunner:
         self._shift_id = None
         self._transport_elapsed = None
         self._shift_employees = []
+        self._safety_paths = {}
+        self._safety_returns = {}
         self._gate_sensor = next((sid for sid, sensor in self.service.sensors_by_id.items()
                                   if sensor["type"] == "access" and sensor.get("building_id") == "G1"), None)
         self.scenario = scenario
@@ -149,7 +176,7 @@ class DemoRunner:
         self._journeys = {}
         self._fault_route = self._fault_journey = None
         self._run_id = uuid.uuid4().hex[:12]
-        routes = self.service.site.get("routes", {})
+        routes = self.service.site.get("demo_routes", self.service.site.get("routes", {}))
         vehicles = [asset for asset in self.service.site["assets"] if asset["type"] == "vehicle"]
         for index, asset in enumerate(vehicles):
             route = ArcRoute(routes[asset["id"]])
@@ -189,6 +216,27 @@ class DemoRunner:
         if scenario == "shift":
             self._shift_employees = self.service.site.get("shift_employees", ["U1", "U2", "U3"])
             self._shift_id = self.operations.start_shift(self._shift_employees)
+        definition = self.service.site.get("demo_safety_scenarios", {}).get(scenario)
+        if scenario in ("route-deviation", "collision", "safe-passing", "production-zone", "service-zone") and not definition:
+            raise ValueError("The site needs demo_safety_scenarios." + scenario)
+        if definition:
+            for asset_id, waypoints in definition.get("asset_paths", {}).items():
+                if asset_id not in self._journeys or len(waypoints) < 2:
+                    raise ValueError("Safety paths need a known vehicle and at least two timestamped positions")
+                path = []
+                for waypoint in waypoints:
+                    when, position = float(waypoint["at"]), tuple(float(value) for value in waypoint["point"])
+                    if not math.isfinite(when) or when < 0 or len(position) != 2 or not all(math.isfinite(value) and 0 <= value <= 100 for value in position):
+                        raise ValueError("Safety waypoints must have finite time and coordinates within the plan")
+                    if path and when <= path[-1][0]:
+                        raise ValueError("Safety waypoint times must strictly increase")
+                    path.append((when, position))
+                journey = self._journeys[asset_id]
+                anchor = journey.route.nearest_distance(path[-1][1])
+                if math.dist(journey.route.point(anchor), path[-1][1]) > 0.01:
+                    raise ValueError("Each safety path must finish on its own normal route for a continuous recovery")
+                self._safety_paths[asset_id] = path
+                self._safety_returns[asset_id] = Journey(journey.route, anchor, journey.speed, 0.0)
 
     async def start(self, scenario):
         await self.stop()
@@ -258,6 +306,15 @@ class DemoRunner:
 
     def _position(self, asset_id, elapsed):
         journey = self._journeys[asset_id]
+        path = self._safety_paths.get(asset_id)
+        if path and elapsed >= path[0][0]:
+            if elapsed >= path[-1][0]:
+                return self._safety_returns[asset_id].position(elapsed - path[-1][0]), "moving"
+            index = max(0, bisect_right([waypoint[0] for waypoint in path], elapsed) - 1)
+            start, end = path[index], path[index + 1]
+            fraction = (elapsed - start[0]) / (end[0] - start[0])
+            point = tuple(start[1][n] + (end[1][n] - start[1][n]) * fraction for n in (0, 1))
+            return point, self.scenario
         if asset_id == "V1" and self._fault_route:
             speed, hold = 1.8, 8.0
             travel = self._fault_route.length / speed
