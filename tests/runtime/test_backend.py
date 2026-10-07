@@ -72,7 +72,8 @@ class BackendAcceptance(unittest.TestCase):
     def test_contract_geometry_and_no_gps(self):
         site = self.client.get("/api/site").json()
         self.assertEqual(site["coordinate_system"]["gps"], False)
-        self.assertEqual({b["id"] for b in site["buildings"]}, {"W1", "W2", "P1", "P2", "O1", "G1"})
+        self.assertTrue({"W1", "W2", "P1", "P2", "O1", "G1"} <= {b["id"] for b in site["buildings"]})
+        self.assertGreaterEqual(len(site["buildings"]), 14)
         self.assertTrue(contains_point(0, 0, [(0, 0), (10, 0), (10, 10), (0, 10)]))
         self.assertFalse(contains_point(11, 5, [(0, 0), (10, 0), (10, 10), (0, 10)]))
         self.assertEqual(self.client.get("/api/health").json()["contract_version"], 2)
@@ -289,9 +290,11 @@ class BackendAcceptance(unittest.TestCase):
         self.assertEqual(self.client.get("/api/incidents?scope=workstation").status_code, 422)
         denied = self.patch(incident, "claim", operator="dispatcher-2")
         self.assertEqual(denied.json()["code"], "operator_conflict")
-        self.position(x=50, y=99, vehicle="V2")
+        checkpoint = next(area["rectangle"] for area in self.service.site["site_areas"] if area["id"] == "checkpoint")
+        self.position(x=checkpoint["x"] + checkpoint["width"] / 2,
+                      y=checkpoint["y"] + checkpoint["height"] / 2, vehicle="V2")
         self.assertEqual(next(a for a in self.service.list_assets() if a["id"] == "V2")["site_area_id"], "checkpoint")
-        self.position(x=50, y=2, vehicle="V3")
+        self.position(x=99, y=99, vehicle="V3")
         self.assertEqual(next(a for a in self.service.list_assets() if a["id"] == "V3")["site_area_id"], "unknown")
 
 

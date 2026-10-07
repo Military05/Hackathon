@@ -12,11 +12,16 @@ Report the branch and full source commit SHA. Never claim tests were run unless 
 - Gadzhi / separate controller: src/agent, local model provider and agent jobs.
 - Liya: QA scenarios, integration acceptance and target laptop measurements.
 
-The current delivery covers Egor S. and Egor M. only. Agent, simulator and ML
+The current delivery covers Egor S. and Egor M. only. Agent, external simulator and ML
 extensions are disabled by default and are implemented separately. Do not edit or
 merge those modules without a direct task from their owner/coordinator.
 Use the shared Event/Incident contracts; coordinate any schema/API change with its
 consumers. Do not invent successful model or simulation responses.
+
+The coordinator requested built-in factory traffic in src/core/demo_traffic.py.
+It generates actual demo Events on shared routes and is enabled by default.
+Keep this fallback separate from the external simulator, ML and agent owners.
+Read docs/FACTORY_TRAFFIC_V4.md and docs/FACTORY_LAYOUT_V4.md for this update.
 
 Work in isolated branches/checkouts. Do not modify another person's dirty checkout.
 Use precise allowed files, full SHA and commands for every handoff. Preserve existing

@@ -14,25 +14,20 @@
 </header>
 <div id="error" class="error" hidden role="alert"></div>
 <div class="app-layout">
-  <nav class="development-sidebar" aria-label="Этапы разработки">
-    <div class="sidebar-heading"><span class="eyebrow">Развитие интерфейса</span><h2>Этапы обновления</h2><p>Статус проверки этапов</p></div>
-    <ol id="development-stages" class="stage-list">
-      <li><span class="stage-number">01</span><div><strong>План предприятия</strong><p id="stage-note-plan">Здания, дороги и маршруты</p><span id="stage-plan" class="stage-status">Проверяем</span></div></li>
-      <li><span class="stage-number">02</span><div><strong>Оформление карты</strong><p id="stage-note-map">Масштаб, подписи, объекты</p><span id="stage-map" class="stage-status">Проверяем</span></div></li>
-      <li><span class="stage-number">03</span><div><strong>Работа диспетчера</strong><p id="stage-note-dispatch">Карточка, карта, диагностика</p><span id="stage-dispatch" class="stage-status">Проверяем</span></div></li>
-    </ol>
-    <div class="sidebar-note">Одна карта и общий сервер для трёх рабочих мест.</div>
-  </nav>
   <div class="dashboard">
-    <section class="page-heading"><div><span class="eyebrow">Оперативный мониторинг</span><h1>Демонстрационное предприятие</h1><p>Симуляция · условные координаты · без GPS</p></div><button id="sound">Включить звук</button></section>
+    <section class="page-heading"><div><span class="eyebrow">Оперативный мониторинг</span><h1>Автомобильный завод</h1><p>Демонстрационная площадка · три рабочих места</p></div><button id="sound">Включить звук</button></section>
     <section id="summary" class="summary" aria-label="Сводка секторов"></section>
     <main class="workspace">
+      <div class="map-column">
       <section class="map-shell">
         <div class="section-head"><div><h2>План предприятия</h2><small>Выберите объект или датчик</small></div><div class="map-tools"><button id="my-sector">Мой сектор</button><button id="fit">Весь план</button></div></div>
         <div id="map" aria-label="Интерактивная карта предприятия"></div>
-        <div class="legend"><span><i class="legend-vehicle" aria-hidden="true"></i>Транспорт</span><span><i class="legend-sensor" aria-hidden="true"></i>Датчик</span><span><i class="dot alarm" aria-hidden="true"></i>Нарушение / нет связи</span><span><i class="dot stale" aria-hidden="true"></i>Устаревшие данные</span></div>
+        <div class="legend"><span title="П — погрузчик; С — служебный транспорт"><i class="legend-vehicle" aria-hidden="true">П</i>Транспорт · П / С</span><span><i class="legend-sensor" aria-hidden="true"></i>Датчик</span><span><i class="dot alarm" aria-hidden="true"></i>Нарушение / нет связи</span><span><i class="dot stale" aria-hidden="true"></i>Устаревшие данные</span></div>
         <div id="asset-info" class="asset-info" aria-live="polite">Выберите транспорт, здание или датчик. Для выбранного происшествия используйте «Показать на карте».</div>
       </section>
+      <details class="demo-panel" open><summary class="panel-summary"><span><strong>Движение и сценарии</strong><small id="sim-status">Сценарий остановлен</small></span><span class="disclosure-note">Управление</span></summary><div class="simulation"><label for="scenario" class="sr-only">Сценарий</label><select id="scenario"><option value="normal">Штатная работа</option><option value="logistics">Складская логистика</option><option value="shift">Пересменка</option><option value="service">Обслуживание территории</option><option value="forbidden-zone">Запрещённая зона</option><option value="unauthorized-access">Проход без допуска</option><option value="sensor-offline">Потеря связи</option><option value="unusual-movement">Необычное движение</option><option value="simultaneous">Три происшествия</option></select><button id="start" class="primary">Запустить сценарий</button><button id="stop">Остановить</button></div><p class="demo-note">Сценарии создают синтетические события на общем сервере раз в секунду. Запускайте и останавливайте вручную; все рабочие места видят одни данные.</p></details>
+      <details class="sensor-panel" open><summary class="panel-summary"><span><strong>Датчики и диагностика</strong><small>Связь и актуальность данных</small></span><span id="ml-status"></span></summary><div id="sensors"></div></details>
+      </div>
       <div class="dispatch-column">
         <aside class="journal-panel">
           <div class="section-head"><h2>Происшествия</h2><label class="all"><input type="checkbox" id="all">Всё предприятие</label></div>
@@ -42,10 +37,6 @@
         <article class="detail"><div class="section-head"><h2>Выбранное происшествие</h2><span id="selected-id"></span></div><div id="details"><p class="muted">Выберите случай в журнале. Просмотр карточки не назначает ответственного.</p></div></article>
       </div>
     </main>
-    <section class="support-panels">
-      <details class="sensor-panel" open><summary class="panel-summary"><span><strong>Датчики и диагностика</strong><small>Связь и актуальность данных</small></span><span id="ml-status"></span></summary><div id="sensors"></div></details>
-      <details class="demo-panel"><summary class="panel-summary"><span><strong>Демонстрация</strong><small id="sim-status">Сценарий остановлен</small></span><span class="disclosure-note">Открыть управление</span></summary><div class="simulation"><label for="scenario" class="sr-only">Сценарий</label><select id="scenario"><option value="normal">Штатная работа</option><option value="forbidden-zone">D1 · Запрещённая зона</option><option value="unauthorized-access">D2 · Проход без допуска</option><option value="sensor-offline">D3 · Потеря связи</option><option value="unusual-movement">D4 · Необычное движение</option><option value="simultaneous">D5 · Три происшествия</option></select><button id="start" class="primary">Запустить сценарий</button><button id="stop">Остановить</button></div><p class="demo-note">Сценарии доступны после подключения отдельного симулятора. Панель не создаёт сигналы от имени датчиков.</p></details>
-    </section>
     <footer>Данные синтетические. Система обнаруживает нарушения и помогает организовать реакцию; команды транспорту и автоматический вызов охраны не выполняются.</footer>
   </div>
 </div>

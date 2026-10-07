@@ -33,6 +33,9 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None):
             demo, scenarios = DemoRunner(service), tuple(sorted(SCENARIOS))
         except Exception:
             log.exception("Simulator extension unavailable")
+    if demo is None and os.environ.get("DISPATCH_ENABLE_DEMO_TRAFFIC", "1") != "0":
+        from src.core.demo_traffic import DemoRunner, SCENARIOS
+        demo, scenarios = DemoRunner(service), tuple(SCENARIOS)
     if os.environ.get("DISPATCH_ENABLE_AGENT") == "1":
         try:
             from src.agent.runtime import AgentManager, make_router
@@ -74,7 +77,10 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None):
             manager.start()
         timer = asyncio.create_task(scheduler()) if enable_scheduler else None
         if demo and enable_scheduler and os.environ.get("DEMO_AUTOSTART", "1") == "1":
-            await demo.start("normal")
+            try:
+                await demo.start("normal")
+            except Exception:
+                log.exception("Demo traffic could not start")
         try:
             yield
         finally:
@@ -130,7 +136,10 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None):
         if set(body) != {"scenario"} or not isinstance(body.get("scenario"), str) or body["scenario"] not in scenarios:
             raise ApiError(422, "invalid_scenario", "Укажите один поддерживаемый scenario")
         async with demo_lock:
-            return await demo.start(body["scenario"])
+            try:
+                return await demo.start(body["scenario"])
+            except ValueError as exc:
+                raise ApiError(503, "demo_configuration_invalid", str(exc)) from exc
 
     @app.post("/api/demo/stop")
     async def demo_stop(body: dict = Body(default={}), x_demo_operator: str | None = Header(default=None)):

@@ -5,7 +5,8 @@ const labels = {open:"Не принято",acknowledged:"Принято",closed:
 const sectorNames = {logistics:"Логистика",production:"Производство",coordination:"Координация"};
 const actionNames = {detected:"Обнаружено",claim:"Ответственность принята",record_response:"Реакция записана",condition_restored:"Условие восстановлено",escalation:"Эскалация",request_transfer:"Передача предложена",accept_transfer:"Передача принята",cancel_transfer:"Передача отменена",reassign_unavailable:"Переназначение отсутствующего оператора",dismiss_model:"Модельное подозрение отклонено",close:"Обработка завершена"};
 const S = {site:null,map:null,assets:[],sensors:[],incidents:[],profiles:[],summary:{},selected:null,detail:null,detailId:null,operator:"dispatcher-1",cursor:0,sound:false,audio:null,job:null,session:crypto.randomUUID(),buildingLayers:new Map(),assetLayers:new Map(),sensorLayers:new Map(),asOf:Date.now(),serverOffset:0,busy:false,context:0,detailRequest:0,commandBusy:false,switching:false,presenceChain:Promise.resolve(),connectionError:false,agentAvailable:true,analysisSubmitting:false};
-Object.assign(S,{mapRenderer:null,diagnostics:null,noticeRows:[],stageCheckAt:0,stageBusy:false,objectSelection:null});
+Object.assign(S,{mapRenderer:null,diagnostics:null,noticeRows:[],objectSelection:null,demoBusy:false,demo:null});
+const scenarioNames={normal:"Штатная работа завода",logistics:"Доставка комплектующих",shift:"Начало смены",service:"Обход служебного транспорта","forbidden-zone":"Въезд в закрытую зону","unauthorized-access":"Проход без допуска","sensor-offline":"Потеря сигнала датчика",simultaneous:"Несколько происшествий","unusual-movement":"Необычное движение"};
 const notificationNames={new_incident:"Новое происшествие",reminder:"Случай ожидает реакции",escalation:"Случай передан на следующий уровень",transfer_requested:"Предложена передача",transfer_accepted:"Передача принята",transfer_cancelled:"Передача отменена",transfer_expired:"Срок передачи истёк",operator_unavailable:"Ответственный отсутствует",active_review:"Пора повторно проверить случай"};
 const vehicleNames={forklift:"Погрузчик",service:"Служебный автомобиль",truck:"Грузовик"};
 const esc = x => String(x??"—").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -207,11 +208,19 @@ function renderNotifications(){
   $("notifications").innerHTML=rows.map(n=>`<button class="notification-item" data-notification="${esc(n.incident_id)}">${esc(notificationNames[n.kind]||"Изменение обработки")}<small>${esc(n.incident_id)} · ${esc(clock(n.created_at))} · открыть карточку</small></button>`).join("");
   $("notifications").querySelectorAll("[data-notification]").forEach(b=>b.onclick=()=>selectIncident(b.dataset.notification).catch(showError));
 }
-async function developmentStages(){
-  if(S.stageBusy||Date.now()-S.stageCheckAt<5000)return;
-  S.stageCheckAt=Date.now();S.stageBusy=true;
-  try{const r=await fetch("development-status.json",{cache:"no-store"});if(!r.ok)return;const v=await r.json();for(const stage of v.stages||[]){const el=$(`stage-${stage.id}`);if(!el)continue;el.dataset.status=stage.status;el.textContent={done:"Готово",checking:"Проверяем",working:"В работе",pending:"Далее"}[stage.status]||"В работе";const note=$(`stage-note-${stage.id}`);if(note)note.textContent=stage.note||"";}}
-  catch{}finally{S.stageBusy=false;}
+function renderDemo(demo){
+  S.demo=demo;const available=demo.available!==false&&demo.status!=="unavailable";
+  const select=$("scenario"),scenarios=Array.isArray(demo.scenarios)?demo.scenarios:[];
+  const signature=scenarios.join("|");
+  if(available&&scenarios.length&&select.dataset.scenarios!==signature){const previous=select.value;select.innerHTML=scenarios.map(id=>`<option value="${esc(id)}">${esc(scenarioNames[id]||id)}</option>`).join("");select.value=scenarios.includes(previous)?previous:scenarios.includes(demo.scenario)?demo.scenario:scenarios[0];select.dataset.scenarios=signature;}
+  $("sim-status").textContent=demo.error?`Ошибка источника: ${demo.error}`:!available?"Источник движения пока не подключён":demo.running?`${scenarioNames[demo.scenario]||demo.scenario} · ${demo.events_sent??demo.event_count??0} событий`:"Сценарий остановлен · новые сигналы не поступают";
+  $("start").disabled=!available||S.demoBusy;$("stop").disabled=!available||!demo.running||S.demoBusy;select.disabled=!available||S.demoBusy;
+  $("start").title=available?"Запустить выбранный сценарий для всех рабочих мест":"Источник движения не подключён. Карта и ручная обработка доступны.";
+}
+async function runDemo(action){
+  if(S.demoBusy)return;S.demoBusy=true;if(S.demo)renderDemo(S.demo);
+  try{await api(`/demo/${action}`,"POST",action==="start"?{scenario:$("scenario").value}:{});$("error").hidden=true;}
+  catch(e){showError(e);}finally{S.demoBusy=false;if(S.demo)renderDemo(S.demo);await refresh();}
 }
 async function notifications(initial=false){
   const context=S.context,operator=S.operator;
@@ -241,12 +250,8 @@ async function refresh(){
     $("connection").textContent="● Сервер на связи";$("connection").style.color="#5bceae";
     const mlStatus=typeof health.ml==="object"?health.ml.status:health.ml;
     $("ml-status").textContent=mlStatus==="unavailable"||mlStatus==="not_connected"?"Модель движения пока не подключена":`Модель движения: ${mlStatus==="ready"?"готова":mlStatus}`;
-    const simulationAvailable=demo.available!==false&&demo.status!=="unavailable";
-    $("sim-status").textContent=!simulationAvailable?"Симулятор пока не подключён":demo.running?`Сценарий: ${demo.scenario} · ${demo.events_sent||0} событий`:"Сценарий остановлен";
-    $("start").disabled=!simulationAvailable;$("stop").disabled=!simulationAvailable||!demo.running;$("scenario").disabled=!simulationAvailable;
-    $("start").title=simulationAvailable?"Запустить выбранный сценарий":"Симулятор ещё не подключён владельцем модуля. Карта и ручная обработка доступны.";
+    renderDemo(demo);
     drawAssets();renderSummary();renderIncidents();renderSensors();await notifications();
-    void developmentStages();
     if(context!==S.context)return;
     if(S.selected)await renderDetails();
     if(S.connectionError){$("error").hidden=true;S.connectionError=false;}
@@ -282,7 +287,7 @@ async function boot(){
     if(typeof window!=="undefined"){S.operator=initialOperator(window.location.search);$("operator").value=S.operator;}
     S.site=await api("/site");S.profiles=array(await api("/operator-profiles"),"operator_profiles");initMap();
     if(typeof SensorDiagnostics!=="undefined")S.diagnostics=SensorDiagnostics.create({elementId:"sensors",getSensors:()=>S.sensors,requestCheck:()=>api("/sensors"),positionStaleSeconds:S.site.dispatch_config?.position_stale_seconds||5,serverTime:()=>Date.now()+S.serverOffset,onSound:()=>beep("check"),onSelectSensor:id=>{showSensor(id);if(!S.mapRenderer.showIncident({sensor_id:id}))showError(Error("У датчика нет подтверждённой позиции."));}});
-    await developmentStages();await presence();await notifications(true);await refresh();
+    await presence();await notifications(true);await refresh();
     setInterval(presence,3000);const loop=async()=>{await refresh();setTimeout(loop,1000);};setTimeout(loop,1000);
   }catch(e){showError(e);}
 }
@@ -293,8 +298,8 @@ function bindControls(){
   if($("my-sector"))$("my-sector").onclick=focusSector;
   for(const id of ["filter-type","filter-state"])if($(id))$(id).onchange=renderIncidents;
   if($("search-incidents"))$("search-incidents").oninput=renderIncidents;
-  $("start").onclick=async()=>{try{await api("/demo/start","POST",{scenario:$("scenario").value});await refresh();}catch(e){showError(e);}};
-  $("stop").onclick=async()=>{try{await api("/demo/stop","POST",{});await refresh();}catch(e){showError(e);}};
+  $("start").onclick=()=>runDemo("start");
+  $("stop").onclick=()=>runDemo("stop");
   $("sound").onclick=async()=>{S.sound=!S.sound;if(S.sound){S.audio||=new AudioContext();await S.audio.resume();beep();}$("sound").textContent=S.sound?"Выключить звук":"Включить звук";};
 }
 if(typeof window!=="undefined"){bindControls();boot();}

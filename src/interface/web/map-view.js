@@ -17,6 +17,7 @@
     return !Number.isFinite(stamp)||now+serverOffset-stamp>=thresholdSeconds*1000;
   }
   function roadWidthPixels(planWidth,pixelsPerUnit){return Math.max(1,Number(planWidth||5)*pixelsPerUnit);}
+  function interpolatePoint(from,to,fraction){const t=Math.max(0,Math.min(1,fraction));return {x:from.x+(to.x-from.x)*t,y:from.y+(to.y-from.y)*t};}
   function estimatedLabelWidth(text,fontSize){
     return [...String(text)].reduce((total,c)=>total+(/[ilI1 .,:]/.test(c)?.3:/[MWШЩЖ]/.test(c)?.85:.61)*fontSize,0);
   }
@@ -32,11 +33,13 @@
   }
   function labelMetrics(building,width,height){
     const innerWidth=Math.max(0,width-8),innerHeight=Math.max(0,height-6);
-    const fontSize=Math.max(9,Math.min(12,Math.floor(innerHeight/2.4)));
-    const maxLines=Math.max(1,Math.min(2,Math.floor(innerHeight/(fontSize*1.15))));
-    const candidates=width<50||height<28?[building.short_name,building.id]:[building.name,building.short_name,building.id];
-    const label=candidates.filter(Boolean).find(text=>linesFor(text,innerWidth,fontSize)<=maxLines)||building.id||"";
-    return {label,fontSize,width:Math.max(0,width),height:Math.max(0,height),maxLines};
+    const preferred=Math.max(9,Math.min(12,Math.floor(innerHeight/2.4)));
+    const candidates=width<50||height<28?[building.short_name]:[building.name,building.short_name];
+    for(const label of candidates.filter(Boolean))for(let fontSize=preferred;fontSize>=9;fontSize--){
+      const maxLines=Math.max(1,Math.min(2,Math.floor(innerHeight/(fontSize*1.15))));
+      if(linesFor(label,innerWidth,fontSize)<=maxLines)return {label,fontSize,width:Math.max(0,width),height:Math.max(0,height),maxLines};
+    }
+    return {label:building.id||"",fontSize:9,width:Math.max(0,width),height:Math.max(0,height),maxLines:1};
   }
   function create({elementId="map",site,onAsset=()=>{},onSensor=()=>{},onBuilding=()=>{}}){
     const Leaflet=globalThis.L;
@@ -50,7 +53,9 @@
     pane("enterpriseGrid",220);pane("enterpriseRoads",300);pane("enterpriseObjects",360);pane("enterpriseLabels",420);pane("enterpriseHighlight",450);pane("enterpriseSensors",620);
     const roads=[],buildings=new Map(),zones=new Map(),assets=new Map(),sensors=new Map(),sensorDefinitions=new Map((site.sensors||[]).map(s=>[s.id||s.sensor_id,s]));
     const grid=Leaflet.layerGroup().addTo(map),highlightLayer=Leaflet.layerGroup().addTo(map);
-    let state={assets:[],sensors:[],incidents:[],serverOffset:0},selection=null,gridSignature="",destroyed=false,viewMode="all",settingView=false;
+    let state={assets:[],sensors:[],incidents:[],serverOffset:0},selection=null,gridSignature="",destroyed=false,viewMode="all",settingView=false,animationFrame=null,lastPaint=0;
+    const motionClock=()=>typeof performance!=="undefined"?performance.now():Date.now();
+    const reducedMotion=typeof matchMedia!=="undefined"&&matchMedia("(prefers-reduced-motion: reduce)").matches;
     const frame=[xy(minimum,maximum),xy(maximum,minimum)];
     map.setMaxBounds?.([xy(minimum-40,maximum+40),xy(maximum+40,minimum-40)]);
     for(const road of site.roads||[]){
@@ -60,8 +65,7 @@
       const style={pane:"enterpriseRoads",interactive:false,lineCap:"round",lineJoin:"round",smoothFactor:0};
       const edge=Leaflet.polyline(points,{...style,color:"#425462",opacity:1}).addTo(map);
       const fill=Leaflet.polyline(points,{...style,color:"#293f4d",opacity:1}).addTo(map);
-      const center=Leaflet.polyline(points,{...style,color:"#6c8593",weight:1,dashArray:"4 7",opacity:.45}).addTo(map);
-      roads.push({road,edge,fill,center});
+      roads.push({road,edge,fill});
     }
     for(const zone of site.zones||[]){
       if(!zone.rectangle)continue;
@@ -72,11 +76,13 @@
     for(const building of site.buildings||[]){
       const r=building.rectangle;if(!r)continue;
       const office=building.id==="O1";
-      const layer=Leaflet.rectangle(rectangleBounds(r),{pane:"enterpriseObjects",color:office?"#a9b6df":"#668faa",weight:1.5,fillColor:office?"#445779":"#24465c",fillOpacity:.95});
+      const fillColor=/^#[0-9a-f]{6}$/i.test(building.color||"")?building.color:office?"#445779":"#24465c";
+      const borderColor=office?"#a9b6df":"#668faa";
+      const layer=Leaflet.rectangle(rectangleBounds(r),{pane:"enterpriseObjects",color:borderColor,weight:1.5,fillColor,fillOpacity:.95});
       layer.addTo(map).bindTooltip(`${escape(building.name)} · ${escape(building.id)}`);
       layer.on("click",()=>onBuilding(building.id));
       const label=Leaflet.marker(xy(r.x+r.width/2,r.y+r.height/2),{pane:"enterpriseLabels",interactive:false,keyboard:false,icon:Leaflet.divIcon({className:"enterprise-label-marker",html:"",iconSize:[0,0]})}).addTo(map);
-      buildings.set(building.id,{building,layer,label,labelSignature:""});
+      buildings.set(building.id,{building,layer,label,borderColor,labelSignature:""});
     }
     function gridStep(unitsPerPixel){
       return unitsPerPixel<.12?5:unitsPerPixel<.5?10:20;
@@ -106,11 +112,11 @@
       for(let x=left;x<=right;x+=step)Leaflet.polyline([[bottom,x],[top,x]],style).addTo(grid);
       for(let y=bottom;y<=top;y+=step)Leaflet.polyline([[y,left],[y,right]],style).addTo(grid);
     }
-    const vehicleSvg=type=>type==="forklift"?'<svg viewBox="0 0 32 26" aria-hidden="true"><path d="M8 17V8h10v9m-3-9V4H9v4M20 4v16h8m-5-2V4M4 17h16v5H4z"/><circle cx="9" cy="22" r="2.5"/><circle cx="18" cy="22" r="2.5"/></svg>':'<svg viewBox="0 0 32 26" aria-hidden="true"><path d="m6 17 3-8h12l5 8v6H5v-6zm5-8v7h10l-3-7M5 17h21"/><circle cx="10" cy="22" r="2.5"/><circle cx="22" cy="22" r="2.5"/></svg>';
     const sensorSvg='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="9" width="12" height="11" rx="2"/><path d="M12 9V4m-4 3a5 5 0 0 1 8 0M5 4a9 9 0 0 1 14 0M3 12h3m12 0h3M3 17h3m12 0h3"/><circle cx="12" cy="14" r="1.4"/></svg>';
     function vehicleIcon(asset,alarm,stale){
       const color=stale?"stale":alarm?"alarm":"normal",id=asset.asset_id||asset.id;
-      return Leaflet.divIcon({className:`enterprise-vehicle-marker ${color}`,html:`<span class="enterprise-vehicle-glyph">${vehicleSvg(asset.vehicle_type)}<b>${escape(id)}</b>${stale?'<small class="enterprise-stale-badge" title="Последняя известная позиция">?</small>':""}</span>`,iconSize:[40,42],iconAnchor:[20,24]});
+      const symbol=asset.vehicle_type==="forklift"?"П":"С",name=symbol==="П"?"Погрузчик":"Служебный транспорт";
+      return Leaflet.divIcon({className:`enterprise-vehicle-marker ${color}`,html:`<span class="enterprise-vehicle-glyph"><span class="enterprise-vehicle-symbol" title="${name}">${symbol}</span><b>${escape(id)}</b>${stale?'<small class="enterprise-stale-badge" title="Последняя известная позиция">?</small>':""}</span>`,iconSize:[36,38],iconAnchor:[18,20]});
     }
     function sensorIcon(sensor,status,mounted){
       const type=sensor.type||"heartbeat";
@@ -119,6 +125,23 @@
     function ageText(stamp){
       const t=Date.parse(stamp);return Number.isFinite(t)?`${Math.max(0,Math.round((Date.now()+state.serverOffset-t)/1000))} сек. назад`:"сигнал ещё не получен";
     }
+    function paintMotion(now){
+      let moving=false;
+      for(const record of assets.values())if(record.motion){
+        const fraction=(now-record.motion.started)/record.motion.duration;
+        record.display=interpolatePoint(record.motion.from,record.motion.to,fraction);
+        record.layer.setLatLng(xy(record.display.x,record.display.y));
+        if(fraction>=1)record.motion=null;else moving=true;
+      }
+      for(const [id,record] of sensors){const mounted=assets.get(sensorDefinitions.get(id)?.asset_id);if(mounted?.display)record.layer.setLatLng(xy(mounted.display.x,mounted.display.y));}
+      return moving;
+    }
+    function animationTick(now){
+      animationFrame=null;if(destroyed)return;
+      if(now-lastPaint<66){animationFrame=requestAnimationFrame(animationTick);return;}
+      lastPaint=now;if(paintMotion(now))animationFrame=requestAnimationFrame(animationTick);
+    }
+    function scheduleMotion(){if(!destroyed&&animationFrame===null&&typeof requestAnimationFrame!=="undefined"&&[...assets.values()].some(r=>r.motion))animationFrame=requestAnimationFrame(animationTick);}
     function update({assets:nextAssets=[],sensors:nextSensors=[],incidents:nextIncidents=[],serverOffset=0}){
       state={assets:nextAssets,sensors:nextSensors,incidents:nextIncidents,serverOffset};
       const liveAssets=new Map(nextAssets.map(a=>[a.asset_id||a.id,a]));
@@ -128,9 +151,14 @@
         const alarm=nextIncidents.some(i=>i.asset_id===id&&i.condition_active&&workable(i)),stale=isStale(asset,serverOffset,site.dispatch_config?.position_stale_seconds||5);
         const signature=[asset.vehicle_type,alarm,stale].join(":");
         let record=assets.get(id);
-        if(!record){const layer=Leaflet.marker(xy(asset.x,asset.y),{icon:vehicleIcon(asset,alarm,stale),riseOnHover:true}).addTo(map);layer.on("click",()=>onAsset(id));record={layer,signature};assets.set(id,record);}
+        if(!record){const layer=Leaflet.marker(xy(asset.x,asset.y),{icon:vehicleIcon(asset,alarm,stale),riseOnHover:true}).addTo(map);layer.on("click",()=>onAsset(id));record={layer,signature,display:{x:asset.x,y:asset.y},stamp:asset.last_seen};assets.set(id,record);}
         if(record.signature!==signature){record.layer.setIcon(vehicleIcon(asset,alarm,stale));record.signature=signature;}
-        record.layer.setLatLng(xy(asset.x,asset.y));
+        if(record.stamp!==asset.last_seen||stale){
+          const changed=record.display.x!==asset.x||record.display.y!==asset.y;
+          if(changed&&!stale&&!reducedMotion&&typeof requestAnimationFrame!=="undefined")record.motion={from:{...record.display},to:{x:asset.x,y:asset.y},started:motionClock(),duration:750};
+          else{record.motion=null;record.display={x:asset.x,y:asset.y};record.layer.setLatLng(xy(asset.x,asset.y));}
+          record.stamp=asset.last_seen;
+        }
         record.layer.bindTooltip(`${escape(id)} · ${asset.vehicle_type==="forklift"?"Погрузчик":"Служебный транспорт"}<br>${stale?"Последняя известная позиция · текущее место неизвестно":"Полученная позиция"}<br>${ageText(asset.last_seen)}`);
       }
       for(const [id,record] of assets)if(!liveAssets.has(id)||!validPoint(liveAssets.get(id))){map.removeLayer(record.layer);assets.delete(id);}
@@ -138,7 +166,7 @@
       for(const [id,definition] of sensorDefinitions){
         const runtime=liveSensors.get(id)||{},sensor={...definition,...runtime};
         const mounted=definition.type==="position"||Boolean(definition.asset_id),asset=liveAssets.get(definition.asset_id);
-        const position=mounted?asset:definition.position||definition;
+        const position=mounted?assets.get(definition.asset_id)?.display||asset:definition.position||definition;
         if(!validPoint(position))continue;
         shownSensors.add(id);
         const status=["online","offline"].includes(runtime.status)?runtime.status:"unknown",signature=[status,mounted].join(":");
@@ -150,8 +178,8 @@
         record.layer.bindTooltip(`${escape(sensorTypeNames[definition.type]||"Датчик")} ${escape(id)}${location}<br>${sensorStatusNames[status]} · ${ageText(runtime.last_received_at)}<br>Связь и свежесть измерений проверяются отдельно`);
       }
       for(const [id,record] of sensors)if(!shownSensors.has(id)){map.removeLayer(record.layer);sensors.delete(id);}
-      for(const [id,record] of buildings){const danger=nextIncidents.some(i=>i.building_id===id&&i.condition_active&&workable(i));record.layer.setStyle({color:danger?"#ff7c7c":id==="O1"?"#a9b6df":"#668faa"});}
-      applySelection();
+      for(const [id,record] of buildings){const danger=nextIncidents.some(i=>i.building_id===id&&i.condition_active&&workable(i));record.layer.setStyle({color:danger?"#ff7c7c":record.borderColor});}
+      applySelection();scheduleMotion();
     }
     function selectedGeometry(incident){
       const geometry=[];
@@ -196,7 +224,7 @@
     const resize=typeof ResizeObserver!=="undefined"?new ResizeObserver(()=>{if(!destroyed){map.invalidateSize({pan:false});if(viewMode==="all")fitAll();redrawGeometry();}}):null;
     if(resize)resize.observe(map.getContainer());
     fitAll();redrawGeometry();update(state);
-    return {map,update,fitAll,focusSector,highlight,clearHighlight,showIncident,destroy(){destroyed=true;resize?.disconnect();map.off("zoomend moveend",redrawGeometry);map.remove();},getLayerCounts(){return {buildings:buildings.size,roads:roads.length,assets:assets.size,sensors:sensors.size,grid:grid.getLayers().length};}};
+    return {map,update,fitAll,focusSector,highlight,clearHighlight,showIncident,destroy(){destroyed=true;if(animationFrame!==null&&typeof cancelAnimationFrame!=="undefined")cancelAnimationFrame(animationFrame);resize?.disconnect();map.off("zoomend moveend",redrawGeometry);map.remove();},getLayerCounts(){return {buildings:buildings.size,roads:roads.length,assets:assets.size,sensors:sensors.size,grid:grid.getLayers().length};}};
   }
-  return {create,labelMetrics,estimatedLabelWidth,roadWidthPixels,isStale};
+  return {create,labelMetrics,estimatedLabelWidth,roadWidthPixels,isStale,interpolatePoint};
 });

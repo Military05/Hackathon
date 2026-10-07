@@ -91,3 +91,24 @@ test("untrusted building names remain escaped inside constrained label markup",(
   const labels=h.layers.filter(l=>l.options.icon?.className==="enterprise-label-marker"),markup=labels.at(-1).options.icon.html;
   assert.ok(!markup.includes("<img"));assert.match(markup,/&lt;img/);assert.match(markup,/width:\d+px;height:\d+px/);renderer.destroy();
 });
+
+test("transport uses abstract symbols and roads contain no lane markings",()=>{
+  const h=harness();h.instance.update({assets:[freshAsset],sensors:[],incidents:[]});
+  const vehicle=h.layers.find(l=>l.options.icon?.className?.includes("vehicle-marker"));
+  assert.match(vehicle.options.icon.html,/enterprise-vehicle-symbol/);assert.doesNotMatch(vehicle.options.icon.html,/<svg/);
+  assert.ok(h.layers.filter(l=>l.options.pane==="enterpriseRoads").every(l=>!l.options.dashArray));
+});
+
+test("motion interpolates only between received positions and moves the mounted sensor with the marker",()=>{
+  const oldRequest=globalThis.requestAnimationFrame,oldCancel=globalThis.cancelAnimationFrame;
+  let next=0;const frames=new Map();globalThis.requestAnimationFrame=fn=>{frames.set(++next,fn);return next;};globalThis.cancelAnimationFrame=id=>frames.delete(id);
+  try{
+    const h=harness(),data={assets:[freshAsset],sensors:[],incidents:[]};h.instance.update(data);const count=h.fits.length;
+    h.instance.update({...data,assets:[{...freshAsset,x:43,last_seen:new Date(Date.now()+1).toISOString()}]});
+    const now=performance.now(),[id,frame]=frames.entries().next().value;frames.delete(id);frame(now+375);
+    const vehicle=h.layers.find(l=>l.options.icon?.className?.includes("vehicle-marker")),sensor=h.layers.find(l=>l.options.icon?.className?.includes("mounted"));
+    assert.ok(vehicle.points[1]>39&&vehicle.points[1]<43);assert.deepEqual(sensor.points,vehicle.points);assert.equal(h.fits.length,count);
+    const [endId,endFrame]=frames.entries().next().value;frames.delete(endId);endFrame(now+800);assert.deepEqual(vehicle.points,[58,43]);
+    h.instance.destroy();assert.equal(frames.size,0);
+  }finally{if(oldRequest)globalThis.requestAnimationFrame=oldRequest;else delete globalThis.requestAnimationFrame;if(oldCancel)globalThis.cancelAnimationFrame=oldCancel;else delete globalThis.cancelAnimationFrame;}
+});
