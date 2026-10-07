@@ -18,6 +18,20 @@
   }
   function roadWidthPixels(planWidth,pixelsPerUnit){return Math.max(1,Number(planWidth||5)*pixelsPerUnit);}
   function interpolatePoint(from,to,fraction){const t=Math.max(0,Math.min(1,fraction));return {x:from.x+(to.x-from.x)*t,y:from.y+(to.y-from.y)*t};}
+  const validRectangle=r=>r&&[r.x,r.y,r.width,r.height].every(Number.isFinite)&&r.width>0&&r.height>0;
+  function sectorRectangles(site,sectorId){
+    const sector=(site.sectors||[]).find(s=>s.id===sectorId);
+    if(!sector)return [];
+    if(validRectangle(sector.focus_bounds))return [sector.focus_bounds];
+    return (site.site_areas||[]).filter(a=>a.responsible_sector_id===sectorId&&validRectangle(a.rectangle)).map(a=>a.rectangle);
+  }
+  function zoneStyle(zone){
+    return zone.kind==="forbidden"
+      ?{color:"#f37979",fillColor:"#b84b4b",fillOpacity:.23,weight:1.5,className:"enterprise-zone-forbidden"}
+      :{color:"#e8b166",fillColor:"#c78b3a",fillOpacity:.16,weight:1.5,dashArray:"5 4",className:"enterprise-zone-permit"};
+  }
+  function signalTime(stamp){const parsed=Date.parse(stamp);return Number.isFinite(parsed)?new Date(parsed).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}):"—";}
+  let instanceSequence=0;
   function estimatedLabelWidth(text,fontSize){
     return [...String(text)].reduce((total,c)=>total+(/[ilI1 .,:]/.test(c)?.3:/[MWШЩЖ]/.test(c)?.85:.61)*fontSize,0);
   }
@@ -48,30 +62,39 @@
     const minimum=site.coordinate_system?.min??0,maximum=site.coordinate_system?.max??100;
     const xy=(x,y)=>[maximum-y,x];
     const rectangleBounds=r=>[xy(r.x,r.y+r.height),xy(r.x+r.width,r.y)];
-    const map=Leaflet.map(elementId,{crs:Leaflet.CRS.Simple,minZoom:0,maxZoom:5,zoomSnap:.25,attributionControl:false});
+    const map=Leaflet.map(elementId,{crs:Leaflet.CRS.Simple,minZoom:0,maxZoom:5,zoomSnap:.1,attributionControl:false});
     const pane=(name,z)=>{map.createPane(name).style.zIndex=z;};
-    pane("enterpriseGrid",220);pane("enterpriseRoads",300);pane("enterpriseObjects",360);pane("enterpriseLabels",420);pane("enterpriseHighlight",450);pane("enterpriseSensors",620);
+    pane("enterpriseGrid",220);pane("enterpriseSectors",260);pane("enterpriseRoads",300);pane("enterpriseZones",330);pane("enterpriseObjects",360);pane("enterpriseLabels",420);pane("enterpriseHighlight",450);pane("enterpriseSensors",620);
     const roads=[],buildings=new Map(),zones=new Map(),assets=new Map(),sensors=new Map(),sensorDefinitions=new Map((site.sensors||[]).map(s=>[s.id||s.sensor_id,s]));
     const grid=Leaflet.layerGroup().addTo(map),highlightLayer=Leaflet.layerGroup().addTo(map);
-    let state={assets:[],sensors:[],incidents:[],serverOffset:0},selection=null,gridSignature="",destroyed=false,viewMode="all",settingView=false,animationFrame=null,lastPaint=0;
+    let state={assets:[],sensors:[],incidents:[],serverOffset:0},selection=null,gridSignature="",destroyed=false,viewMode="all",focusedSectorId=null,settingView=false,animationFrame=null,lastPaint=0;
+    const hatchId=`enterprise-forbidden-hatch-${++instanceSequence}`;
     const motionClock=()=>typeof performance!=="undefined"?performance.now():Date.now();
     const reducedMotion=typeof matchMedia!=="undefined"&&matchMedia("(prefers-reduced-motion: reduce)").matches;
     const frame=[xy(minimum,maximum),xy(maximum,minimum)];
-    map.setMaxBounds?.([xy(minimum-40,maximum+40),xy(maximum+40,minimum-40)]);
+    // Wide map panels need room outside the square plan to center the western/eastern sector.
+    map.setMaxBounds?.([xy(minimum-100,maximum+100),xy(maximum+100,minimum-100)]);
+    for(const sector of site.sectors||[]){
+      for(const r of sector.map_regions||[])if(validRectangle(r))Leaflet.rectangle(rectangleBounds(r),{pane:"enterpriseSectors",color:"#aebbbb",opacity:.55,weight:1,dashArray:"3 5",fill:false,interactive:false,className:"enterprise-sector-outline"}).addTo(map);
+      if(validPoint(sector.label_position))Leaflet.marker(xy(sector.label_position.x,sector.label_position.y),{pane:"enterpriseLabels",interactive:false,keyboard:false,icon:Leaflet.divIcon({className:"enterprise-sector-label-marker",html:`<span class="enterprise-sector-label">${escape(sector.name)}</span>`,iconSize:[150,15],iconAnchor:[75,7.5]})}).addTo(map);
+    }
     for(const road of site.roads||[]){
       const source=road.points||road.path||[];
       const points=source.map(point).filter(validPoint).map(p=>xy(p.x,p.y));
       if(points.length<2)continue;
       const style={pane:"enterpriseRoads",interactive:false,lineCap:"round",lineJoin:"round",smoothFactor:0};
       const edge=Leaflet.polyline(points,{...style,color:"#425462",opacity:1}).addTo(map);
-      const fill=Leaflet.polyline(points,{...style,color:"#293f4d",opacity:1}).addTo(map);
-      roads.push({road,edge,fill});
+      roads.push({road,edge,points,style});
     }
+    // All road edges precede all road fills: a junction remains one continuous surface.
+    for(const road of roads)road.fill=Leaflet.polyline(road.points,{...road.style,color:"#293f4d",opacity:1}).addTo(map);
     for(const zone of site.zones||[]){
       if(!zone.rectangle)continue;
-      const layer=Leaflet.rectangle(rectangleBounds(zone.rectangle),{pane:"enterpriseObjects",color:"#d99c5f",weight:1.5,dashArray:"5 5",fillColor:"#b27436",fillOpacity:.12});
-      layer.addTo(map).bindTooltip(`${escape(zone.name||zone.id)} · ограничение доступа`);
-      zones.set(zone.id,{zone,layer});
+      const layer=Leaflet.rectangle(rectangleBounds(zone.rectangle),{pane:"enterpriseZones",...zoneStyle(zone)});
+      layer.addTo(map).bindTooltip(`${escape(zone.name||zone.id)}<br>${zone.kind==="forbidden"?"Въезд запрещён всем транспортным средствам":"Въезд только по индивидуальному допуску"}`);
+      const r=zone.rectangle;
+      const label=Leaflet.marker(xy(r.x+r.width/2,r.y+r.height/2),{pane:"enterpriseLabels",interactive:false,keyboard:false,icon:Leaflet.divIcon({className:"enterprise-zone-label-marker",html:"",iconSize:[0,0]})}).addTo(map);
+      zones.set(zone.id,{zone,layer,label,labelSignature:""});
     }
     for(const building of site.buildings||[]){
       const r=building.rectangle;if(!r)continue;
@@ -98,7 +121,24 @@
         record.labelSignature=signature;
         record.label.setIcon(Leaflet.divIcon({className:"enterprise-label-marker",html:`<span class="enterprise-building-label" style="width:${m.width}px;height:${m.height}px;font-size:${m.fontSize}px" title="${escape(record.building.name)}"><span>${escape(m.label)}</span></span>`,iconSize:[m.width,m.height],iconAnchor:[m.width/2,m.height/2]}));
       }
+      for(const record of zones.values()){
+        const r=record.zone.rectangle,p1=map.latLngToLayerPoint(xy(r.x,r.y)),p2=map.latLngToLayerPoint(xy(r.x+r.width,r.y+r.height));
+        const m=labelMetrics({id:record.zone.id,name:record.zone.short_name||record.zone.id,short_name:record.zone.short_name||record.zone.id},Math.abs(p2.x-p1.x)-4,Math.abs(p2.y-p1.y)-4),signature=JSON.stringify(m);
+        if(signature!==record.labelSignature){record.labelSignature=signature;record.label.setIcon(Leaflet.divIcon({className:"enterprise-zone-label-marker",html:`<span class="enterprise-zone-label ${record.zone.kind==="forbidden"?"forbidden":"permit"}" style="width:${m.width}px;height:${m.height}px;font-size:${m.fontSize}px"><span>${escape(m.label)}</span></span>`,iconSize:[m.width,m.height],iconAnchor:[m.width/2,m.height/2]}));}
+        if(record.zone.kind==="forbidden")applyHatching(record.layer);
+      }
       drawGrid(unit);
+    }
+    function applyHatching(layer){
+      const path=layer.getElement?.(),svg=path?.ownerSVGElement;
+      if(!svg||typeof document==="undefined")return;
+      if(!svg.querySelector(`#${hatchId}`)){
+        const namespace="http://www.w3.org/2000/svg",defs=document.createElementNS(namespace,"defs"),pattern=document.createElementNS(namespace,"pattern");
+        pattern.setAttribute("id",hatchId);pattern.setAttribute("patternUnits","userSpaceOnUse");pattern.setAttribute("width","8");pattern.setAttribute("height","8");
+        const base=document.createElementNS(namespace,"rect");base.setAttribute("width","8");base.setAttribute("height","8");base.setAttribute("fill","#b84b4b");pattern.appendChild(base);
+        const hatch=document.createElementNS(namespace,"path");hatch.setAttribute("d","M-2 2L2 -2M0 8L8 0M6 10L10 6");hatch.setAttribute("stroke","#ffc3c3");hatch.setAttribute("stroke-width","1.5");pattern.appendChild(hatch);defs.appendChild(pattern);svg.insertBefore(defs,svg.firstChild);
+      }
+      path.setAttribute("fill",`url(#${hatchId})`);
     }
     function drawGrid(unit){
       const b=map.getBounds(),west=b.getWest(),east=b.getEast(),south=b.getSouth(),north=b.getNorth();
@@ -116,11 +156,11 @@
     function vehicleIcon(asset,alarm,stale){
       const color=stale?"stale":alarm?"alarm":"normal",id=asset.asset_id||asset.id;
       const symbol=asset.vehicle_type==="forklift"?"П":"С",name=symbol==="П"?"Погрузчик":"Служебный транспорт";
-      return Leaflet.divIcon({className:`enterprise-vehicle-marker ${color}`,html:`<span class="enterprise-vehicle-glyph"><span class="enterprise-vehicle-symbol" title="${name}">${symbol}</span><b>${escape(id)}</b>${stale?'<small class="enterprise-stale-badge" title="Последняя известная позиция">?</small>':""}</span>`,iconSize:[36,38],iconAnchor:[18,20]});
+      return Leaflet.divIcon({className:`enterprise-vehicle-marker ${color}`,html:`<span class="enterprise-vehicle-glyph"><span class="enterprise-vehicle-symbol" title="${name}">${symbol}</span><b>${escape(id)}</b><time class="enterprise-signal-time" title="Время последней полученной позиции">${escape(signalTime(asset.last_seen))}</time>${stale?'<small class="enterprise-stale-badge" title="Последняя известная позиция">?</small>':""}</span>`,iconSize:[36,50],iconAnchor:[18,20]});
     }
     function sensorIcon(sensor,status,mounted){
       const type=sensor.type||"heartbeat";
-      return Leaflet.divIcon({className:`enterprise-sensor-marker ${escape(status)} ${mounted?"mounted":"stationary"}`,html:`<span class="enterprise-sensor-glyph" title="${escape(sensorTypeNames[type]||"Датчик")}">${sensorSvg}</span>`,iconSize:mounted?[18,18]:[25,25],iconAnchor:mounted?[-10,25]:[12.5,12.5]});
+      return Leaflet.divIcon({className:`enterprise-sensor-marker ${escape(status)} ${mounted?"mounted":"stationary"}`,html:`<span class="enterprise-sensor-glyph" title="${escape(sensorTypeNames[type]||"Датчик")}">${sensorSvg}</span>${mounted?"":`<time class="enterprise-sensor-time" title="Время последнего сигнала">${escape(signalTime(sensor.last_received_at))}</time>`}`,iconSize:mounted?[18,18]:[25,25],iconAnchor:mounted?[-10,25]:[12.5,12.5]});
     }
     function ageText(stamp){
       const t=Date.parse(stamp);return Number.isFinite(t)?`${Math.max(0,Math.round((Date.now()+state.serverOffset-t)/1000))} сек. назад`:"сигнал ещё не получен";
@@ -149,7 +189,7 @@
       for(const asset of nextAssets){
         const id=asset.asset_id||asset.id;if(!id||!validPoint(asset))continue;
         const alarm=nextIncidents.some(i=>i.asset_id===id&&i.condition_active&&workable(i)),stale=isStale(asset,serverOffset,site.dispatch_config?.position_stale_seconds||5);
-        const signature=[asset.vehicle_type,alarm,stale].join(":");
+        const signature=[asset.vehicle_type,alarm,stale,signalTime(asset.last_seen)].join(":");
         let record=assets.get(id);
         if(!record){const layer=Leaflet.marker(xy(asset.x,asset.y),{icon:vehicleIcon(asset,alarm,stale),riseOnHover:true}).addTo(map);layer.on("click",()=>onAsset(id));record={layer,signature,display:{x:asset.x,y:asset.y},stamp:asset.last_seen};assets.set(id,record);}
         if(record.signature!==signature){record.layer.setIcon(vehicleIcon(asset,alarm,stale));record.signature=signature;}
@@ -169,7 +209,7 @@
         const position=mounted?assets.get(definition.asset_id)?.display||asset:definition.position||definition;
         if(!validPoint(position))continue;
         shownSensors.add(id);
-        const status=["online","offline"].includes(runtime.status)?runtime.status:"unknown",signature=[status,mounted].join(":");
+        const status=["online","offline"].includes(runtime.status)?runtime.status:"unknown",signature=[status,mounted,mounted?"":signalTime(runtime.last_received_at)].join(":");
         let record=sensors.get(id);
         if(!record){const layer=Leaflet.marker(xy(position.x,position.y),{pane:"enterpriseSensors",icon:sensorIcon(sensor,status,mounted),riseOnHover:true}).addTo(map);layer.on("click",()=>onSensor(id));record={layer,signature};sensors.set(id,record);}
         if(signature!==record.signature){record.layer.setIcon(sensorIcon(sensor,status,mounted));record.signature=signature;}
@@ -209,22 +249,22 @@
     }
     function highlight(incident){selection=incident||null;applySelection();return selectionPoints(incident||{}).length>0;}
     function clearHighlight(){selection=null;applySelection();}
-    function fitAll(){viewMode="all";settingView=true;try{map.fitBounds(frame,{padding:[24,24],animate:false});}finally{settingView=false;}}
+    function fitAll(){viewMode="all";focusedSectorId=null;settingView=true;try{map.stop?.();map.fitBounds(frame,{padding:[24,24],animate:false});}finally{settingView=false;}}
     function focusSector(sectorId){
-      const rectangles=(site.site_areas||[]).filter(a=>a.responsible_sector_id===sectorId&&a.rectangle).map(a=>a.rectangle);
-      if(!rectangles.length||sectorId==="coordination"){fitAll();return;}
-      viewMode="sector";settingView=true;try{map.fitBounds(rectangles.flatMap(rectangleBounds),{padding:[28,28],maxZoom:3.25,animate:false});}finally{settingView=false;}
+      const rectangles=sectorRectangles(site,sectorId);
+      if(!rectangles.length){fitAll();return false;}
+      viewMode="sector";focusedSectorId=sectorId;settingView=true;try{map.stop?.();map.invalidateSize({pan:false});map.fitBounds(rectangles.flatMap(rectangleBounds),{padding:[18,18],maxZoom:3.5,animate:false});}finally{settingView=false;}return true;
     }
     function showIncident(incident){
       highlight(incident);const points=selectionPoints(incident||{});if(!points.length)return false;
-      viewMode="incident";settingView=true;try{map.fitBounds(points,{padding:[48,48],maxZoom:3.75,animate:false});}finally{settingView=false;}return true;
+      viewMode="incident";focusedSectorId=null;settingView=true;try{map.stop?.();map.fitBounds(points,{padding:[48,48],maxZoom:3.75,animate:false});}finally{settingView=false;}return true;
     }
     map.on("zoomend moveend",redrawGeometry);
-    map.on("dragstart zoomstart",()=>{if(!settingView)viewMode="manual";});
-    const resize=typeof ResizeObserver!=="undefined"?new ResizeObserver(()=>{if(!destroyed){map.invalidateSize({pan:false});if(viewMode==="all")fitAll();redrawGeometry();}}):null;
+    map.on("dragstart zoomstart",()=>{if(!settingView){viewMode="manual";focusedSectorId=null;}});
+    const resize=typeof ResizeObserver!=="undefined"?new ResizeObserver(()=>{if(!destroyed){map.invalidateSize({pan:false});if(viewMode==="all")fitAll();else if(viewMode==="sector")focusSector(focusedSectorId);redrawGeometry();}}):null;
     if(resize)resize.observe(map.getContainer());
     fitAll();redrawGeometry();update(state);
     return {map,update,fitAll,focusSector,highlight,clearHighlight,showIncident,destroy(){destroyed=true;if(animationFrame!==null&&typeof cancelAnimationFrame!=="undefined")cancelAnimationFrame(animationFrame);resize?.disconnect();map.off("zoomend moveend",redrawGeometry);map.remove();},getLayerCounts(){return {buildings:buildings.size,roads:roads.length,assets:assets.size,sensors:sensors.size,grid:grid.getLayers().length};}};
   }
-  return {create,labelMetrics,estimatedLabelWidth,roadWidthPixels,isStale,interpolatePoint};
+  return {create,labelMetrics,estimatedLabelWidth,roadWidthPixels,isStale,interpolatePoint,sectorRectangles,zoneStyle,signalTime};
 });
