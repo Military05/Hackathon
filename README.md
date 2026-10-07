@@ -109,3 +109,7 @@ powershell -ExecutionPolicy Bypass -File scripts/start.ps1
 доверенным удалённым TLS и на этих устройствах **NOT RUN** до отдельного отчёта.
 Запуск с другого устройства требует HTTPS либо заранее проверенного защищённого
 туннеля; обычный удалённый HTTP блокируется. [Подробности](docs/AUTH_SECURITY_V5.md).
+
+Другой ноутбук и общие аккаунты: [REMOTE_CLIENT_V6](docs/REMOTE_CLIENT_V6.md).
+Передача и подключение готовых модулей Гриши/Гаджи:
+[AI_INTEGRATION_V6](docs/AI_INTEGRATION_V6.md).
