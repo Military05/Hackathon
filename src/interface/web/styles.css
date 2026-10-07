@@ -1,0 +1,276 @@
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #0f172a;
+    color: #e5e7eb;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    padding: 18px 28px;
+
+    background: #111827;
+    border-bottom: 1px solid #334155;
+
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.header h1 {
+    margin: 0;
+    font-size: 24px;
+}
+
+.header p {
+    margin: 4px 0 0;
+    color: #94a3b8;
+    font-size: 14px;
+}
+
+#system-status {
+    padding: 8px 12px;
+    border-radius: 8px;
+
+    background: #052e16;
+    color: #86efac;
+
+    font-size: 14px;
+    font-weight: 600;
+
+    border: 1px solid #166534;
+}
+
+.dashboard {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr);
+
+    gap: 20px;
+    padding: 20px;
+}
+
+.map-panel,
+.incidents-panel,
+.sensors-panel {
+    background: #111827;
+
+    border: 1px solid #334155;
+    border-radius: 12px;
+
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+.map-panel,
+.incidents-panel {
+    padding: 20px;
+}
+
+.map-panel h2,
+.incidents-panel h2,
+.sensors-panel h2 {
+    margin-top: 0;
+    color: #f8fafc;
+}
+
+.map-wrapper {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+
+    overflow: hidden;
+
+    border: 1px solid #334155;
+    border-radius: 10px;
+
+    background: #0b1220;
+}
+
+#site-map {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.incidents-panel {
+    min-width: 0;
+}
+
+.incident {
+    padding: 14px;
+    margin-bottom: 12px;
+
+    border: 1px solid #334155;
+    border-radius: 8px;
+
+    background: #172033;
+
+    cursor: pointer;
+
+    transition:
+        background 0.15s ease,
+        transform 0.15s ease,
+        border-color 0.15s ease;
+}
+
+.incident:hover {
+    background: #1e293b;
+    transform: translateY(-1px);
+    border-color: #475569;
+}
+
+.incident strong {
+    display: block;
+    margin-bottom: 8px;
+    color: #f8fafc;
+}
+
+.incident div {
+    color: #cbd5e1;
+}
+
+.incident-critical {
+    border-left: 5px solid #ef4444;
+}
+
+.incident-warning {
+    border-left: 5px solid #f59e0b;
+}
+
+.incident-info {
+    border-left: 5px solid #3b82f6;
+}
+
+.incident-details {
+    margin-top: 24px;
+    padding-top: 20px;
+
+    border-top: 1px solid #334155;
+}
+
+.incident-details h3,
+.incident-details h4 {
+    color: #f8fafc;
+}
+
+.incident-details div,
+.incident-details li,
+.incident-details p {
+    color: #cbd5e1;
+}
+
+.incident-details div {
+    margin-bottom: 5px;
+}
+
+.incident-actions {
+    display: flex;
+    flex-wrap: wrap;
+
+    gap: 10px;
+
+    margin-top: 16px;
+}
+
+.incident-actions button {
+    padding: 9px 13px;
+
+    border: 1px solid #475569;
+    border-radius: 7px;
+
+    background: #1e293b;
+    color: #e5e7eb;
+
+    font-weight: 600;
+
+    cursor: pointer;
+
+    transition:
+        background 0.15s ease,
+        border-color 0.15s ease,
+        transform 0.15s ease;
+}
+
+.incident-actions button:hover:not(:disabled) {
+    background: #334155;
+    border-color: #64748b;
+    transform: translateY(-1px);
+}
+
+.incident-actions button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.sensors-panel {
+    margin: 0 20px 20px;
+    padding: 20px;
+}
+
+#sensors-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+
+    gap: 12px;
+}
+
+.sensor {
+    padding: 14px;
+
+    border: 1px solid #334155;
+    border-radius: 8px;
+
+    background: #172033;
+}
+
+.sensor strong {
+    display: block;
+    margin-bottom: 8px;
+    color: #f8fafc;
+}
+
+.sensor div {
+    color: #cbd5e1;
+}
+
+.sensor-online {
+    border-left: 5px solid #22c55e;
+}
+
+.sensor-offline {
+    border-left: 5px solid #ef4444;
+}
+
+.sensor-unknown {
+    border-left: 5px solid #94a3b8;
+}
+
+#incidents-list,
+#sensors-list {
+    color: #cbd5e1;
+}
+
+button {
+    font-family: inherit;
+}
+
+@media (max-width: 900px) {
+    .dashboard {
+        grid-template-columns: 1fr;
+    }
+
+    .header {
+        align-items: flex-start;
+        gap: 12px;
+        flex-direction: column;
+    }
+
+    .sensors-panel {
+        margin: 0 20px 20px;
+    }
+}
