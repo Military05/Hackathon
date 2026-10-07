@@ -24,8 +24,8 @@ OPERATORS = ("dispatcher-1", "dispatcher-2", "dispatcher-3")
 
 
 def password_hash(password):
-    if not isinstance(password, str) or not 10 <= len(password) <= 128:
-        raise ApiError(422, "invalid_password", "Пароль должен содержать от 10 до 128 символов")
+    if not isinstance(password, str) or not 15 <= len(password) <= 128:
+        raise ApiError(422, "invalid_password", "Пароль должен содержать от 15 до 128 символов")
     salt = secrets.token_bytes(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, PASSWORD_ITERATIONS)
     return f"pbkdf2_sha256${PASSWORD_ITERATIONS}${salt.hex()}${digest.hex()}"

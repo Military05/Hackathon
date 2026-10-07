@@ -7,9 +7,10 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from src.core.auth import COOKIE_NAME, AuthManager, PASSWORD_ITERATIONS, password_matches
+from src.core.auth import COOKIE_NAME, AuthManager, PASSWORD_ITERATIONS, password_hash, password_matches
 from src.core.main import create_app
 from src.core.service import stamp
+from src.core.service import ApiError
 
 
 class AuthAcceptance(unittest.TestCase):
@@ -94,6 +95,14 @@ class AuthAcceptance(unittest.TestCase):
         self.assertEqual(response.status_code, 409)
         response = self.client.post("/api/auth/register", json={"username": "privileged", "name": "Новый", "password": "New-password-2026", "role": "admin"})
         self.assertEqual(response.status_code, 422)
+
+    def test_password_minimum_15_without_mfa_and_maximum_enforced(self):
+        for invalid in ("a" * 14, "a" * 129, None):
+            with self.assertRaises(ApiError) as raised:
+                password_hash(invalid)
+            self.assertEqual(raised.exception.code, "invalid_password")
+        encoded = password_hash("a" * 15)
+        self.assertTrue(password_matches("a" * 15, encoded))
 
     def test_session_identity_overrides_header_and_url(self):
         headers, _ = self.login()
