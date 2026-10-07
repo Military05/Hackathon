@@ -300,6 +300,9 @@ def add_auth(app, service, enabled=True):
                         check_origin(request)
                 else:
                     session = await asyncio.to_thread(manager.session, request.cookies.get(COOKIE_NAME))
+                    expected_user = request.headers.get("x-expected-user")
+                    if expected_user is not None and expected_user != session["user"]["id"]:
+                        raise ApiError(409, "session_identity_changed", "В другой вкладке изменился аккаунт. Обновите рабочее место")
                     request.state.auth_session = session
                     request.state.user = session["user"]
                     if path.startswith("/api/admin/") and session["user"]["role"] != "admin":
