@@ -250,10 +250,16 @@
     function highlight(incident){selection=incident||null;applySelection();return selectionPoints(incident||{}).length>0;}
     function clearHighlight(){selection=null;applySelection();}
     function fitAll(){viewMode="all";focusedSectorId=null;settingView=true;try{map.stop?.();map.fitBounds(frame,{padding:[24,24],animate:false});}finally{settingView=false;}}
-    function focusSector(sectorId){
+    function focusSector(sectorId,{animate=false}={}){
       const rectangles=sectorRectangles(site,sectorId);
       if(!rectangles.length){fitAll();return false;}
-      viewMode="sector";focusedSectorId=sectorId;settingView=true;try{map.stop?.();map.invalidateSize({pan:false});map.fitBounds(rectangles.flatMap(rectangleBounds),{padding:[18,18],maxZoom:3.5,animate:false});}finally{settingView=false;}return true;
+      viewMode="sector";focusedSectorId=sectorId;settingView=true;
+      try{
+        map.stop?.();map.invalidateSize({pan:false});
+        const bounds=rectangles.flatMap(rectangleBounds),options={padding:[18,18],maxZoom:3.5};
+        if(animate&&!reducedMotion&&map.flyToBounds)map.flyToBounds(bounds,{...options,duration:0.85});
+        else map.fitBounds(bounds,{...options,animate:false});
+      }finally{settingView=false;}return true;
     }
     function showIncident(incident){
       highlight(incident);const points=selectionPoints(incident||{});if(!points.length)return false;

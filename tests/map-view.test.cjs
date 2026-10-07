@@ -20,7 +20,7 @@ function harness(){
     clearLayers(){this.children=[];return this;}
     getLayers(){return this.children;}
   }
-  const map={children:[],removed:[],createPane(){return {style:{}};},setMaxBounds(points){this.maximumBounds=points;},fitBounds(points,options){fits.push({points,options});return this;},latLngToLayerPoint(p){return {x:p[1]*4,y:p[0]*4};},getBounds(){return {getWest:()=>-40,getEast:()=>140,getSouth:()=>-20,getNorth:()=>120};},on(events,fn){handlers[events]=fn;},off(){},remove(){},removeLayer(layer){this.removed.push(layer);},getContainer(){return {};},invalidateSize(){}};
+  const map={children:[],removed:[],createPane(){return {style:{}};},setMaxBounds(points){this.maximumBounds=points;},fitBounds(points,options){fits.push({points,options});return this;},flyToBounds(points,options){fits.push({points,options,animated:true});return this;},latLngToLayerPoint(p){return {x:p[1]*4,y:p[0]*4};},getBounds(){return {getWest:()=>-40,getEast:()=>140,getSouth:()=>-20,getNorth:()=>120};},on(events,fn){handlers[events]=fn;},off(){},remove(){},removeLayer(layer){this.removed.push(layer);},getContainer(){return {};},invalidateSize(){}};
   globalThis.L={CRS:{Simple:{}},map(id,options){map.options=options;return map;},layerGroup:()=>new Layer(),polyline:(points,options)=>new Layer(points,options),rectangle:(points,options)=>new Layer(points,options),marker:(points,options)=>new Layer(points,options),divIcon:options=>options};
   const callbacks={asset:[],sensor:[],building:[]};
   const instance=api.create({site,onAsset:id=>callbacks.asset.push(id),onSensor:id=>callbacks.sensor.push(id),onBuilding:id=>callbacks.building.push(id)});
@@ -93,6 +93,18 @@ test("each dispatcher sector changes the bounds and checkpoint no longer opens t
   assert.deepEqual(h.map.maximumBounds,[[-100,-100],[200,200]],"Wide panels must be allowed to center western and eastern sectors");
   assert.equal(h.instance.focusSector("missing"),false);assert.deepEqual(h.fits.at(-1).points,initial);
 });
+test("sector button flies to its bounds while reduced motion uses an immediate view",()=>{
+  const original=globalThis.matchMedia;
+  try{
+    globalThis.matchMedia=()=>({matches:false});
+    const h=harness();h.instance.focusSector("production",{animate:true});
+    assert.equal(h.fits.at(-1).animated,true);assert.equal(h.fits.at(-1).options.duration,.85);
+    globalThis.matchMedia=()=>({matches:true});
+    const reduced=harness();reduced.instance.focusSector("production",{animate:true});
+    assert.equal(reduced.fits.at(-1).animated,undefined);assert.equal(reduced.fits.at(-1).options.animate,false);
+  }finally{if(original)globalThis.matchMedia=original;else delete globalThis.matchMedia;}
+});
+
 test("untrusted building names remain escaped inside constrained label markup",()=>{
   const copy={...site,buildings:[{id:"A",name:'<img src=x onerror="alert(1)">',rectangle:{x:1,y:1,width:80,height:50}}]};
   const h=harness();const renderer=api.create({site:copy});

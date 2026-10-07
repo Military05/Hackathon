@@ -49,9 +49,9 @@ function placeName(i){return named(S.site?.zones,i.zone_id)||named(S.site?.build
 function entityName(i){return named(S.site?.assets,i.asset_id||i.employee_id)||named(S.site?.sensors,i.sensor_id)||"Источник не определён";}
 function clock(t){if(!t)return "—";const value=new Date(t);return Number.isNaN(value.getTime())?"—":value.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit",second:"2-digit"});}
 function transferClock(i){if(i.pending_transfer?.status!=="pending")return "";const until=i.pending_transfer.expires_at||i.pending_transfer.deadline_at;if(!until)return "Ожидается ответ получателя";const seconds=Math.max(0,Math.ceil((Date.parse(until)-Date.now()-S.serverOffset)/1000));return Number.isFinite(seconds)?seconds?`Ответить за ${seconds} сек.`:"Срок истёк · ожидается подтверждение сервера":"Ожидается ответ получателя";}
-function focusSector(){
+function focusSector(animate=false){
   const sector=S.profiles.find(p=>(p.operator_id||p.id)===S.operator)?.sector_id;
-  if(S.mapRenderer){S.mapRenderer.focusSector(sector);return;}
+  if(S.mapRenderer){S.mapRenderer.focusSector(sector,{animate});return;}
   const rectangles=(S.site.site_areas||[]).filter(a=>a.responsible_sector_id===sector&&a.rectangle).map(a=>a.rectangle);
   if(!rectangles.length){S.map.fitBounds([[0,0],[100,100]]);return;}
   const minX=Math.min(...rectangles.map(r=>r.x)),minY=Math.min(...rectangles.map(r=>r.y)),maxX=Math.max(...rectangles.map(r=>r.x+r.width)),maxY=Math.max(...rectangles.map(r=>r.y+r.height));
@@ -306,7 +306,7 @@ function bindControls(){
   $("operator").onchange=()=>switchOperator($("operator").value).catch(showError);
   $("ready").onchange=presence;$("all").onchange=refresh;$("history-toggle").onchange=renderIncidents;
   $("fit").onclick=()=>S.mapRenderer?S.mapRenderer.fitAll():S.map.fitBounds([[0,0],[100,100]]);
-  if($("my-sector"))$("my-sector").onclick=focusSector;
+  if($("my-sector"))$("my-sector").onclick=()=>focusSector(true);
   for(const id of ["filter-type","filter-state"])if($(id))$(id).onchange=renderIncidents;
   if($("search-incidents"))$("search-incidents").oninput=renderIncidents;
   $("start").onclick=()=>runDemo("start");

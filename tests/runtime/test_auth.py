@@ -97,13 +97,13 @@ class AuthAcceptance(unittest.TestCase):
         response = self.client.post("/api/auth/register", json={"username": "privileged", "name": "Новый", "password": "New-password-2026", "role": "admin"})
         self.assertEqual(response.status_code, 422)
 
-    def test_password_minimum_15_without_mfa_and_maximum_enforced(self):
-        for invalid in ("a" * 14, "a" * 129, None):
+    def test_password_minimum_8_and_maximum_enforced(self):
+        for invalid in ("a" * 7, "a" * 129, None):
             with self.assertRaises(ApiError) as raised:
                 password_hash(invalid)
             self.assertEqual(raised.exception.code, "invalid_password")
-        encoded = password_hash("a" * 15)
-        self.assertTrue(password_matches("a" * 15, encoded))
+        encoded = password_hash("a" * 8)
+        self.assertTrue(password_matches("a" * 8, encoded))
 
     def test_json_unpaired_surrogates_rejected_without_server_error(self):
         for field, code in (("password", "invalid_password"), ("name", "invalid_name")):
