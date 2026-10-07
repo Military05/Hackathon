@@ -1,4 +1,5 @@
 :root{color-scheme:dark;--bg:#0b1420;--panel:#111e2c;--panel-raised:#182a3b;--line:#26394a;--text:#e8eff5;--muted:#9fb0bf;--blue:#4eb1ff;--red:#ff7272;--green:#5bceae;--amber:#e7b85b}
+[hidden]{display:none!important}
 
 *{box-sizing:border-box}
 body{margin:0;font:14px/1.5 'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--text)}

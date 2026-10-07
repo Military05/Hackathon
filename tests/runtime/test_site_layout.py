@@ -45,6 +45,18 @@ def rectangles_overlap(first, second):
             and min(first['y'] + first['height'], second['y'] + second['height']) > max(first['y'], second['y']))
 
 
+def collinear_overlap(first, second):
+    a, b = first
+    c, d = second
+    delta = [b[axis] - a[axis] for axis in range(2)]
+    cross = lambda p: delta[0] * (p[1] - a[1]) - delta[1] * (p[0] - a[0])
+    if abs(cross(c)) > 1e-7 or abs(cross(d)) > 1e-7:
+        return 0
+    axis = 0 if abs(delta[0]) > abs(delta[1]) else 1
+    first_range, second_range = sorted((a[axis], b[axis])), sorted((c[axis], d[axis]))
+    return max(0, min(first_range[1], second_range[1]) - max(first_range[0], second_range[0]))
+
+
 class SiteLayoutTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -131,6 +143,69 @@ class SiteLayoutTests(unittest.TestCase):
         diagonal = sum(start[0] != end[0] and start[1] != end[1]
                        for road in roads for start, end in zip(road['points'], road['points'][1:]))
         self.assertGreaterEqual(diagonal, 20, 'Rounded corners are sampled in the shared geometry')
+
+    def test_road_segments_are_not_drawn_on_top_of_each_other(self):
+        segments = [(road['id'], start, end) for road in self.site['roads']
+                    for start, end in zip(road['points'], road['points'][1:])]
+        for index, (road_id, start, end) in enumerate(segments):
+            for other_id, first, second in segments[index + 1:]:
+                self.assertLessEqual(collinear_overlap((start, end), (first, second)), 1e-7,
+                                     (road_id, other_id, 'Each road centerline stretch is stored once'))
+                delta = [end[axis] - start[axis] for axis in range(2)]
+                other_delta = [second[axis] - first[axis] for axis in range(2)]
+                denominator = delta[0] * other_delta[1] - delta[1] * other_delta[0]
+                if abs(denominator) < 1e-10:
+                    continue
+                offset = [first[axis] - start[axis] for axis in range(2)]
+                t = (offset[0] * other_delta[1] - offset[1] * other_delta[0]) / denominator
+                u = (offset[0] * delta[1] - offset[1] * delta[0]) / denominator
+                if -1e-7 <= t <= 1 + 1e-7 and -1e-7 <= u <= 1 + 1e-7:
+                    self.assertTrue(min(abs(t), abs(t - 1)) <= 1e-7 and min(abs(u), abs(u - 1)) <= 1e-7,
+                                    (road_id, other_id, 'Intersections must be shared graph vertices'))
+
+    def test_zone_colors_reflect_permissions_and_hard_prohibition_has_no_allowlist(self):
+        zones = {zone['id']: zone for zone in self.site['zones']}
+        self.assertEqual(zones['Z1']['kind'], 'permit')
+        self.assertEqual(zones['Z2']['kind'], 'permit')
+        self.assertEqual(zones['Z3']['kind'], 'forbidden')
+        self.assertTrue(all(zone['kind'] in ('permit', 'forbidden') for zone in zones.values()))
+        for permission in self.site['permissions']:
+            self.assertNotIn('Z3', permission['allowed_zone_ids'])
+        for index, zone in enumerate(self.site['zones']):
+            for other in self.site['zones'][index + 1:]:
+                self.assertFalse(rectangles_overlap(zone['rectangle'], other['rectangle']))
+            for building in self.site['buildings']:
+                self.assertFalse(rectangles_overlap(zone['rectangle'], building['rectangle']))
+
+    def test_sector_focus_is_geographical_and_gate_profile_has_a_small_local_view(self):
+        sectors = {sector['id']: sector for sector in self.site['sectors']}
+        profiles = {profile['id']: profile for profile in self.site['operator_profiles']}
+        self.assertEqual(profiles['dispatcher-3']['sector_id'], 'coordination')
+        self.assertEqual(sectors['coordination']['name'], 'КПП')
+        gate = next(building['rectangle'] for building in self.site['buildings'] if building['id'] == 'G1')
+        gate_focus = sectors['coordination']['focus_bounds']
+        self.assertTrue(inside((gate['x'] + gate['width'] / 2, gate['y'] + gate['height'] / 2), gate_focus))
+        self.assertLess(gate_focus['width'] * gate_focus['height'], 1000)
+        for sector in sectors.values():
+            box = sector['focus_bounds']
+            self.assertGreater(box['width'], 0)
+            self.assertGreater(box['height'], 0)
+            self.assertLess(box['height'], 100)
+            self.assertTrue(sector['map_regions'])
+            self.assertLessEqual(box['x'] + box['width'], 100)
+            self.assertLessEqual(box['y'] + box['height'], 100)
+
+    def test_gate_source_and_shift_employees_have_preserved_real_permission_checks(self):
+        sensor = next(sensor for sensor in self.site['sensors'] if sensor['id'] == 'ACCESS-G1')
+        self.assertEqual((sensor['type'], sensor['building_id'], sensor['site_area_id']), ('access', 'G1', 'checkpoint'))
+        employees = {asset['id'] for asset in self.site['assets'] if asset['type'] == 'employee'}
+        permissions = {permission['employee_id']: permission for permission in self.site['permissions'] if 'employee_id' in permission}
+        self.assertEqual(self.site['shift_employees'], ['U1', 'U2', 'U3'])
+        self.assertTrue(set(self.site['shift_employees']) <= employees)
+        for employee in self.site['shift_employees']:
+            self.assertIn('G1', permissions[employee]['allowed_building_ids'])
+        self.assertIn('U4', employees)
+        self.assertNotIn('G1', permissions['U4']['allowed_building_ids'])
 
     def test_roads_and_routes_never_cross_building_interiors(self):
         for road in self.site["roads"]:

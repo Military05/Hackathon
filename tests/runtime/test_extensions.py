@@ -16,7 +16,7 @@ class ExtensionBoundaryTests(unittest.TestCase):
             'DISPATCH_ENABLE_ML': '0', 'DISPATCH_ENABLE_DEMO_TRAFFIC': '1',
             'DEMO_AUTOSTART': '1',
         }):
-            with TestClient(create_app(db_path=Path(temp)/'demo.db')) as client:
+            with TestClient(create_app(enable_auth=False, db_path=Path(temp)/'demo.db')) as client:
                 health = client.get('/api/health').json()
                 self.assertEqual(health['rules']['status'], 'ready')
                 self.assertEqual(health['agent']['status'], 'unavailable')
@@ -25,9 +25,9 @@ class ExtensionBoundaryTests(unittest.TestCase):
                 self.assertTrue(status['available'])
                 self.assertTrue(status['running'])
                 self.assertEqual(status['source'], 'builtin_factory_traffic')
-                self.assertEqual(status['source_count'], 5)
+                self.assertEqual(status['source_count'], 6)
                 self.assertIn('normal', status['scenarios'])
-                self.assertEqual(len(client.get('/api/assets').json()), 6)
+                self.assertEqual(len(client.get('/api/assets').json()), 7)
                 response = client.post('/api/demo/start', json={'scenario': 'normal'},
                                        headers={'X-Demo-Operator':'dispatcher-1'})
                 self.assertEqual(response.status_code, 200)
@@ -37,7 +37,7 @@ class ExtensionBoundaryTests(unittest.TestCase):
 
     def test_error_shapes_are_json_and_unknown_profiles_are_rejected(self):
         with tempfile.TemporaryDirectory() as temp:
-            with TestClient(create_app(db_path=Path(temp)/'demo.db', enable_scheduler=False)) as client:
+            with TestClient(create_app(enable_auth=False, db_path=Path(temp)/'demo.db', enable_scheduler=False)) as client:
                 invalid = client.post('/api/events', json=[])
                 self.assertEqual(invalid.status_code, 422)
                 self.assertEqual(invalid.json()['code'], 'validation_error')

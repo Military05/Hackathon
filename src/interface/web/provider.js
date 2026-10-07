@@ -11,8 +11,8 @@
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), 5000);
             try {
-                const response = await fetcher(`/api${path}`, {method, signal: controller.signal,
-                    headers: {"X-Demo-Operator": operatorId, ...(body ? {"Content-Type": "application/json"} : {})},
+                const response = await fetcher(`/api${path}`, {method, credentials: "same-origin", signal: controller.signal,
+                    headers: {"X-Demo-Operator": operatorId, ...(root.ProductAuth?.headers?.() || {}), ...(body ? {"Content-Type": "application/json"} : {})},
                     ...(body ? {body: JSON.stringify(body)} : {})});
                 let value;
                 try { value = await response.json(); } catch { throw core.error("invalid_response", "Сервер вернул ответ без корректного JSON", response.status || 502); }

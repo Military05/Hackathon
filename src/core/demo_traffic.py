@@ -12,6 +12,7 @@ import uuid
 
 from src.core.geometry import rectangle_contains
 from src.core.service import stamp
+from src.core.operations import Operations
 
 
 SCENARIOS = {
@@ -105,6 +106,11 @@ class DemoRunner:
         self._fault_journey = None
         self._sequence = 0
         self._run_id = ""
+        self.operations = Operations(service)
+        self._shift_id = None
+        self._shift_employees = []
+        self._transport_elapsed = None
+        self._gate_sensor = None
 
     def status(self):
         return {
@@ -121,11 +127,18 @@ class DemoRunner:
             "error": self.error,
             "vehicle_states": dict(self._vehicles),
             "scenario_options": [{"id": key, "name": name} for key, name in SCENARIOS.items()],
+            "shift": self.operations.shift(self._shift_id) if self._shift_id else None,
         }
 
     def _prepare(self, scenario):
         if scenario not in SCENARIOS:
             raise ValueError("Unsupported traffic scenario")
+        self.operations.finish_shift(self._shift_id)
+        self._shift_id = None
+        self._transport_elapsed = None
+        self._shift_employees = []
+        self._gate_sensor = next((sid for sid, sensor in self.service.sensors_by_id.items()
+                                  if sensor["type"] == "access" and sensor.get("building_id") == "G1"), None)
         self.scenario = scenario
         self.started_at = stamp(self.service.clock())
         self.error = None
@@ -168,6 +181,14 @@ class DemoRunner:
             if math.dist(route.point(anchor), self._fault_route.points[0]) > 0.001:
                 raise ValueError("The closed-zone approach must connect exactly to the V1 road route")
             self._fault_journey = Journey(route, anchor, 1.6, 0.0)
+        if scenario in ("unauthorized-access", "simultaneous"):
+            if not self._gate_sensor or "U4" not in self.service.assets_by_id:
+                raise ValueError("The checkpoint scenario requires a G1 access sensor and employee U4")
+            if "G1" in self.service.asset_policy("U4")["allowed_building_ids"]:
+                raise ValueError("Employee U4 must not have a G1 admission in the unauthorized demo")
+        if scenario == "shift":
+            self._shift_employees = self.service.site.get("shift_employees", ["U1", "U2", "U3"])
+            self._shift_id = self.operations.start_shift(self._shift_employees)
 
     async def start(self, scenario):
         await self.stop()
@@ -195,6 +216,7 @@ class DemoRunner:
             await self._task
             self._task = None
         self.running = False
+        self.operations.finish_shift(self._shift_id, self.error)
         return self.status()
 
     async def _run(self):
@@ -219,6 +241,8 @@ class DemoRunner:
             self.error = str(exc)
         finally:
             self.running = False
+            if self.error:
+                self.operations.finish_shift(self._shift_id, self.error)
             self._ready.set()
 
     def _emit(self, sensor_id, kind, payload):
@@ -228,8 +252,9 @@ class DemoRunner:
         event = {"event_id": f"factory-{self._run_id}-{self._sequence:09d}",
                  "event_time": stamp(self.service.clock()), "sensor_id": sensor_id,
                  "type": kind, "demo": True, "payload": payload}
-        self.service.ingest_event(event)
+        response = self.service.ingest_event(event, shift_id=self._shift_id) if self._shift_id else self.service.ingest_event(event)
         self.event_count += 1
+        return response
 
     def _position(self, asset_id, elapsed):
         journey = self._journeys[asset_id]
@@ -248,6 +273,16 @@ class DemoRunner:
     def emit_frame(self, elapsed):
         """Also usable with a controlled Service clock in acceptance tests."""
         self.last_elapsed = max(0.0, elapsed)
+        if self.scenario == "shift":
+            for index, employee in enumerate(self._shift_employees):
+                key = "gate:" + employee
+                if elapsed >= 1 + index * 2 and key not in self._once:
+                    received = self._emit(self._gate_sensor, "access", {"employee_id": employee, "building_id": "G1", "direction": "in",
+                                                                       "access_kind": "passage_confirmed"})
+                    if received:
+                        self._once.add(key)
+            if self._transport_elapsed is None and self.operations.release_transport(self._shift_id):
+                self._transport_elapsed = elapsed
         offline = self.scenario in ("sensor-offline", "simultaneous") and 5 <= elapsed < 17
         states = {}
         for sensor_id, sensor in self.service.sensors_by_id.items():
@@ -255,16 +290,21 @@ class DemoRunner:
                 continue
             asset_id = sensor.get("asset_id")
             if sensor["type"] == "position" and asset_id in self._journeys:
-                point, state = self._position(asset_id, elapsed)
+                movement_elapsed = elapsed
+                if self.scenario == "shift":
+                    movement_elapsed = max(0.0, elapsed - self._transport_elapsed) if self._transport_elapsed is not None else 0.0
+                point, state = self._position(asset_id, movement_elapsed)
+                if self.scenario == "shift" and self._transport_elapsed is None:
+                    state = "awaiting_gate_checks"
                 self._emit(sensor_id, "position", {"asset_id": asset_id, "x": round(point[0], 4), "y": round(point[1], 4)})
                 states[asset_id] = {"state": state, "destination": self.service.assets_by_id[asset_id].get("destination")}
             else:
                 self._emit(sensor_id, "heartbeat", {})
         self._vehicles = states
-        if self.scenario in ("unauthorized-access", "simultaneous", "shift"):
-            employee = "U3" if self.scenario == "shift" else "U1"
+        if self.scenario in ("unauthorized-access", "simultaneous"):
+            employee = "U4"
             for threshold, direction in ((6, "in"), (13, "out")):
                 if elapsed >= threshold and direction not in self._once:
-                    self._emit("ACCESS-O1", "access", {"employee_id": employee, "building_id": "O1", "direction": direction,
+                    self._emit(self._gate_sensor, "access", {"employee_id": employee, "building_id": "G1", "direction": direction,
                                                          "access_kind": "passage_confirmed"})
                     self._once.add(direction)

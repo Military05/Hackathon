@@ -29,6 +29,7 @@ tmp/
 
 # Local demo data and trained/runtime artifacts
 /runtime/
+/src/interface/web/preview-progress.json
 data/runtime/
 data/generated/
 artifacts/local/

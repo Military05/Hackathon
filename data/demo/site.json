@@ -585,10 +585,6 @@
         [
           96,
           80
-        ],
-        [
-          96,
-          60
         ]
       ],
       "width": 3,
@@ -937,7 +933,9 @@
         "width": 26,
         "height": 14
       },
-      "site_area_id": "warehouse-raw"
+      "site_area_id": "warehouse-raw",
+      "kind": "permit",
+      "short_name": "По допуску"
     },
     {
       "id": "Z2",
@@ -946,6 +944,21 @@
         "x": 64,
         "y": 44,
         "width": 23,
+        "height": 12
+      },
+      "site_area_id": "workshop-1",
+      "kind": "permit",
+      "short_name": "По допуску"
+    },
+    {
+      "id": "Z3",
+      "name": "Технологический двор — въезд запрещён",
+      "short_name": "Z3",
+      "kind": "forbidden",
+      "rectangle": {
+        "x": 88,
+        "y": 44,
+        "width": 6,
         "height": 12
       },
       "site_area_id": "workshop-1"
@@ -987,6 +1000,11 @@
       "id": "U3",
       "type": "employee",
       "name": "Сотрудник 3"
+    },
+    {
+      "id": "U4",
+      "type": "employee",
+      "name": "Тестовый посетитель"
     }
   ],
   "sensors": [
@@ -1025,6 +1043,16 @@
       "position": {
         "x": 69,
         "y": 74
+      }
+    },
+    {
+      "id": "ACCESS-G1",
+      "type": "access",
+      "building_id": "G1",
+      "site_area_id": "checkpoint",
+      "position": {
+        "x": 32.5,
+        "y": 99
       }
     }
   ],
@@ -1081,6 +1109,11 @@
         "P1",
         "P2"
       ]
+    },
+    {
+      "employee_id": "U4",
+      "allowed_zone_ids": [],
+      "allowed_building_ids": []
     }
   ],
   "site_areas": [
@@ -1263,24 +1296,96 @@
   "sectors": [
     {
       "id": "logistics",
-      "name": "Логистика",
-      "operator_id": "dispatcher-1"
+      "name": "Логистика и склады",
+      "operator_id": "dispatcher-1",
+      "focus_bounds": {
+        "x": 2,
+        "y": 5,
+        "width": 37,
+        "height": 77
+      },
+      "map_regions": [
+        {
+          "x": 1,
+          "y": 5,
+          "width": 37,
+          "height": 52
+        },
+        {
+          "x": 1,
+          "y": 63,
+          "width": 25,
+          "height": 19
+        }
+      ],
+      "label_position": {
+        "x": 18,
+        "y": 6
+      }
     },
     {
       "id": "production",
       "name": "Производство",
-      "operator_id": "dispatcher-2"
+      "operator_id": "dispatcher-2",
+      "focus_bounds": {
+        "x": 63,
+        "y": 6,
+        "width": 34,
+        "height": 77
+      },
+      "map_regions": [
+        {
+          "x": 64,
+          "y": 5,
+          "width": 35,
+          "height": 79
+        },
+        {
+          "x": 65,
+          "y": 86,
+          "width": 32,
+          "height": 11
+        },
+        {
+          "x": 44,
+          "y": 6,
+          "width": 15,
+          "height": 30
+        }
+      ],
+      "label_position": {
+        "x": 81,
+        "y": 6
+      }
     },
     {
       "id": "coordination",
-      "name": "Координация",
-      "operator_id": "dispatcher-3"
+      "name": "КПП",
+      "operator_id": "dispatcher-3",
+      "focus_bounds": {
+        "x": 2,
+        "y": 84,
+        "width": 37,
+        "height": 16
+      },
+      "map_regions": [
+        {
+          "x": 2,
+          "y": 85,
+          "width": 37,
+          "height": 15
+        }
+      ],
+      "label_position": {
+        "x": 29,
+        "y": 87
+      }
     }
   ],
   "operator_profiles": [
     {
       "id": "dispatcher-1",
-      "name": "Диспетчер складов",
+      "name": "Диспетчер логистики и складов",
       "sector_id": "logistics"
     },
     {
@@ -1290,7 +1395,7 @@
     },
     {
       "id": "dispatcher-3",
-      "name": "Координатор",
+      "name": "Диспетчер КПП",
       "sector_id": "coordination"
     }
   ],
@@ -1316,7 +1421,7 @@
     ],
     "max_event_bytes": 8192
   },
-  "layout_version": "site-v4-automotive-campus",
+  "layout_version": "site-v5-factory-sectors",
   "demo_fault_routes": {
     "V1": {
       "zone_id": "Z1",
@@ -1379,5 +1484,10 @@
         "seconds": 2
       }
     ]
-  }
+  },
+  "shift_employees": [
+    "U1",
+    "U2",
+    "U3"
+  ]
 }

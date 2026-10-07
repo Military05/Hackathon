@@ -256,7 +256,7 @@ class Service:
             raise ApiError(422, "event_too_large", "Event exceeds configured size")
         return value
 
-    def ingest_event(self, event):
+    def ingest_event(self, event, *, shift_id=None):
         value = self._normalize_event(event)
         normalized = canonical(value)
         now = self.clock()
@@ -265,6 +265,9 @@ class Service:
             if old:
                 if old["normalized"] != normalized:
                     raise ApiError(409, "event_conflict", "event_id is already used with another body")
+                if shift_id:
+                    from src.core.operations import correlate_event
+                    correlate_event(db, shift_id, value)
                 return {"event_id": value["event_id"], "received_at": old["received_at"], "duplicate": True}
             value["received_at"] = stamp(now)
             payload = value["payload"]
@@ -296,6 +299,9 @@ class Service:
                                        employee_id=payload["employee_id"], asset_id=payload["employee_id"],
                                        building_id=payload["building_id"], sensor_id=value["sensor_id"],
                                        details={"access_kind": "passage_confirmed", "policy_version": self.site["policy_version"]})
+            if shift_id:
+                from src.core.operations import correlate_event
+                correlate_event(db, shift_id, value)
             return {"event_id": value["event_id"], "received_at": value["received_at"], "duplicate": False}
 
     def _position(self, db, event, fresh):
@@ -418,12 +424,25 @@ class Service:
         view["alarm_state"] = alarm_state(item)
         return view
 
-    def get_incident(self, incident_id):
+    def can_claim(self, db, item, operator):
+        if not operator or not self._working(item) or item["assigned_operator_id"]:
+            return False
+        if item["responsible_sector_id"] == self._profile_sector(operator):
+            return True
+        return bool(db.execute("""SELECT 1 FROM notifications WHERE incident_id=? AND recipient_operator_id=?
+            AND json_extract(body,'$.kind') IN ('escalation','operator_unavailable','active_review','transfer_expired') LIMIT 1""",
+                               (item["incident_id"], operator)).fetchone())
+
+    def get_incident(self, incident_id, operator=None):
         with self.store.read() as db:
             item = self._load(db, "incidents", "incident_id", incident_id)
             if not item:
                 raise ApiError(404, "unknown_incident", "Unknown incident", {"id": incident_id})
-            return self._incident_view(db, item)
+            view = self._incident_view(db, item)
+            if operator:
+                self.validate_operator(operator)
+                view["can_claim"] = self.can_claim(db, item, operator)
+            return view
 
     def list_incidents(self, status=None, scope=None, site_area_id=None, operator=None):
         if status and status not in {"open", "acknowledged", "closed"}:
@@ -432,7 +451,7 @@ class Service:
             raise ApiError(422, "invalid_scope", "scope must be all or workstation")
         if site_area_id:
             self._require(site_area_id, self.areas, "site_area")
-        if scope == "workstation":
+        if operator or scope == "workstation":
             self.validate_operator(operator)
         with self.store.read() as db:
             addressed = set()
@@ -445,7 +464,8 @@ class Service:
                 transfer = item.get("pending_transfer") or {}
                 if scope == "workstation" and not (item["responsible_sector_id"] == self._profile_sector(operator) or item["assigned_operator_id"] == operator or transfer.get("to_operator_id") == operator or item["incident_id"] in addressed):
                     continue
-                result.append({**item, "alarm_state": alarm_state(item)})
+                result.append({**item, "alarm_state": alarm_state(item),
+                               **({"can_claim": self.can_claim(db, item, operator)} if operator else {})})
             priority = {"critical": 0, "warning": 1, "info": 2}
             return sorted(result, key=lambda i: (priority[i["severity"]], bool(i["assigned_operator_id"]), i["detected_at"], i["incident_id"]))
 
@@ -581,10 +601,8 @@ class Service:
             if action == "claim":
                 if original_owner:
                     raise ApiError(409, "already_claimed", "Incident already has an owner")
-                escalation = any(json.loads(row[0])["kind"] in {"escalation", "operator_unavailable", "active_review", "transfer_expired"}
-                                 for row in db.execute("SELECT body FROM notifications WHERE incident_id=? AND recipient_operator_id=?", (incident_id, operator)))
-                if not (operator == "dispatcher-3" or item["responsible_sector_id"] == self._profile_sector(operator) or escalation):
-                    raise ApiError(409, "operator_conflict", "Only responsible operator, coordinator or addressed reserve may claim")
+                if not self.can_claim(db, item, operator):
+                    raise ApiError(409, "operator_conflict", "Only responsible operator or addressed reserve may claim")
                 item["assigned_operator_id"] = operator
                 item["status"] = "acknowledged"
                 item["acknowledged_at"] = stamp(self.clock())

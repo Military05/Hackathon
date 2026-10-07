@@ -161,6 +161,15 @@ test("unknown target cannot create a made up location",()=>{
   assert.equal(h.$("error").hidden,false);assert.match(h.$("error").textContent,/нет подтверждённых координат/);
 });
 
+test("foreign-sector incidents remain viewable without offering an unauthorised claim",()=>{
+  const h=harness();h.ui.S.selected="I1";
+  h.ui.applyDetails(incident({can_claim:false}));
+  assert.match(h.$("detail-actions").innerHTML,/id="show-on-map"/);
+  assert.doesNotMatch(h.$("detail-actions").innerHTML,/id="claim"/);
+  h.ui.applyDetails(incident({can_claim:true,dispatch_revision:8}));
+  assert.match(h.$("detail-actions").innerHTML,/id="claim"/);
+});
+
 test("journal combines type, owner and text filters using shared human asset names",()=>{
   const h=harness();h.ui.S.site.assets=[{id:"V1",name:"Погрузчик сырья"}];h.ui.S.site.site_areas=[{id:"warehouse-raw",name:"Склад сырья"}];
   h.ui.S.incidents=[incident({assigned_operator_id:"dispatcher-1"}),incident({incident_id:"I2",type:"sensor_offline",assigned_operator_id:"dispatcher-1"}),incident({incident_id:"I3",assigned_operator_id:"dispatcher-2"})];

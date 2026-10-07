@@ -20,7 +20,7 @@ function harness(){
     clearLayers(){this.children=[];return this;}
     getLayers(){return this.children;}
   }
-  const map={children:[],removed:[],createPane(){return {style:{}};},setMaxBounds(){},fitBounds(points,options){fits.push({points,options});return this;},latLngToLayerPoint(p){return {x:p[1]*4,y:p[0]*4};},getBounds(){return {getWest:()=>-40,getEast:()=>140,getSouth:()=>-20,getNorth:()=>120};},on(events,fn){handlers[events]=fn;},off(){},remove(){},removeLayer(layer){this.removed.push(layer);},getContainer(){return {};},invalidateSize(){}};
+  const map={children:[],removed:[],createPane(){return {style:{}};},setMaxBounds(points){this.maximumBounds=points;},fitBounds(points,options){fits.push({points,options});return this;},latLngToLayerPoint(p){return {x:p[1]*4,y:p[0]*4};},getBounds(){return {getWest:()=>-40,getEast:()=>140,getSouth:()=>-20,getNorth:()=>120};},on(events,fn){handlers[events]=fn;},off(){},remove(){},removeLayer(layer){this.removed.push(layer);},getContainer(){return {};},invalidateSize(){}};
   globalThis.L={CRS:{Simple:{}},map(id,options){map.options=options;return map;},layerGroup:()=>new Layer(),polyline:(points,options)=>new Layer(points,options),rectangle:(points,options)=>new Layer(points,options),marker:(points,options)=>new Layer(points,options),divIcon:options=>options};
   const callbacks={asset:[],sensor:[],building:[]};
   const instance=api.create({site,onAsset:id=>callbacks.asset.push(id),onSensor:id=>callbacks.sensor.push(id),onBuilding:id=>callbacks.building.push(id)});
@@ -81,9 +81,17 @@ test("staleness uses server time and the configured threshold",()=>{
   assert.equal(api.isStale({last_seen:"2026-10-07T00:00:00Z"},1000,5,Date.parse("2026-10-07T00:00:04Z")),true);
   assert.equal(api.isStale({last_seen:"bad"}),true);
 });
-test("sector view uses assigned areas and coordination has the complete plan",()=>{
-  const h=harness();h.instance.focusSector("logistics");const sector=h.fits.at(-1);
-  assert.ok(sector.points.every(p=>p[1]<=38));h.instance.focusSector("coordination");assert.deepEqual(h.fits.at(-1).points,[[0,0],[100,100]]);
+test("each dispatcher sector changes the bounds and checkpoint no longer opens the whole site",()=>{
+  const h=harness(),initial=h.fits.at(-1).points,views=[];
+  for(const sectorId of ["logistics","production","coordination"]){
+    assert.equal(h.instance.focusSector(sectorId),true);
+    const fit=h.fits.at(-1),box=site.sectors.find(s=>s.id===sectorId).focus_bounds;
+    assert.deepEqual(fit.points,[[100-box.y-box.height,box.x],[100-box.y,box.x+box.width]]);
+    assert.notDeepEqual(fit.points,initial);assert.deepEqual(fit.options.padding,[18,18]);assert.equal(fit.options.animate,false);views.push(fit.points);
+  }
+  assert.notDeepEqual(views[0],views[1]);assert.notDeepEqual(views[1],views[2]);assert.equal(h.map.options.zoomSnap,.1);
+  assert.deepEqual(h.map.maximumBounds,[[-100,-100],[200,200]],"Wide panels must be allowed to center western and eastern sectors");
+  assert.equal(h.instance.focusSector("missing"),false);assert.deepEqual(h.fits.at(-1).points,initial);
 });
 test("untrusted building names remain escaped inside constrained label markup",()=>{
   const copy={...site,buildings:[{id:"A",name:'<img src=x onerror="alert(1)">',rectangle:{x:1,y:1,width:80,height:50}}]};
@@ -111,4 +119,44 @@ test("motion interpolates only between received positions and moves the mounted 
     const [endId,endFrame]=frames.entries().next().value;frames.delete(endId);endFrame(now+800);assert.deepEqual(vehicle.points,[58,43]);
     h.instance.destroy();assert.equal(frames.size,0);
   }finally{if(oldRequest)globalThis.requestAnimationFrame=oldRequest;else delete globalThis.requestAnimationFrame;if(oldCancel)globalThis.cancelAnimationFrame=oldCancel;else delete globalThis.cancelAnimationFrame;}
+});
+
+test("road fills follow all road borders so real junctions form one continuous surface",()=>{
+  const h=harness(),layers=h.layers.filter(l=>l.options.pane==="enterpriseRoads"),firstFill=layers.findIndex(l=>l.options.color==="#293f4d");
+  assert.equal(firstFill,site.roads.length);assert.ok(layers.slice(0,firstFill).every(l=>l.options.color==="#425462"));
+  assert.ok(layers.slice(firstFill).every(l=>l.options.color==="#293f4d"));assert.equal(layers.length,site.roads.length*2);
+});
+
+test("permit and hard-prohibition zones have distinct semantics and sector outlines have no fill",()=>{
+  const h=harness(),zones=h.layers.filter(l=>l.options.pane==="enterpriseZones"),forbidden=zones.find(l=>l.options.className==="enterprise-zone-forbidden"),permit=zones.find(l=>l.options.className==="enterprise-zone-permit");
+  assert.ok(forbidden);assert.ok(permit);assert.match(forbidden.tooltip,/Въезд запрещён всем/);assert.match(permit.tooltip,/индивидуальному допуску/);
+  assert.notEqual(forbidden.options.fillColor,permit.options.fillColor);
+  const sectors=h.layers.filter(l=>l.options.pane==="enterpriseSectors");assert.ok(sectors.length>=3);assert.ok(sectors.every(l=>l.options.fill===false));
+  assert.ok(zones.every(l=>!["#00bfff","#87ceeb","blue"].includes(l.options.fillColor)));
+});
+
+test("old site geometry falls back to actual sector areas and ignores invalid explicit bounds",()=>{
+  const copy={...site,sectors:site.sectors.map(s=>({...s,focus_bounds:undefined}))};
+  assert.ok(api.sectorRectangles(copy,"coordination").every(r=>r.x>=0&&r.width<100));
+  const invalid={...copy,sectors:copy.sectors.map(s=>({...s,focus_bounds:{x:NaN,y:0,width:100,height:100}}))};
+  assert.deepEqual(api.sectorRectangles(invalid,"logistics"),api.sectorRectangles(copy,"logistics"));assert.deepEqual(api.sectorRectangles(copy,"absent"),[]);
+});
+
+test("last received times are visible next to vehicle and stationary sensor without inventing a signal",()=>{
+  const h=harness(),stamp="2026-10-07T10:12:13Z";
+  h.instance.update({assets:[{...freshAsset,last_seen:stamp}],sensors:[{sensor_id:"ACCESS-G1",status:"online",last_received_at:stamp}],incidents:[]});
+  const vehicle=h.layers.find(l=>l.options.icon?.className?.includes("vehicle-marker")),sensor=h.layers.find(l=>l.tooltip?.includes("ACCESS-G1"));
+  assert.match(vehicle.options.icon.html,/enterprise-signal-time/);assert.ok(vehicle.options.icon.html.includes(api.signalTime(stamp)));
+  assert.match(sensor.options.icon.html,/enterprise-sensor-time/);assert.ok(sensor.options.icon.html.includes(api.signalTime(stamp)));
+  assert.equal(api.signalTime(null),"—");assert.equal(api.signalTime("invalid"),"—");
+});
+
+test("resizing retains the selected sector while a manual view remains untouched",()=>{
+  const original=globalThis.ResizeObserver;let resize;
+  globalThis.ResizeObserver=class{constructor(callback){resize=callback;}observe(){}disconnect(){}};
+  try{
+    const h=harness();h.instance.focusSector("coordination");const before=h.fits.at(-1).points,count=h.fits.length;resize();
+    assert.equal(h.fits.length,count+1);assert.deepEqual(h.fits.at(-1).points,before);
+    h.handlers["dragstart zoomstart"]();const manualCount=h.fits.length;resize();assert.equal(h.fits.length,manualCount);h.instance.destroy();
+  }finally{if(original)globalThis.ResizeObserver=original;else delete globalThis.ResizeObserver;}
 });
