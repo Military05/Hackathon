@@ -1,0 +1,226 @@
+{
+  "model_version": "movement-mlp-v1-6ca8f5089f55",
+  "artifact_sha256": "2505776049711209f4b968f906cf83f2eccf2bb3330359d36a4e1cef5ac74598",
+  "site_sha256": "46eb6f047acf1e90386bfabbe86744d4fb648b0a3a791010b9afaa62095a7206",
+  "seconds_per_scenario": 180,
+  "scenarios": {
+    "normal": {
+      "events": 1080,
+      "windows": 108,
+      "states": {
+        "insufficient_data": 3,
+        "normal": 105
+      },
+      "model_incidents": 0,
+      "all_incident_types": {},
+      "max_score": 0.0009497550069316231,
+      "normal_motion_acceptance": true,
+      "anomalies_by_asset": {},
+      "previous_anomaly_windows": 11
+    },
+    "logistics": {
+      "events": 1080,
+      "windows": 108,
+      "states": {
+        "insufficient_data": 3,
+        "normal": 105
+      },
+      "model_incidents": 0,
+      "all_incident_types": {},
+      "max_score": 0.0005384810994877347,
+      "normal_motion_acceptance": true,
+      "anomalies_by_asset": {},
+      "previous_anomaly_windows": 1
+    },
+    "shift": {
+      "events": 1083,
+      "windows": 108,
+      "states": {
+        "insufficient_data": 3,
+        "normal": 105
+      },
+      "model_incidents": 0,
+      "all_incident_types": {},
+      "max_score": 0.0053912538820777445,
+      "normal_motion_acceptance": true,
+      "anomalies_by_asset": {},
+      "previous_anomaly_windows": 24
+    },
+    "service": {
+      "events": 1080,
+      "windows": 108,
+      "states": {
+        "insufficient_data": 3,
+        "normal": 105
+      },
+      "model_incidents": 0,
+      "all_incident_types": {},
+      "max_score": 0.0012461479103269434,
+      "normal_motion_acceptance": true,
+      "anomalies_by_asset": {},
+      "previous_anomaly_windows": 8
+    },
+    "forbidden-zone": {
+      "events": 1080,
+      "windows": 108,
+      "states": {
+        "insufficient_data": 3,
+        "normal": 105
+      },
+      "model_incidents": 0,
+      "all_incident_types": {
+        "forbidden_zone": 1,
+        "route_deviation": 1
+      },
+      "max_score": 0.0016662705263774651,
+      "normal_motion_acceptance": false,
+      "anomalies_by_asset": {},
+      "previous_anomaly_windows": 13
+    },
+    "unauthorized-access": {
+      "events": 1082,
+      "windows": 108,
+      "states": {
+        "insufficient_data": 3,
+        "normal": 105
+      },
+      "model_incidents": 0,
+      "all_incident_types": {
+        "unauthorized_access": 1
+      },
+      "max_score": 0.0009497550069316231,
+      "normal_motion_acceptance": false,
+      "anomalies_by_asset": {},
+      "previous_anomaly_windows": 11
+    },
+    "sensor-offline": {
+      "events": 1068,
+      "windows": 108,
+      "states": {
+        "insufficient_data": 3,
+        "normal": 105
+      },
+      "model_incidents": 0,
+      "all_incident_types": {
+        "sensor_offline": 1
+      },
+      "max_score": 0.0009497550069316231,
+      "normal_motion_acceptance": false,
+      "anomalies_by_asset": {},
+      "previous_anomaly_windows": 11
+    },
+    "simultaneous": {
+      "events": 1070,
+      "windows": 108,
+      "states": {
+        "insufficient_data": 3,
+        "normal": 105
+      },
+      "model_incidents": 0,
+      "all_incident_types": {
+        "forbidden_zone": 1,
+        "unauthorized_access": 1,
+        "route_deviation": 1,
+        "sensor_offline": 1
+      },
+      "max_score": 0.0016662705263774651,
+      "normal_motion_acceptance": false,
+      "anomalies_by_asset": {},
+      "previous_anomaly_windows": 13
+    },
+    "route-deviation": {
+      "events": 1080,
+      "windows": 108,
+      "states": {
+        "insufficient_data": 3,
+        "normal": 105
+      },
+      "model_incidents": 0,
+      "all_incident_types": {
+        "route_deviation": 1
+      },
+      "max_score": 0.0014620390067368312,
+      "normal_motion_acceptance": false,
+      "anomalies_by_asset": {},
+      "previous_anomaly_windows": 5
+    },
+    "collision": {
+      "events": 1080,
+      "windows": 108,
+      "states": {
+        "insufficient_data": 3,
+        "normal": 105
+      },
+      "model_incidents": 0,
+      "all_incident_types": {
+        "collision": 1,
+        "route_deviation": 1
+      },
+      "max_score": 0.0003192628374860746,
+      "normal_motion_acceptance": false,
+      "anomalies_by_asset": {},
+      "previous_anomaly_windows": 0
+    },
+    "safe-passing": {
+      "events": 1080,
+      "windows": 108,
+      "states": {
+        "insufficient_data": 3,
+        "normal": 105
+      },
+      "model_incidents": 0,
+      "all_incident_types": {},
+      "max_score": 0.0009468726820249973,
+      "normal_motion_acceptance": true,
+      "anomalies_by_asset": {},
+      "previous_anomaly_windows": 1
+    },
+    "production-zone": {
+      "events": 1080,
+      "windows": 108,
+      "states": {
+        "insufficient_data": 3,
+        "normal": 105
+      },
+      "model_incidents": 0,
+      "all_incident_types": {
+        "forbidden_zone": 1,
+        "route_deviation": 1
+      },
+      "max_score": 0.0006777289223991302,
+      "normal_motion_acceptance": false,
+      "anomalies_by_asset": {},
+      "previous_anomaly_windows": 0
+    },
+    "service-zone": {
+      "events": 1080,
+      "windows": 108,
+      "states": {
+        "insufficient_data": 3,
+        "normal": 97,
+        "anomaly": 8
+      },
+      "model_incidents": 1,
+      "all_incident_types": {
+        "forbidden_zone": 1,
+        "route_deviation": 1,
+        "model_anomaly": 1
+      },
+      "max_score": 0.9999876859107535,
+      "normal_motion_acceptance": false,
+      "anomalies_by_asset": {
+        "V3": 8
+      },
+      "previous_anomaly_windows": 9
+    }
+  },
+  "normal_model_incidents": 0,
+  "adapter_milliseconds": {
+    "samples": 1404,
+    "median": 2.965749998111278,
+    "p95": 6.557545013492915,
+    "max": 20.055799977853894
+  },
+  "execution": "actual DemoRunner + Service + SQLite + trained MLP; event time accelerated, no LLM",
+  "limits": "synthetic replay, not a wall-clock load benchmark or industrial ground truth"
+}

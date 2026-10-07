@@ -16,19 +16,21 @@ def export_demo(input_directory, artifact, output_directory):
     observations = [model.observe(episode["events"], episode["asset_id"], w.window_end)
                     for w, label in episode_windows(episode) if label is not None]
     anomaly = next(o for o in observations if o["status"] == "anomaly")
+    asset_id = episode["asset_id"]
+    sensor_id = episode["events"][0]["sensor_id"]
     events = [e for e in episode["events"] if e["event_id"] in anomaly["evidence_event_ids"]]
     snapshot = {"as_of": anomaly["window_end"], "rule_version": "fixture-rules-v2.1",
                 "model_version": model.metadata["model_version"],
-                "incident": {"incident_id": "INC-MODEL-D4", "type": "model_anomaly", "asset_id": "V1",
-                             "sensor_id": "POS-V1", "condition_active": True, "condition_state": "active",
+                "incident": {"incident_id": "INC-MODEL-D4", "type": "model_anomaly", "asset_id": asset_id,
+                             "sensor_id": sensor_id, "condition_active": True, "condition_state": "active",
                              "evidence_event_ids": anomaly["evidence_event_ids"], "observation_id": anomaly["observation_id"],
                              "details": {"observation_id": anomaly["observation_id"],
                                          "score": anomaly["score"], "threshold": anomaly["threshold"]},
                              "score": anomaly["score"], "threshold": anomaly["threshold"], "demo": True},
                 "events": events, "observations": [anomaly],
-                "policies": {"V1": {"asset_id": "V1", "type": "vehicle", "vehicle_type": episode["vehicle_type"],
+                "policies": {asset_id: {"asset_id": asset_id, "type": "vehicle", "vehicle_type": episode["vehicle_type"],
                                     "allowed_buildings": ["W1", "W2"], "policy_version": "fixture-policy-v1"}},
-                "sensor_health": {"POS-V1": {"sensor_id": "POS-V1", "status": "online",
+                "sensor_health": {sensor_id: {"sensor_id": sensor_id, "status": "online",
                     "last_received_at": events[-1]["event_time"], "threshold_seconds": 5, "version": "sensor-health-v1"}}}
     output = Path(output_directory)
     output.mkdir(parents=True, exist_ok=True)

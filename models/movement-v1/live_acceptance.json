@@ -1,0 +1,435 @@
+{
+  "status": "PASS",
+  "seconds": 21.984000000054948,
+  "live_backend": true,
+  "real_model_requests": true,
+  "transport": "loopback HTTP via uvicorn",
+  "data": "explicit synthetic d4",
+  "scheduler": false,
+  "inference": "real adapter on stored events, invoked directly",
+  "checked_at": "2026-10-07T23:47:34.803Z",
+  "observation": {
+    "observation_id": "mo-96cea3b52da91a476baed792",
+    "asset_id": "V1",
+    "window_start": "2026-10-07T23:47:20.000000Z",
+    "window_end": "2026-10-07T23:47:30.000000Z",
+    "status": "anomaly",
+    "score": 0.9998759021886874,
+    "threshold": 0.15122588236235446,
+    "model_version": "movement-mlp-v1-6ca8f5089f55",
+    "feature_version": "movement-v1",
+    "evidence_event_ids": [
+      "factory-v6-test-V1-00001-1-p0033",
+      "factory-v6-test-V1-00001-1-p0034",
+      "factory-v6-test-V1-00001-1-p0035",
+      "factory-v6-test-V1-00001-1-p0036",
+      "factory-v6-test-V1-00001-1-p0037",
+      "factory-v6-test-V1-00001-1-p0038",
+      "factory-v6-test-V1-00001-1-p0039",
+      "factory-v6-test-V1-00001-1-p0040",
+      "factory-v6-test-V1-00001-1-p0041",
+      "factory-v6-test-V1-00001-1-p0042",
+      "factory-v6-test-V1-00001-1-p0043"
+    ],
+    "demo": true
+  },
+  "auth_enabled": true,
+  "job_status": "completed",
+  "result": {
+    "facts": [
+      {
+        "evidence_event_ids": [
+          "factory-v6-test-V1-00001-1-p0033",
+          "factory-v6-test-V1-00001-1-p0034",
+          "factory-v6-test-V1-00001-1-p0035",
+          "factory-v6-test-V1-00001-1-p0036",
+          "factory-v6-test-V1-00001-1-p0037",
+          "factory-v6-test-V1-00001-1-p0038",
+          "factory-v6-test-V1-00001-1-p0039",
+          "factory-v6-test-V1-00001-1-p0040",
+          "factory-v6-test-V1-00001-1-p0041",
+          "factory-v6-test-V1-00001-1-p0042",
+          "factory-v6-test-V1-00001-1-p0043"
+        ],
+        "evidence_refs": [
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0033",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0034",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0035",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0036",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0037",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0038",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0039",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0040",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0041",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0042",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0043",
+            "kind": "event",
+            "version": "event-v1"
+          }
+        ],
+        "field": "status",
+        "id": "mo-96cea3b52da91a476baed792",
+        "source": "model_observation",
+        "text": "model_observation mo-96cea3b52da91a476baed792: status = \"anomaly\"",
+        "value": "anomaly"
+      },
+      {
+        "evidence_event_ids": [
+          "factory-v6-test-V1-00001-1-p0033",
+          "factory-v6-test-V1-00001-1-p0034",
+          "factory-v6-test-V1-00001-1-p0035",
+          "factory-v6-test-V1-00001-1-p0036",
+          "factory-v6-test-V1-00001-1-p0037",
+          "factory-v6-test-V1-00001-1-p0038",
+          "factory-v6-test-V1-00001-1-p0039",
+          "factory-v6-test-V1-00001-1-p0040",
+          "factory-v6-test-V1-00001-1-p0041",
+          "factory-v6-test-V1-00001-1-p0042",
+          "factory-v6-test-V1-00001-1-p0043"
+        ],
+        "evidence_refs": [
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0033",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0034",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0035",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0036",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0037",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0038",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0039",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0040",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0041",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0042",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0043",
+            "kind": "event",
+            "version": "event-v1"
+          }
+        ],
+        "field": "score",
+        "id": "mo-96cea3b52da91a476baed792",
+        "source": "model_observation",
+        "text": "model_observation mo-96cea3b52da91a476baed792: score = 0.9998759021886874",
+        "value": 0.9998759021886874
+      },
+      {
+        "evidence_event_ids": [
+          "factory-v6-test-V1-00001-1-p0033",
+          "factory-v6-test-V1-00001-1-p0034",
+          "factory-v6-test-V1-00001-1-p0035",
+          "factory-v6-test-V1-00001-1-p0036",
+          "factory-v6-test-V1-00001-1-p0037",
+          "factory-v6-test-V1-00001-1-p0038",
+          "factory-v6-test-V1-00001-1-p0039",
+          "factory-v6-test-V1-00001-1-p0040",
+          "factory-v6-test-V1-00001-1-p0041",
+          "factory-v6-test-V1-00001-1-p0042",
+          "factory-v6-test-V1-00001-1-p0043"
+        ],
+        "evidence_refs": [
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0033",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0034",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0035",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0036",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0037",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0038",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0039",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0040",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0041",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0042",
+            "kind": "event",
+            "version": "event-v1"
+          },
+          {
+            "as_of": "2026-10-07T23:47:38.623Z",
+            "id": "factory-v6-test-V1-00001-1-p0043",
+            "kind": "event",
+            "version": "event-v1"
+          }
+        ],
+        "field": "threshold",
+        "id": "mo-96cea3b52da91a476baed792",
+        "source": "model_observation",
+        "text": "model_observation mo-96cea3b52da91a476baed792: threshold = 0.15122588236235446",
+        "value": 0.15122588236235446
+      }
+    ],
+    "evidence_event_ids": [
+      "factory-v6-test-V1-00001-1-p0033",
+      "factory-v6-test-V1-00001-1-p0034",
+      "factory-v6-test-V1-00001-1-p0035",
+      "factory-v6-test-V1-00001-1-p0036",
+      "factory-v6-test-V1-00001-1-p0037",
+      "factory-v6-test-V1-00001-1-p0038",
+      "factory-v6-test-V1-00001-1-p0039",
+      "factory-v6-test-V1-00001-1-p0040",
+      "factory-v6-test-V1-00001-1-p0041",
+      "factory-v6-test-V1-00001-1-p0042",
+      "factory-v6-test-V1-00001-1-p0043"
+    ],
+    "evidence_refs": [
+      {
+        "as_of": "2026-10-07T23:47:38.623Z",
+        "id": "factory-v6-test-V1-00001-1-p0033",
+        "kind": "event",
+        "version": "event-v1"
+      },
+      {
+        "as_of": "2026-10-07T23:47:38.623Z",
+        "id": "factory-v6-test-V1-00001-1-p0034",
+        "kind": "event",
+        "version": "event-v1"
+      },
+      {
+        "as_of": "2026-10-07T23:47:38.623Z",
+        "id": "factory-v6-test-V1-00001-1-p0035",
+        "kind": "event",
+        "version": "event-v1"
+      },
+      {
+        "as_of": "2026-10-07T23:47:38.623Z",
+        "id": "factory-v6-test-V1-00001-1-p0036",
+        "kind": "event",
+        "version": "event-v1"
+      },
+      {
+        "as_of": "2026-10-07T23:47:38.623Z",
+        "id": "factory-v6-test-V1-00001-1-p0037",
+        "kind": "event",
+        "version": "event-v1"
+      },
+      {
+        "as_of": "2026-10-07T23:47:38.623Z",
+        "id": "factory-v6-test-V1-00001-1-p0038",
+        "kind": "event",
+        "version": "event-v1"
+      },
+      {
+        "as_of": "2026-10-07T23:47:38.623Z",
+        "id": "factory-v6-test-V1-00001-1-p0039",
+        "kind": "event",
+        "version": "event-v1"
+      },
+      {
+        "as_of": "2026-10-07T23:47:38.623Z",
+        "id": "factory-v6-test-V1-00001-1-p0040",
+        "kind": "event",
+        "version": "event-v1"
+      },
+      {
+        "as_of": "2026-10-07T23:47:38.623Z",
+        "id": "factory-v6-test-V1-00001-1-p0041",
+        "kind": "event",
+        "version": "event-v1"
+      },
+      {
+        "as_of": "2026-10-07T23:47:38.623Z",
+        "id": "factory-v6-test-V1-00001-1-p0042",
+        "kind": "event",
+        "version": "event-v1"
+      },
+      {
+        "as_of": "2026-10-07T23:47:38.623Z",
+        "id": "factory-v6-test-V1-00001-1-p0043",
+        "kind": "event",
+        "version": "event-v1"
+      }
+    ],
+    "tool_trace": [
+      {
+        "arguments": {
+          "incident_id": "incident-6957bae196cd4be0a2e2a349b1764f99"
+        },
+        "duration_ms": 0.065,
+        "returned_ids": [
+          "factory-v6-test-V1-00001-1-p0033",
+          "factory-v6-test-V1-00001-1-p0034",
+          "factory-v6-test-V1-00001-1-p0035",
+          "factory-v6-test-V1-00001-1-p0036",
+          "factory-v6-test-V1-00001-1-p0037",
+          "factory-v6-test-V1-00001-1-p0038",
+          "factory-v6-test-V1-00001-1-p0039",
+          "factory-v6-test-V1-00001-1-p0040",
+          "factory-v6-test-V1-00001-1-p0041",
+          "factory-v6-test-V1-00001-1-p0042",
+          "factory-v6-test-V1-00001-1-p0043"
+        ],
+        "snapshot_id": "snap-d436657451f8232be0c041f9dbfba415b438ca2b778e3ca3ce75a3952526b0de",
+        "tool": "get_incident"
+      }
+    ],
+    "model_name": "hackathon-qwen3-4b",
+    "created_at": "2026-10-07T23:47:56.400733Z",
+    "incident_snapshot": {
+      "as_of": "2026-10-07T23:47:38.623Z",
+      "evidence_event_ids": [
+        "factory-v6-test-V1-00001-1-p0033",
+        "factory-v6-test-V1-00001-1-p0034",
+        "factory-v6-test-V1-00001-1-p0035",
+        "factory-v6-test-V1-00001-1-p0036",
+        "factory-v6-test-V1-00001-1-p0037",
+        "factory-v6-test-V1-00001-1-p0038",
+        "factory-v6-test-V1-00001-1-p0039",
+        "factory-v6-test-V1-00001-1-p0040",
+        "factory-v6-test-V1-00001-1-p0041",
+        "factory-v6-test-V1-00001-1-p0042",
+        "factory-v6-test-V1-00001-1-p0043"
+      ],
+      "model_version": "movement-mlp-v1-6ca8f5089f55",
+      "policy_versions": {
+        "V1": "demo-policy-v6"
+      },
+      "rule_version": "rules-v2.2-safety",
+      "snapshot_id": "snap-d436657451f8232be0c041f9dbfba415b438ca2b778e3ca3ce75a3952526b0de"
+    }
+  },
+  "scope": "real local Qwen + trained MLP + isolated synthetic HTTP acceptance; no production credentials"
+}

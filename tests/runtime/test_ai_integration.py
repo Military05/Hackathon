@@ -123,6 +123,19 @@ class AIIntegrationTests(unittest.TestCase):
         updated = FrozenSnapshot(capture_snapshot(self.service, self.incident["incident_id"]))
         self.assertNotEqual(before.snapshot_id, updated.snapshot_id)
 
+    def test_retrained_version_does_not_reuse_previous_model_watermark(self):
+        upgraded = MovementModel(self.service, self.artifact)
+        upgraded.metadata = {**upgraded.metadata, "model_version": "retrained-test-version"}
+        result = upgraded.evaluate("V1", self.events, self.window_end)
+        self.assertEqual(result["model_version"], "retrained-test-version")
+        self.assertNotEqual(result["observation_id"], self.observation["observation_id"])
+        self.service.register_model_observation(result)
+        late = {**self.events[-1], "event_id": "late-after-upgrade",
+                "payload": {"asset_id": "V1", "x": 45, "y": 40}}
+        self.service.ingest_event(late)
+        self.assertEqual(upgraded.evaluate("V1", self.events + [late], self.window_end), result)
+        self.assertEqual(len(self.service.model_observations("V1")), 2)
+
     def test_model_report_requires_the_linked_score_threshold_status(self):
         session = ToolSession(FrozenSnapshot(capture_snapshot(self.service, self.incident["incident_id"])))
         session.execute("get_incident", json.dumps({"incident_id": self.incident["incident_id"]}))

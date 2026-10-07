@@ -1,0 +1,22 @@
+name: Movement model and agent
+on:
+  push:
+    branches: [main, 'codex/**']
+  pull_request:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-ai.txt
+            requirements-ai-dev.txt
+      - run: python -m pip install -r requirements-ai-dev.txt
+      - run: python -m pytest tests/agent tests/ml -q
+      - run: python -m unittest tests.runtime.test_ai_integration -v
+      # Real Qwen/CUDA acceptance is run locally, not inferred from CI success.

@@ -96,6 +96,9 @@ def test_trained_observation_flows_to_verified_agent_result(trained, provider):
         else:
             assert not body["tools"]
             assert (body.get("format") if provider == "ollama" else body.get("response_format"))
+            schema = body["format"] if provider == "ollama" else body["response_format"]["json_schema"]["schema"]
+            assert schema["$defs"]["FactClaim"]["properties"]["value"]["enum"] == [
+                observation[field] for field in ("status", "score", "threshold")]
             message = {"role": "assistant", "content": json.dumps({"facts": [
                 {"source": "model_observation", "id": observation["observation_id"],
                  "field": field, "value": observation[field]} for field in ("score", "threshold", "status")],

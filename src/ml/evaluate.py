@@ -1,6 +1,7 @@
 import argparse
 import hashlib
 import json
+import platform
 import time
 from pathlib import Path
 
@@ -41,7 +42,8 @@ def evaluate(input_directory, artifact):
               "baseline": report(y, baseline_scores(x), metadata["baseline_threshold"], rows),
               "inference_milliseconds": {"samples": len(timings), "median": float(np.median(timings)),
                                          "p95": float(np.percentile(timings, 95)), "max": float(max(timings)),
-                                         "machine": "Codex execution environment, not the target laptop"}}
+                                         "machine": platform.platform(),
+                                         "scope": "local CPU single-window measurement; not a concurrent-load benchmark"}}
     Path(artifact).with_name("evaluation.json").write_text(json.dumps(result, indent=2) + "\n")
     return result
 

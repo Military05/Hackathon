@@ -81,13 +81,13 @@ def generate(output, seed=42, test_seed=20261007, episodes_per_class=160):
                 episodes.append(make_episode(test_rng if split == "test" else rng, episode_id, split,
                                              label, start + timedelta(minutes=2 * len(episodes))))
     content = "".join(json.dumps(e, ensure_ascii=False, sort_keys=True) + "\n" for e in episodes)
-    (output / "episodes.jsonl").write_text(content)
+    (output / "episodes.jsonl").write_bytes(content.encode("utf-8"))
     manifest = {"schema": "movement-episodes-v1", "seed": seed, "test_seed": test_seed,
                 "episode_counts": {s: 2 * n for s, n in counts.items()},
                 "dataset_sha256": hashlib.sha256(content.encode()).hexdigest(), "road": ROAD.tolist(),
                 "test_shift": "different seed, sample interval and position noise",
                 "scope": "synthetic unusual movement; no industrial or collision ground truth"}
-    (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return manifest
 
 

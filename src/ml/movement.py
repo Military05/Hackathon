@@ -1,5 +1,6 @@
 """Adapter for the v5 scheduler; inference uses the original movement-v1 Pipeline."""
 import json
+import hashlib
 import os
 import threading
 from pathlib import Path
@@ -16,6 +17,14 @@ class MovementModel(PipelineModel):
             "DISPATCH_ML_ARTIFACT", str(ROOT / "models/movement-v1/movement.joblib")))
         self.service = service
         self.lock = threading.Lock()
+        expected_site = self.metadata.get("site_semantic_sha256")
+        if service and expected_site and self.state == "ready":
+            actual_site = hashlib.sha256(json.dumps(service.site, sort_keys=True, ensure_ascii=False,
+                separators=(",", ":")).encode("utf-8")).hexdigest()
+            if actual_site != expected_site:
+                self.pipeline = None
+                self.state = "artifact_invalid"
+                self.error = "Карта отличается от обучающего набора; требуется новая проверка и обучение MLP"
 
     def health(self):
         return {"status": self.state, "model_version": self.metadata.get("model_version"),
@@ -27,10 +36,12 @@ class MovementModel(PipelineModel):
         with self.lock:
             # Use the committed observation as the watermark. Never advance it before
             # Service atomically saves the observation and its incident effect.
-            if self.service:
+            if self.service and self.state == "ready":
                 with self.service.store.read() as db:
                     row = db.execute("SELECT body FROM model_observations WHERE asset_id=? "
-                                     "ORDER BY window_end DESC,observation_id DESC LIMIT 1", (asset_id,)).fetchone()
+                                     "AND json_extract(body, '$.model_version')=? "
+                                     "ORDER BY window_end DESC,observation_id DESC LIMIT 1",
+                                     (asset_id, self.metadata.get("model_version"))).fetchone()
                     if row:
                         previous = json.loads(row[0])
                         if parse_time(previous["window_end"]) >= end:
