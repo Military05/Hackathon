@@ -45,7 +45,7 @@ def test_factory_generation_is_byte_reproducible_and_rejects_shared_seed(tmp_pat
     assert generate_factory(first, repeats=(1, 1, 1)) == generate_factory(second, repeats=(1, 1, 1))
     assert (first / "episodes.jsonl").read_bytes() == (second / "episodes.jsonl").read_bytes()
     with pytest.raises(ValueError):
-        generate_factory(tmp_path / "invalid", test_seed=20261008)
+        generate_factory(tmp_path / "invalid", test_seed=20261018)
 
 
 def test_catalog_follows_new_map_objects_without_hardcoded_coordinates():
@@ -61,7 +61,7 @@ def test_packaged_model_matches_map_and_refuses_unchecked_new_layout():
     site = json.loads(SITE.read_text(encoding="utf-8"))
     model = MovementModel(SimpleNamespace(site=site))
     assert model.state == "ready"
-    assert model.metadata["dataset_generator"] == "factory-map-v6"
+    assert model.metadata["dataset_generator"] == "factory-map-v7"
     site["roads"].append({"id": "future-road", "points": [[90, 98], [95, 98]]})
     changed = MovementModel(SimpleNamespace(site=site))
     assert changed.state == "artifact_invalid"

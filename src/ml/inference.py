@@ -50,7 +50,7 @@ class MovementModel:
             self.state, self.error = "artifact_invalid", str(exc)
 
     def observe(self, events, asset_id, window_end):
-        window = extract_window(events, asset_id, window_end)
+        window = extract_window(events, asset_id, window_end, self.metadata.get("feature_context"))
         version = self.metadata.get("model_version")
         result = {"observation_id": "mo-" + hashlib.sha256(f"{asset_id}|{window.window_end}|{version}".encode()).hexdigest()[:24],
                   "asset_id": asset_id, "window_start": window.window_start, "window_end": window.window_end,

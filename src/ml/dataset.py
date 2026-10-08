@@ -9,6 +9,12 @@ from .features import STEP_SECONDS, WINDOW_SECONDS, extract_window, iso, parse_t
 
 def read_episodes(directory):
     episodes = [json.loads(line) for line in (Path(directory) / "episodes.jsonl").read_text().splitlines() if line]
+    manifest_path = Path(directory) / "manifest.json"
+    if manifest_path.exists():
+        context = json.loads(manifest_path.read_text(encoding="utf-8")).get("feature_context")
+        if context:
+            for episode in episodes:
+                episode["feature_context"] = context
     ids = [e["episode_id"] for e in episodes]
     if len(ids) != len(set(ids)):
         raise ValueError("Episode IDs must be unique across all splits")
@@ -23,7 +29,7 @@ def episode_windows(episode):
     onset = parse_time(episode["anomaly_onset"]) if episode.get("anomaly_onset") else None
     end = first + timedelta(seconds=WINDOW_SECONDS)
     while end <= last:
-        window = extract_window(episode["events"], episode["asset_id"], iso(end))
+        window = extract_window(episode["events"], episode["asset_id"], iso(end), episode.get("feature_context"))
         # Transition windows contain mixed ground truth; evaluate only homogeneous windows.
         label = 0 if onset is None or end <= onset else (1 if end - timedelta(seconds=WINDOW_SECONDS) >= onset else None)
         yield window, label
