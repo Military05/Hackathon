@@ -49,6 +49,8 @@ class FrozenSnapshot:
             analytical = copy.deepcopy(self.data)
             analytical.pop("as_of", None)
             analytical.pop("snapshot_id", None)
+            if 'incident_context' in analytical:
+                analytical['incident_context'].pop('until', None)
             analytical["incident"] = {k: v for k, v in incident.items() if k not in OWNERSHIP_FIELDS}
             for row in analytical["sensor_health"].values():
                 row.pop("as_of", None)

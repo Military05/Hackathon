@@ -4,13 +4,14 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .errors import AgentError
+from .presentation import present, review_model_text
 from .providers import canonical, utc_now
 from .tools import Identifier, ToolSession
 
 
 class FactClaim(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    source: Literal["event", "policy", "sensor_health", "model_observation"]
+    source: Literal["event", "policy", "sensor_health", "model_observation", "incident_history", "dispatcher_note"]
     id: Identifier
     field: str = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*){0,3}$")
     # An untyped {} schema makes some local structured-output engines generate
@@ -53,10 +54,10 @@ def validate_result(content, session: ToolSession, model_name):
     except ValidationError as exc:
         issues = [{"field": ".".join(map(str, error["loc"])), "code": error["type"]}
                   for error in exc.errors(include_url=False, include_input=False)[:5]]
-        raise AgentError("model_reply_invalid", "Final answer does not match the verified-facts schema.",
+        raise AgentError("model_reply_invalid", "Ответ модели не соответствует схеме проверяемых фактов.",
                          details={"issues": issues}) from exc
     except (ValueError, TypeError) as exc:
-        raise AgentError("model_reply_invalid", "Final answer does not match the verified-facts schema.",
+        raise AgentError("model_reply_invalid", "Ответ модели не содержит полного корректного JSON проверяемых фактов.",
                          details={"reason": "invalid_json"}) from exc
     facts, refs, event_ids = [], {}, set()
     for claim in answer.facts:
@@ -101,6 +102,7 @@ def validate_result(content, session: ToolSession, model_name):
         if not 1 <= len(recommendation) <= 500:
             raise AgentError("model_reply_invalid", "Recommendation length is invalid.")
     descriptor = session.snapshot.descriptor()
+    presentation = present(session, facts)
     summary = f"Происшествие {session.snapshot.incident_id}. " + "; ".join(f["text"] for f in facts[:3])
     summary += ". Предлагаемое действие оператору: " + answer.recommendations[0]
     if incident.get("type") == "model_anomaly":
@@ -110,7 +112,11 @@ def validate_result(content, session: ToolSession, model_name):
                    f"score={canonical(linked['score'])}, threshold={canonical(linked['threshold'])}. "
                    "Это модельное подозрение, а не вероятность аварии. "
                    "Предлагаемое действие оператору: " + answer.recommendations[0])
-    return {"summary": summary,
+    return {"summary": presentation['title'] + '. ' + presentation['description'], 'presentation': presentation,
+            'technical': {'snapshot': session.snapshot.export(), 'verified_facts': facts,
+                          'model_answer': answer.model_dump(), 'tool_trace': list(session.trace),
+                          'legacy_summary': summary,
+                          'semantic_check': review_model_text(answer, presentation)},
             "facts": facts, "hypotheses": [h.model_dump() for h in answer.hypotheses],
             "recommendations": answer.recommendations, "evidence_event_ids": sorted(event_ids),
             "evidence_refs": list(refs.values()), "tool_trace": list(session.trace),

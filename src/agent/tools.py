@@ -55,7 +55,8 @@ class ToolSession:
     def __init__(self, snapshot: FrozenSnapshot):
         self.snapshot = snapshot
         self.trace = []
-        self.records = {"event": {}, "sensor_health": {}, "policy": {}, "model_observation": {}}
+        self.records = {"event": {}, "sensor_health": {}, "policy": {}, "model_observation": {},
+                        'incident_history': {}, 'dispatcher_note': {}}
         self.incident_read = False
 
     def ref(self, kind, identifier):
@@ -83,7 +84,11 @@ class ToolSession:
             self.records["model_observation"].update(self.snapshot.observations)
             returned = [e["event_id"] for e in evidence]
             self.incident_read = True
-            result = {"incident": data["incident"], "evidence": evidence, "observations": observations}
+            context = data.get('incident_context', {})
+            self.records['incident_history'].update({row['incident_id']: row for row in context.get('related_incidents', [])})
+            self.records['dispatcher_note'].update({row['note_id']: row for row in context.get('dispatcher_notes', [])})
+            result = {"incident": data["incident"], "evidence": evidence, "observations": observations,
+                      'incident_context': context}
         elif name == "get_event_history":
             if args.asset_id not in self.snapshot.policies:
                 raise AgentError("not_found", "Asset is outside the captured scope.", 404)

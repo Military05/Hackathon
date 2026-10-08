@@ -190,6 +190,22 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
             raise ApiError(422, "extra_parameters", "Очистка списка не принимает параметры")
         return service.clear_incidents(x_demo_operator)
 
+    def require_log_admin(request):
+        if getattr(request.state, 'user', {}).get('role') != 'admin':
+            raise ApiError(403, 'admin_required', 'Очистка общего журнала доступна администратору.')
+
+    @app.get('/api/admin/incident-log/preview')
+    def incident_log_preview(request: Request):
+        require_log_admin(request)
+        from src.core.incident_log import preview
+        return preview(service)
+
+    @app.post('/api/admin/incident-log/clear')
+    def clear_incident_log(request: Request, body: dict = Body(...)):
+        require_log_admin(request)
+        from src.core.incident_log import clear
+        return clear(service, body)
+
     @app.get("/api/incidents/{incident_id}")
     def incident(incident_id: str, x_demo_operator: str | None = Header(default=None)):
         return service.get_incident(incident_id, x_demo_operator)

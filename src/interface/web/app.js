@@ -179,7 +179,7 @@ function updateActions(i){
   const readyRecipient=Boolean($("recipient").value);
   const disabled=S.commandBusy?" disabled":"";
   const button=(id,text,primary=false,extraDisabled=false)=>`<button id="${id}"${primary?' class="primary"':""}${disabled||extraDisabled?" disabled":""}>${text}</button>`;
-  setMarkup("detail-actions",`${button("show-on-map","Показать на карте")}${!i.assigned_operator_id&&working&&i.can_claim!==false?button("claim","Принять ответственность",true):""}${own&&working?button("contact","Записать: связался")+button("inspect","Записать: запросил проверку"):""}${own&&i.condition_active===false&&i.condition_state!=="unknown"&&!pending&&working?button("close","Завершить обработку"):""}${own&&i.type==="model_anomaly"&&working?button("dismiss","Отклонить модельное подозрение"):""}${own&&!pending&&working?button("transfer","Предложить передачу",false,!readyRecipient):""}${pending?`<span class="pill">Передача → ${esc(operatorName(i.pending_transfer.to_operator_id))}</span><small class="transfer-clock">${esc(transferClock(i))}</small>${i.pending_transfer.to_operator_id===S.operator?button("accept","Принять передачу",true):""}${own?button("cancel","Отменить передачу"):""}`:""}${button("analyse",S.agentAvailable?"Проанализировать ИИ":"ИИ ещё не подключён",false,!S.agentAvailable||S.analysisSubmitting)}`);
+  setMarkup("detail-actions",`${button("show-on-map","Показать на карте")}${!i.assigned_operator_id&&working&&i.can_claim!==false?button("claim","Принять ответственность",true):""}${own&&working?button("contact","Записать: связался")+button("inspect","Записать: запросил проверку")+button("save-note","Сохранить заметку"):""}${own&&i.condition_active===false&&i.condition_state!=="unknown"&&!pending&&working?button("close","Завершить обработку"):""}${own&&i.type==="model_anomaly"&&working?button("dismiss","Отклонить модельное подозрение"):""}${own&&!pending&&working?button("transfer","Предложить передачу",false,!readyRecipient):""}${pending?`<span class="pill">Передача → ${esc(operatorName(i.pending_transfer.to_operator_id))}</span><small class="transfer-clock">${esc(transferClock(i))}</small>${i.pending_transfer.to_operator_id===S.operator?button("accept","Принять передачу",true):""}${own?button("cancel","Отменить передачу"):""}`:""}${button("analyse",S.agentAvailable?"Проанализировать ИИ":"ИИ ещё не подключён",false,!S.agentAvailable||S.analysisSubmitting)}`);
 
   const bind=(id,fn)=>{if($(id))$(id).onclick=async()=>{try{await fn();}catch(e){showError(e);}};};
   bind("claim",()=>command("claim"));
@@ -190,6 +190,7 @@ function updateActions(i){
   bind("transfer",()=>command("request_transfer",{to_operator_id:$("recipient").value,reason:reason()||"Запрошена помощь"}));
   bind("accept",()=>command("accept_transfer",{transfer_id:S.detail.pending_transfer.transfer_id}));
   bind("cancel",()=>command("cancel_transfer",{transfer_id:S.detail.pending_transfer.transfer_id,reason:reason()||"Передача отменена отправителем"}));
+  bind("save-note",saveNote);
   bind("analyse",startAnalysis);
   bind("show-on-map",showSelectedOnMap);
 }
@@ -197,7 +198,7 @@ function applyDetails(i){
   if(i.incident_id!==S.selected)return;if(S.detail?.incident_id===i.incident_id&&S.detail.dispatch_revision>i.dispatch_revision)return;
   if(!workable(i)){hideSelected();return;}
   if(S.detailId!==i.incident_id){
-    $("details").innerHTML='<div id="detail-facts" class="facts"></div><div id="response-plan" class="response-plan"></div><div id="response-controls" class="response"><label for="reason">Реакция диспетчера</label><input id="reason" placeholder="Причина / выполненное действие" maxlength="500"></div><div id="recipient-wrap" class="recipient-wrap"><label for="recipient">Получатель передачи</label><select id="recipient"></select></div><div id="detail-actions" class="actions"></div><div id="analysis" class="analysis"></div>';S.detailId=i.incident_id;
+    $("details").innerHTML='<div id="detail-facts" class="facts"></div><div id="response-plan" class="response-plan"></div><div id="response-controls" class="response"><label for="reason">Заметка / реакция диспетчера</label><input id="reason" placeholder="Причина / выполненное действие" maxlength="500"></div><div id="recipient-wrap" class="recipient-wrap"><label for="recipient">Получатель передачи</label><select id="recipient"></select></div><div id="detail-actions" class="actions"></div><div id="analysis" class="analysis"></div>';S.detailId=i.incident_id;
   }
   S.detail=i;$("selected-id").textContent=i.incident_id;
   setMarkup("detail-facts",`<div><label>Причина</label>${esc(titles[i.type]||i.type)}</div><div><label>Место и объект</label>${esc(placeName(i))} · ${esc(entityName(i))}</div><div><label>Условие / обработка</label>${esc(labels[i.condition_state]||i.condition_state)} / ${esc(labels[i.status]||i.status)}</div><div><label>${S.role==="admin"?"Направлено диспетчеру":"Ответственный / получатель"}</label>${esc(recipientName(i))}</div><div><label>Обнаружено</label>${esc(clock(i.detected_at))} · ${esc(age(i.detected_at))}</div>`);
@@ -213,6 +214,11 @@ async function renderDetails(){
   const i=await api(`/incidents/${encodeURIComponent(id)}`);
   if(!sameSelection(id,context)||request!==S.detailRequest)return;
   applyDetails(i);await renderJob();
+}
+async function saveNote(){
+  const text=reason();
+  if(!text)throw Error("Введите заметку перед сохранением.");
+  await command("record_response",{response_code:"checked",reason:text});
 }
 async function startAnalysis(){
   const id=S.selected,context=S.context,operator=S.operator;
@@ -231,8 +237,15 @@ async function renderJob(){
   const j=await api(`/agent-jobs/${encodeURIComponent(job)}`);
   if(!sameSelection(id,context)||job!==S.job||j.incident_id&&j.incident_id!==id)return;
   const stale=j.stale||j.result?.stale;
-  const list=(title,values)=>Array.isArray(values)&&values.length?`<strong>${title}</strong><ul class="analysis-list">${values.map(v=>`<li>${esc(typeof v==="string"?v:v.text||v.description||JSON.stringify(v))}</li>`).join("")}</ul>`:"";
-  setMarkup("analysis",`<strong>Анализ: ${esc({pending:"Ожидается",queued:"В очереди",running:"Выполняется",completed:"Готов",failed:"Ошибка"}[j.status]||j.status)} ${stale?"· УСТАРЕЛ — данные изменились":""}</strong>${j.error?`<p>${esc(j.error.message||j.error)}</p>`:""}${j.result?`<p>${esc(j.result.summary)}</p>${list("Наблюдения",j.result.facts)}${list("Предположения",j.result.hypotheses)}${list("Рекомендации",j.result.recommendations)}<details class="detail-extra"><summary>Ход проверки ИИ</summary><pre>${esc(JSON.stringify(j.result.tool_trace||[],null,2))}</pre></details>`:""}`);
+  const staleText=stale?(j.status==="completed"?"· УСТАРЕЛ — данные изменились":"· Данные изменились после начала запроса"):"";
+  const list=(title,values)=>Array.isArray(values)&&values.length?`<strong>${title}</strong><ul class="analysis-list">${values.map(v=>`<li>${esc(v)}</li>`).join("")}</ul>`:"";
+  const p=j.result?.presentation;
+  const capturedTime=p?.as_of&&Number.isFinite(Date.parse(p.as_of))?new Date(p.as_of).toLocaleString("ru-RU"):"не указано";
+    const freshness=stale?"После анализа данные изменились. Ниже описано прежнее состояние. Состояние объекта сейчас может отличаться — проверьте свежие показания или запросите новый анализ.":"После проверки данные не изменились. Заключение описывает состояние во время анализа, а не подтверждение текущего положения.";
+  const errorText={model_reply_invalid:"Модель не сформировала корректный ответ. Запросите анализ повторно.",model_reply_truncated:"Ответ модели получен не полностью. Запросите анализ повторно.",invalid_evidence:"Утверждения модели не подтверждены прочитанными данными. Результат не опубликован.",unavailable:"ИИ недоступен. Мониторинг и ручная обработка продолжают работать.",execution_timeout:"Анализ не завершился за отведённое время. Запросите его повторно."}[j.error?.code]||"Не удалось завершить анализ. Подробности сохранены на сервере.";
+    const freshnessBlock=p?.version===2?`<div class="analysis-freshness ${stale?"analysis-freshness-stale":"analysis-freshness-current"}" role="status"><span class="muted">Актуальность результата</span><br><strong>${stale?"Анализ устарел — данные изменились":"Анализ завершён · данные после проверки не изменились"}</strong><p>${esc(freshness)}</p></div>`:"";
+    const body=p?.version===2?`${freshnessBlock}<h3>${esc(p.title)}</h3><p>${esc(p.description)}</p><p><strong>Что установила система</strong><br>${esc(p.established)}</p>${list("Дополнительно установлено",p.observations)}<p><strong>Состояние на момент анализа</strong><br>${esc(p.state?.text||"Состояние не указано.")}</p><p class="muted">Данные на: ${esc(capturedTime)} (местное время)</p><p><strong>Почему нужно обратить внимание</strong><br>${esc(p.attention)}</p><p><strong>Что ещё неизвестно</strong><br>${esc(p.unknown)}</p>${p.history_summary?`<p><strong>Похожие случаи</strong><br>${esc(p.history_summary)}</p>`:""}${list("Записи диспетчера",p.dispatcher_notes)}${list("Что сделать диспетчеру",p.recommendations)}`:j.result?"<p>Для этого результата понятное описание недоступно. Запросите новый анализ; исходные данные сохранены на сервере.</p>":"";
+  setMarkup("analysis",`<strong>Анализ: ${esc({pending:"Ожидается",queued:"Ожидает очереди",running:"Выполняется",completed:"Готов",failed:"Ошибка"}[j.status]||"Статус не определён")} ${esc(staleText)}</strong>${j.error?`<p>${esc(errorText)}</p>`:""}${body}`);
 }
 function renderSensors(){if(S.diagnostics){S.diagnostics.update(S.sensors.filter(ownSensor));return;}setMarkup("sensors",S.sensors.filter(ownSensor).map(s=>`<div class="sensor-row"><div><strong>${esc(s.sensor_id)}</strong><small> · ${esc(s.type)} ${esc(s.asset_id||s.building_id||"")}</small><br><small>${esc(age(s.last_received_at))}</small></div><span class="${esc(s.status)}">${esc(labels[s.status]||s.status)}</span></div>`).join(""));}
 function renderNotifications(){
