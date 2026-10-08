@@ -216,3 +216,30 @@ def test_movement_restoration_requires_the_saved_rule_confirmation(windows, requ
     output = present(session(value), facts)
     assert (output['title'] == 'Необычное движение перестало наблюдаться') is confirmed
     assert ('последующие проверки' in output['state']['text'].lower()) is confirmed
+
+
+def test_history_and_note_are_read_as_data_not_accepted_cause():
+    value=data()
+    value['incident_context']={'related_incidents':[{'incident_id':'previous','type':'forbidden_zone','status':'closed','detected_at':value['as_of']}],
+        'dispatcher_notes':[{'note_id':'note1','text':'Водитель сообщил о погрузке','text_excerpt':'Водитель сообщил о погрузке','created_at':value['as_of']}],
+        'since':value['as_of'],'until':value['as_of'],'limited':False,'log_epoch':0}
+    output=result(value)
+    assert 'похожих случаев: 1' in output['presentation']['history_summary']
+    assert 'Водитель сообщил о погрузке' in output['presentation']['dispatcher_notes'][0]
+    assert 'не установленная системой причина' in output['presentation']['dispatcher_notes'][0]
+    tools=session(value)
+    reply={'facts':[{'source':'dispatcher_note','id':'note1','field':'text_excerpt','value':'Несуществующая авария'}], 'hypotheses':[],'recommendations':['Проверьте свежие показания объекта на карте.']}
+    with pytest.raises(AgentError):validate_result(json.dumps(reply),tools,'explicit-test-double')
+    reply['facts'][0]['value']='Водитель сообщил о погрузке'
+    assert validate_result(json.dumps(reply),tools,'explicit-test-double')['facts'][0]['value']=='Водитель сообщил о погрузке'
+
+
+def test_notes_with_technical_scores_stay_out_of_main_and_history_hash_ignores_polling_time():
+    value=data();value['incident_context']={'related_incidents':[], 'dispatcher_notes':[
+        {'note_id':'n','text':'MLP score 0.99 threshold 0.5','text_excerpt':'MLP score 0.99 threshold 0.5','created_at':value['as_of']}], 'until':value['as_of'],'log_epoch':0}
+    output=result(value)
+    assert '0.99' not in str(output['presentation'])
+    assert 'MLP score' in str(output['technical'])
+    first=FrozenSnapshot(value)
+    value['incident_context']['until']='2026-10-07T11:00:00Z'
+    assert first.snapshot_id==FrozenSnapshot(value).snapshot_id

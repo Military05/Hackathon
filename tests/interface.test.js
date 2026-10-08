@@ -34,11 +34,11 @@ function harness(handler=async()=>({})){
   let fetchHandler=handler;
   const calls=[];
   const context=vm.createContext({document,crypto:webcrypto,Date,URLSearchParams,URL,AbortController,setTimeout:()=>1,clearTimeout:()=>{},setInterval:()=>1,fetch:async(url,options)=>{calls.push({url,options,body:options.body?JSON.parse(options.body):undefined});const value=await fetchHandler(url,options);return value?.__response?value:{ok:true,status:200,json:async()=>value};}});
-  vm.runInContext(source+"\nglobalThis.ui={S,api,command,applyDetails,renderDetails,renderJob,startAnalysis,notifications,sendPresence,switchOperator,recoveryAllowed,renderIncidents,renderSummary,compareIncidents,showAsset,initialOperator,focusSector,selectIncident,showSelectedOnMap,entityName,placeName};",context);
+  vm.runInContext(source+"\nglobalThis.ui={S,api,command,applyDetails,renderDetails,renderJob,startAnalysis,notifications,sendPresence,switchOperator,recoveryAllowed,renderIncidents,renderSummary,compareIncidents,showAsset,initialOperator,focusSector,selectIncident,showSelectedOnMap,entityName,placeName,clearIncidentLog,analyseTrends,saveNote};",context);
   context.ui.S.site={dispatch_config:{position_stale_seconds:5},site_areas:[]};
   context.ui.S.map={fitBounds(){}};
   context.ui.S.profiles=[{operator_id:"dispatcher-1",name:"Склады",sector_id:"logistics",operator_ready:true},{operator_id:"dispatcher-2",name:"Цех",sector_id:"production",operator_ready:true},{operator_id:"dispatcher-3",name:"Координатор",sector_id:"coordination",operator_ready:true}];
-  return {ui:context.ui,$:document.getElementById,calls,setFetch(fn){fetchHandler=fn;}};
+  return {setConfirm(fn){context.confirm=fn;},ui:context.ui,$:document.getElementById,calls,setFetch(fn){fetchHandler=fn;}};
 }
 function incident(extra={}){return {incident_id:"I1",type:"forbidden_zone",severity:"critical",detected_at:"2026-10-07T09:00:00Z",status:"open",condition_active:true,condition_state:"active",dispatch_revision:7,assigned_operator_id:null,site_area_id:"warehouse-raw",asset_id:"V1",pending_transfer:null,escalation_level:0,evidence_event_ids:[],history:[],response_plan:{contact:"Служба безопасности",steps:["Принять случай","Проверить источник"]},...extra};}
 function deferred(){let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};}
@@ -276,4 +276,37 @@ test("journal combines type, owner and text filters using shared human asset nam
   h.ui.S.incidents=[incident({assigned_operator_id:"dispatcher-1"}),incident({incident_id:"I2",type:"sensor_offline",assigned_operator_id:"dispatcher-1"}),incident({incident_id:"I3",assigned_operator_id:"dispatcher-2"})];
   h.$("filter-type").value="forbidden_zone";h.$("filter-state").value="mine";h.$("search-incidents").value="сырья";h.ui.renderIncidents();
   assert.match(h.$("incidents").innerHTML,/data-id="I1"/);assert.doesNotMatch(h.$("incidents").innerHTML,/data-id="I[23]"/);assert.match(h.$("incidents").innerHTML,/Погрузчик сырья/);
+});
+
+
+test("empty log refuses repeat analysis without any request",async()=>{
+ const h=harness();await assert.rejects(h.ui.analyseTrends(),/В журнале нет происшествий/);assert.equal(h.calls.length,0);
+});
+test("cancelled clear preserves active log and never sends deletion",async()=>{
+ const h=harness(async()=>({count:2,token:"snapshot",warning:"Данные будут потеряны. ИИ больше не сможет анализировать эти случаи."}));
+ h.ui.S.auth={user:{role:"admin"}};h.ui.S.incidents=[incident()];let warning;
+ h.setConfirm(text=>{warning=text;return false;});await h.ui.clearIncidentLog();
+ assert.match(warning,/включая активные/);assert.match(warning,/ИИ больше не сможет/);assert.equal(h.calls.length,1);assert.equal(h.ui.S.incidents.length,1);
+});
+test("clear requires admin and confirmation; conflict preserves incident",async()=>{
+ const h=harness();await assert.rejects(h.ui.clearIncidentLog(),/администратор/);assert.equal(h.calls.length,0);
+ h.ui.S.auth={user:{role:"admin"}};h.ui.S.incidents=[incident()];
+ h.setFetch(async(url)=>url.endsWith("preview")?{count:1,token:"token",warning:"?включая активные??"}:errorResponse(409,{code:"log_changed",message:"Журнал изменился"}));
+ h.setConfirm(()=>true);await assert.rejects(h.ui.clearIncidentLog(),/Журнал изменился/);
+ assert.equal(h.ui.S.incidents.length,1);assert.deepEqual(h.calls[1].body,{confirmation:"DELETE_INCIDENT_LOG",token:"token"});
+});
+test("empty note is not sent; notes and history are escaped in summary",async()=>{
+ const h=harness();await assert.rejects(h.ui.saveNote(),/Введите заметку/);assert.equal(h.calls.length,0);
+ const j=readableJob();j.result.presentation.history_summary="Похожие случаи найдены";
+ j.result.presentation.dispatcher_notes=['Журнал изменился?: ?<script>alert(1)</script>?. ??? ??включая активные.'];
+ h.setFetch(async()=>j);h.ui.S.selected="I1";h.ui.S.job="J1";await h.ui.renderJob();
+ const main=h.$("analysis").innerHTML.split("<details")[0];assert.match(main,/Похожие случаи/);assert.match(main,/Журнал изменился?/);assert.doesNotMatch(main,/<script>/);assert.match(main,/&lt;script&gt;/);
+});
+
+test("confirmed deletion clears visible results and invalidates old polling replies",async()=>{
+ const h=harness(async url=>url.endsWith("preview")?{count:1,token:"current",warning:"Будут удалены активные происшествия и анализы ИИ."}:{deleted:1});
+ h.ui.S.auth={user:{role:"admin"}};h.ui.S.busy=true;h.ui.S.selected="I1";h.ui.S.job="J1";h.ui.S.incidents=[incident()];
+ h.setConfirm(()=>true);const context=h.ui.S.context;await h.ui.clearIncidentLog();
+ assert.equal(h.ui.S.incidents.length,0);assert.equal(h.ui.S.job,null);assert.equal(h.ui.S.selected,null);assert.equal(h.ui.S.context,context+1);
+ assert.equal(h.calls[1].options.method,"POST");
 });

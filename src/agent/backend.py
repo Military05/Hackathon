@@ -1,5 +1,6 @@
 """Bounded snapshot from one v5 SQLite read transaction; no network while reading."""
 import json
+from datetime import timedelta
 
 from src.core.service import stamp
 from .errors import AgentError
@@ -69,8 +70,36 @@ def capture_snapshot(service, incident_id):
         display_context.update(coordinate_system=dict(service.site.get('coordinate_system', {})),
                                zone_exit_confirm_samples=service.config.get('zone_exit_confirm_samples'),
                                model_normal_windows=service.config.get('model_normal_windows'))
+        since = stamp((service.clock() - timedelta(days=29)).replace(hour=0, minute=0, second=0, microsecond=0))
+        related = [json.loads(row[0]) for row in db.execute(
+            "SELECT body FROM incidents WHERE incident_id<>? AND json_extract(body,'$.type')=? "
+            "AND json_extract(body,'$.asset_id') IS ? AND json_extract(body,'$.employee_id') IS ? "
+            "AND json_extract(body,'$.other_asset_id') IS ? AND json_extract(body,'$.sensor_id') IS ? "
+            "AND json_extract(body,'$.zone_id') IS ? AND json_extract(body,'$.building_id') IS ? "
+            "AND json_extract(body,'$.site_area_id') IS ? AND json_extract(body,'$.detected_at')>=? "
+            "AND json_extract(body,'$.detected_at')<=? ORDER BY json_extract(body,'$.detected_at') DESC LIMIT 21",
+            (incident_id, incident['type'], incident.get('asset_id'), incident.get('employee_id'),
+             incident.get('other_asset_id'), incident.get('sensor_id'), incident.get('zone_id'),
+             incident.get('building_id'), incident.get('site_area_id'), since, as_of))]
+        history_limited = len(related) > 20
+        related = [{key: row.get(key) for key in ('incident_id', 'type', 'detected_at', 'status', 'asset_id',
+                   'employee_id', 'zone_id', 'building_id', 'site_area_id')} for row in related[:20]]
+        notes = []
+        for row in db.execute("SELECT history_id,body FROM dispatch_history WHERE incident_id=? "
+                              "ORDER BY rowid DESC LIMIT 30", (incident_id,)):
+            item = json.loads(row['body'])
+            if item.get('reason') and item.get('actor_operator_id'):
+                notes.append({'note_id': row['history_id'], 'text': item['reason'],
+                              'text_excerpt': item['reason'][:160], 'created_at': item['created_at'],
+                              'operator_id': item.get('actor_operator_id'), 'action': item.get('action')})
+                if len(notes) >= 5:
+                    break
+        epoch = db.execute("SELECT value FROM metadata WHERE key='incident_log_epoch'").fetchone()
         return {"as_of": as_of, "rule_version": service.rule_version,
                 "model_version": service.model_version, "incident": incident,
                 "events": rows, "observations": observations, "policies": policies,
                 "sensor_health": health, "history_bounds": bounds,
-                "display_context": display_context}
+                "display_context": display_context,
+                'incident_context': {'related_incidents': related, 'dispatcher_notes': notes,
+                    'since': since, 'until': as_of, 'limited': history_limited,
+                    'similarity': 'same_type_object_and_place', 'log_epoch': int(epoch[0]) if epoch else 0}}

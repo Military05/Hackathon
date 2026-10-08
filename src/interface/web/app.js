@@ -89,6 +89,7 @@ function renderSummary(){
   setMarkup("summary",rows.map(r=>`<article><div><strong>${esc(sectorNames[r.sector_id]||r.sector_id)}</strong><small>${r.operator_ready?"Оператор готов":r.operator_online||r.client_online?"Рабочее место на связи · оператор отсутствует":"Нет связи с рабочим местом"}</small></div><div><b>${r.active_count||0}</b><small>активных · ${r.unclaimed_count||0} не принято<br>${r.escalated_count||0} эскалировано</small></div></article>`).join("")+`<div class="unknown-summary">Место не определено: <strong>${S.summary.unknown_count||0}</strong> рабочих случаев. Проверяйте источник и свежесть позиции.</div>`);
 }
 function renderIncidents(){
+  if($("clear-incident-log"))$("clear-incident-log").hidden=S.auth?.user?.role!=="admin";
   const type=$("filter-type")?.value||"",state=$("filter-state")?.value||"",query=($("search-incidents")?.value||"").trim().toLocaleLowerCase("ru-RU");
   const rows=S.incidents.filter(i=>{
     if(!$("history-toggle").checked&&!workable(i))return false;
@@ -146,7 +147,7 @@ function updateActions(i){
   const readyRecipient=Boolean($("recipient").value);
   const disabled=S.commandBusy?" disabled":"";
   const button=(id,text,primary=false,extraDisabled=false)=>`<button id="${id}"${primary?' class="primary"':""}${disabled||extraDisabled?" disabled":""}>${text}</button>`;
-  setMarkup("detail-actions",`${button("show-on-map","Показать на карте")}${!i.assigned_operator_id&&working&&i.can_claim!==false?button("claim","Принять ответственность",true):""}${own&&working?button("contact","Записать: связался")+button("inspect","Записать: запросил проверку"):""}${own&&i.condition_active===false&&i.condition_state!=="unknown"&&!pending&&working?button("close","Завершить обработку"):""}${own&&i.type==="model_anomaly"&&working?button("dismiss","Отклонить модельное подозрение"):""}${own&&!pending&&working?button("transfer","Предложить передачу",false,!readyRecipient):""}${recover?button("reassign","Переназначить отсутствующего",false,!readyRecipient):""}${pending?`<span class="pill">Передача → ${esc(operatorName(i.pending_transfer.to_operator_id))}</span><small class="transfer-clock">${esc(transferClock(i))}</small>${i.pending_transfer.to_operator_id===S.operator?button("accept","Принять передачу",true):""}${own?button("cancel","Отменить передачу"):""}`:""}${button("analyse",S.agentAvailable?"Проанализировать ИИ":"ИИ ещё не подключён",false,!S.agentAvailable||S.analysisSubmitting)}`);
+  setMarkup("detail-actions",`${button("show-on-map","Показать на карте")}${!i.assigned_operator_id&&working&&i.can_claim!==false?button("claim","Принять ответственность",true):""}${own&&working?button("contact","Записать: связался")+button("inspect","Записать: запросил проверку")+button("save-note","Сохранить заметку"):""}${own&&i.condition_active===false&&i.condition_state!=="unknown"&&!pending&&working?button("close","Завершить обработку"):""}${own&&i.type==="model_anomaly"&&working?button("dismiss","Отклонить модельное подозрение"):""}${own&&!pending&&working?button("transfer","Предложить передачу",false,!readyRecipient):""}${recover?button("reassign","Переназначить отсутствующего",false,!readyRecipient):""}${pending?`<span class="pill">Передача → ${esc(operatorName(i.pending_transfer.to_operator_id))}</span><small class="transfer-clock">${esc(transferClock(i))}</small>${i.pending_transfer.to_operator_id===S.operator?button("accept","Принять передачу",true):""}${own?button("cancel","Отменить передачу"):""}`:""}${button("analyse",S.agentAvailable?"Проанализировать ИИ":"ИИ ещё не подключён",false,!S.agentAvailable||S.analysisSubmitting)}`);
   $("recovery-hint").hidden=!recover;
   const bind=(id,fn)=>{if($(id))$(id).onclick=async()=>{try{await fn();}catch(e){showError(e);}};};
   bind("claim",()=>command("claim"));
@@ -158,6 +159,7 @@ function updateActions(i){
   bind("reassign",()=>command("reassign_unavailable",{to_operator_id:$("recipient").value,reason:reason()||"Ответственный отсутствует, резерв принимает обработку"}));
   bind("accept",()=>command("accept_transfer",{transfer_id:S.detail.pending_transfer.transfer_id}));
   bind("cancel",()=>command("cancel_transfer",{transfer_id:S.detail.pending_transfer.transfer_id,reason:reason()||"Передача отменена отправителем"}));
+  bind("save-note",saveNote);
   bind("analyse",startAnalysis);
   bind("show-on-map",showSelectedOnMap);
 }
@@ -166,7 +168,7 @@ function applyDetails(i){
   if(S.detail?.incident_id===i.incident_id&&S.detail.dispatch_revision>i.dispatch_revision)return;
   if(S.detailId!==i.incident_id){
     // Inputs live outside the refreshed facts/actions; polling never replaces them.
-    $("details").innerHTML='<div id="detail-facts" class="facts"></div><div id="response-plan" class="response-plan"></div><div class="response"><label for="reason">Реакция оператора</label><input id="reason" placeholder="Причина / запись выполненного действия" maxlength="500"></div><div id="recipient-wrap" class="recipient-wrap"><label for="recipient">Получатель</label><select id="recipient"></select></div><p id="recovery-hint" class="muted">Резерв может переназначить случай после подтверждённого отсутствия ответственного. Срок и готовность получателя проверяет сервер.</p><div id="detail-actions" class="actions"></div><details class="detail-extra"><summary>История и исходные события</summary><div id="detail-history" class="history"></div></details><details class="detail-extra"><summary>Технические данные</summary><div id="detail-technical"></div></details><div id="analysis" class="analysis"></div>';
+    $("details").innerHTML='<div id="detail-facts" class="facts"></div><div id="response-plan" class="response-plan"></div><div class="response"><label for="reason">Заметка / реакция диспетчера</label><input id="reason" placeholder="Причина / запись выполненного действия" maxlength="500"></div><div id="recipient-wrap" class="recipient-wrap"><label for="recipient">Получатель</label><select id="recipient"></select></div><p id="recovery-hint" class="muted">Резерв может переназначить случай после подтверждённого отсутствия ответственного. Срок и готовность получателя проверяет сервер.</p><div id="detail-actions" class="actions"></div><details class="detail-extra"><summary>История и исходные события</summary><div id="detail-history" class="history"></div></details><details class="detail-extra"><summary>Технические данные</summary><div id="detail-technical"></div></details><div id="analysis" class="analysis"></div>';
     S.detailId=i.incident_id;
   }
   S.detail=i;$("selected-id").textContent=i.incident_id;
@@ -186,6 +188,38 @@ async function renderDetails(){
   const i=await api(`/incidents/${encodeURIComponent(id)}`);
   if(!sameSelection(id,context)||request!==S.detailRequest)return;
   applyDetails(i);await renderJob();
+}
+async function saveNote(){
+  const text=reason();
+  if(!text)throw Error("Введите заметку перед сохранением.");
+  await command("record_response",{response_code:"checked",reason:text});
+}
+async function analyseTrends(){
+  if(!S.incidents.length)throw Error("В журнале нет происшествий. Анализ повторяемости недоступен: сначала нужны сохранённые случаи.");
+  if(!S.agentAvailable)throw Error("ИИ пока не подключён. Анализ повторяемости недоступен.");
+  if(!S.selected||!S.incidents.some(i=>i.incident_id===S.selected))await selectIncident(S.incidents[0].incident_id);
+  await startAnalysis();
+}
+async function clearIncidentLog(){
+  if(S.auth?.user?.role!=="admin")throw Error("Очищать журнал может только администратор.");
+  if(S.logClearing)return;
+  S.logClearing=true;
+  const context=S.context;
+  try{
+    const preview=await api("/admin/incident-log/preview");
+    if(!preview.count)throw Error("Журнал происшествий уже пуст.");
+    if(typeof globalThis.confirm!=="function")throw Error("Подтверждение удаления недоступно. Журнал сохранён.");
+    if(!globalThis.confirm(`Удалить все происшествия (${preview.count}), включая активные?\n\n${preview.warning}\n\nПодтвердить окончательное удаление?`))return;
+    if(context!==S.context)return;
+    await api("/admin/incident-log/clear","POST",{confirmation:"DELETE_INCIDENT_LOG",token:preview.token});
+    if(context!==S.context)return;
+    S.context++; // Discard polling/details replies captured before the deletion.
+    S.selected=null;S.detail=null;S.detailId=null;S.job=null;S.incidents=[];S.noticeRows=[];S.detailRequest++;
+    S.mapRenderer?.clearHighlight();
+    $("details").textContent="Журнал очищен. Выберите новое происшествие, когда оно появится.";
+    $("selected-id").textContent="";renderIncidents();renderNotifications();
+    await refresh();
+  }finally{S.logClearing=false;}
 }
 async function startAnalysis(){
   const id=S.selected,context=S.context,operator=S.operator;
@@ -211,7 +245,7 @@ async function renderJob(){
     const freshness=stale?"После анализа данные изменились. Ниже описано прежнее состояние. Состояние объекта сейчас может отличаться — проверьте свежие показания или запросите новый анализ.":"После проверки данные не изменились. Заключение описывает состояние во время анализа, а не подтверждение текущего положения.";
   const errorText={model_reply_invalid:"Модель не сформировала корректный ответ. Запросите анализ повторно.",model_reply_truncated:"Ответ модели получен не полностью. Запросите анализ повторно.",invalid_evidence:"Утверждения модели не подтверждены прочитанными данными. Результат не опубликован.",unavailable:"ИИ недоступен. Мониторинг и ручная обработка продолжают работать.",execution_timeout:"Анализ не завершился за отведённое время. Запросите его повторно."}[j.error?.code]||"Не удалось завершить анализ. Подробности сохранены в технических данных.";
     const freshnessBlock=p?.version===2?`<div class="analysis-freshness ${stale?"analysis-freshness-stale":"analysis-freshness-current"}" role="status"><span class="muted">Актуальность результата</span><br><strong>${stale?"Анализ устарел — данные изменились":"Анализ завершён · данные после проверки не изменились"}</strong><p>${esc(freshness)}</p></div>`:"";
-    const body=p?.version===2?`${freshnessBlock}<h3>${esc(p.title)}</h3><p>${esc(p.description)}</p><p><strong>Что установила система</strong><br>${esc(p.established)}</p>${list("Дополнительно установлено",p.observations)}<p><strong>Состояние на момент анализа</strong><br>${esc(p.state?.text||"Состояние не указано.")}</p><p class="muted">Данные на: ${esc(capturedTime)} (местное время)</p><p><strong>Почему нужно обратить внимание</strong><br>${esc(p.attention)}</p><p><strong>Что ещё неизвестно</strong><br>${esc(p.unknown)}</p>${list("Что сделать диспетчеру",p.recommendations)}`:j.result?"<p>Для этого результата понятное описание недоступно. Запросите новый анализ; исходные данные сохранены ниже.</p>":"";
+    const body=p?.version===2?`${freshnessBlock}<h3>${esc(p.title)}</h3><p>${esc(p.description)}</p><p><strong>Что установила система</strong><br>${esc(p.established)}</p>${list("Дополнительно установлено",p.observations)}<p><strong>Состояние на момент анализа</strong><br>${esc(p.state?.text||"Состояние не указано.")}</p><p class="muted">Данные на: ${esc(capturedTime)} (местное время)</p><p><strong>Почему нужно обратить внимание</strong><br>${esc(p.attention)}</p><p><strong>Что ещё неизвестно</strong><br>${esc(p.unknown)}</p>${p.history_summary?`<p><strong>Похожие случаи</strong><br>${esc(p.history_summary)}</p>`:""}${list("Записи диспетчера",p.dispatcher_notes)}${list("Что сделать диспетчеру",p.recommendations)}`:j.result?"<p>Для этого результата понятное описание недоступно. Запросите новый анализ; исходные данные сохранены ниже.</p>":"";
     const technical={job_id:j.job_id,status:j.status,stale:Boolean(stale),incident_snapshot:j.incident_snapshot,execution:j.execution,error:j.error,result:j.result};
   setMarkup("analysis",`<strong>Анализ: ${esc({pending:"Ожидается",queued:"Ожидает очереди",running:"Выполняется",completed:"Готов",failed:"Ошибка"}[j.status]||"Статус не определён")} ${esc(staleText)}</strong>${j.error?`<p>${esc(errorText)}</p>`:""}${body}<details class="detail-extra"><summary>Технические данные</summary><p class="muted">Исходные записи и проверенные факты. Предположения и свободный текст модели не являются подтверждёнными причинами происшествия.</p><pre>${esc(JSON.stringify(technical,null,2))}</pre></details>`);
 }
@@ -317,6 +351,8 @@ async function boot(){
   }catch(e){showError(e);}
 }
 function bindControls(){
+  if($("analyse-trends"))$("analyse-trends").onclick=()=>analyseTrends().catch(showError);
+  if($("clear-incident-log"))$("clear-incident-log").onclick=()=>clearIncidentLog().catch(showError);
   $("operator").onchange=()=>switchOperator($("operator").value).catch(showError);
   $("ready").onchange=presence;$("all").onchange=refresh;$("history-toggle").onchange=renderIncidents;
   $("fit").onclick=()=>S.mapRenderer?S.mapRenderer.fitAll():S.map.fitBounds([[0,0],[100,100]]);

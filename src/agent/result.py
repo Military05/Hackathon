@@ -11,7 +11,7 @@ from .tools import Identifier, ToolSession
 
 class FactClaim(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    source: Literal["event", "policy", "sensor_health", "model_observation"]
+    source: Literal["event", "policy", "sensor_health", "model_observation", "incident_history", "dispatcher_note"]
     id: Identifier
     field: str = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*){0,3}$")
     # An untyped {} schema makes some local structured-output engines generate

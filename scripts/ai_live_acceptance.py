@@ -107,6 +107,19 @@ def main():
                 incident = next(item for item in backend.list_incidents()
                                 if item['type'] == {'d4': 'model_anomaly', 'collision': 'collision',
                                                     'forbidden-zone': 'forbidden_zone'}[args.scenario])
+                if args.scenario == 'forbidden-zone':
+                    # Explicit historical fixture in the disposable test database only.
+                    historical = dict(incident, incident_id='fixture-previous-zone', status='closed',
+                                      detected_at=stamp(clock_now-timedelta(days=1)))
+                    with backend.store.transaction() as db:
+                        db.execute('INSERT INTO incidents VALUES (?,?,?)',
+                                   (historical['incident_id'], 'fixture-previous-zone', json.dumps(historical)))
+                    for action in ({'action':'claim'}, {'action':'record_response','response_code':'checked',
+                                    'reason':'Связался с водителем: сообщил о погрузке.'}):
+                        response=client.patch(f"/api/incidents/{incident['incident_id']}", headers=headers,
+                            json={**action,'expected_revision':incident['dispatch_revision'],
+                                  'request_id':secrets.token_hex(12)})
+                        response.raise_for_status();incident=response.json()
                 response = client.post(f"/api/incidents/{incident['incident_id']}/analysis", headers=headers)
                 response.raise_for_status()
                 job_id = response.json()["job_id"]
@@ -125,6 +138,10 @@ def main():
                 if job['stale']:
                     raise RuntimeError('Первый анализ уже устарел до тестового изменения данных')
                 presentation = job['result'].get('presentation', {})
+                if args.scenario == 'forbidden-zone':
+                    if 'похожих случаев: 1' not in presentation.get('history_summary','') or not presentation.get('dispatcher_notes'):
+                        raise RuntimeError('История или сохранённая заметка не попали в резюме')
+                    report['history_and_dispatcher_note_checked']=True
                 readable = json.dumps(presentation, ensure_ascii=False)
                 if presentation.get('version') != 2 or presentation.get('entity') != 'Погрузчик 1':
                     raise RuntimeError('Нет понятного описания с зарегистрированным названием объекта')

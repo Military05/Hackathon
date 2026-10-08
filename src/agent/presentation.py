@@ -1,5 +1,6 @@
 """Заключения для диспетчера из проверенных фактов и сохранённых правил."""
 import math
+import re
 
 TITLES = {'forbidden_zone': 'Въезд в зону с ограничением',
           'model_anomaly': 'Проверка необычного движения', 'sensor_offline': 'Нет сигнала датчика',
@@ -118,11 +119,30 @@ def present(session, facts):
     else:
         recommendations.append(f'Уточните ответственного в карточке происшествия. {question}')
     recommendations.append('Запишите результат проверки в карточке происшествия.')
+    incident_context = snapshot.data.get('incident_context', {})
+    history_text = None
+    notes = []
+    if session.incident_read and incident_context:
+        count = len(session.records['incident_history'])
+        history_text = (f'За последние 30 календарных дней в журнале найдено похожих случаев: {count}.' if count else
+                        'За последние 30 календарных дней похожих случаев в доступном журнале не найдено.')
+        if incident_context.get('limited'):
+            history_text = 'Похожих случаев несколько; показаны только последние 20. Полная динамика не определена.'
+        history_text += ' Сравниваются тот же тип происшествия, объект и место. Рост или снижение по этим данным не установлены.'
+        chosen = [session.records['dispatcher_note'][fact['id']] for fact in facts
+                  if fact['source'] == 'dispatcher_note' and fact['field'] == 'text_excerpt']
+        for row in (chosen or list(session.records['dispatcher_note'].values()))[:3]:
+            excerpt = row['text_excerpt']
+            if re.search(r'MLP|Qwen|JSON|payload|порог|оценк|score|threshold', excerpt, re.I):
+                notes.append('Есть запись диспетчера с техническими сведениями; полный текст — в технических данных.')
+            else:
+                notes.append('Запись диспетчера: «'+excerpt+'». Это сообщение человека, а не установленная системой причина.')
     return {'version': 2, 'title': title, 'outcome': outcome, 'description': description,
             'established': established, 'attention': attention, 'unknown': unknown,
             'entity': entity, 'place': place, 'place_kind': place_kind, 'as_of': snapshot.as_of,
             'state': {'code': state, 'text': state_text, 'confirmed_exit': confirmed_exit},
-            'observations': observations, 'recommendations': recommendations}
+            'observations': observations, 'recommendations': recommendations,
+            'history_summary': history_text, 'dispatcher_notes': notes}
 
 
 def review_model_text(answer, presentation):
