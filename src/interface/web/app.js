@@ -78,15 +78,15 @@ function showAsset(id){
   const policy=(S.site.permissions||[]).find(p=>p.asset_id===id),allowed=(policy?.allowed_zone_ids||[]).map(zone=>named(S.site.zones,zone));
   const vehicleType=a.vehicle_type||(S.site.assets||[]).find(x=>x.id===id)?.vehicle_type||a.type;
   const forbidden=(S.site.zones||[]).filter(z=>z.kind==="forbidden"||(z.kind==="restricted"&&(z.restricted_vehicle_types||[]).includes(vehicleType))).map(z=>z.name||z.id);
-  objectInfo(`${entityName({asset_id:id})} · ${vehicleNames[vehicleType]||"Транспорт"} · Цель: ${named(S.site.buildings,a.destination)||"не задана"} · Последний сигнал: ${clock(a.last_seen)} (${age(a.last_seen)}), позиция ${coordinates}. Допуск: ${allowed.join(", ")||"нет"}. Запрещено: ${forbidden.join(", ")||"нет"}. ${assetStale(a)?"Текущее место не подтверждено.":""}`,"asset",id,(S.site.sensors||[]).filter(s=>s.asset_id===id).map(s=>s.id||s.sensor_id));
+  objectInfo(`${entityName({asset_id:id})} · ${vehicleNames[vehicleType]||"Транспорт"} · Цель: ${named(S.site.buildings,a.destination)||"не задана"} · Последний сигнал: ${clock(a.last_seen)} (${age(a.last_seen)}), позиция ${coordinates}. Допуск: ${allowed.join(", ")||"нет"}. Запрещено: ${forbidden.join(", ")||"нет"}. ${assetStale(a)?"Текущее место не подтверждено.":""}`,"asset",id,(S.site.sensors||[]).filter(s=>s.asset_id===id&&ownSensor(s)).map(s=>s.id||s.sensor_id));
 }
-function showBuilding(id){const b=S.site.buildings.find(x=>x.id===id);if(!b)return;objectInfo(`${b.name}. Рабочих происшествий: ${relatedIncidents("building",id).length}.`,"building",id,(S.site.sensors||[]).filter(s=>s.building_id===id).map(s=>s.id||s.sensor_id));}
+function showBuilding(id){const b=S.site.buildings.find(x=>x.id===id);if(!b)return;objectInfo(`${b.name}. Рабочих происшествий: ${relatedIncidents("building",id).length}.`,"building",id,(S.site.sensors||[]).filter(s=>s.building_id===id&&ownSensor(s)).map(s=>s.id||s.sensor_id));}
 function showSensor(id,inspect=false){const s=S.sensors.find(x=>x.sensor_id===id);objectInfo(`${named(S.site.sensors,id)} · ${labels[s?.status]||"Сигнал ещё не получен"} · ${age(s?.last_received_at)}. Проверка связи не подтверждает физическую исправность датчика.`,"sensor",id);if(inspect)S.diagnostics?.inspectSensor?.(id);}
 function drawAssets(){
   S.mapRenderer?.update({assets:S.assets,sensors:S.sensors,incidents:S.incidents,serverOffset:S.serverOffset});
 }
 function mySector(){return S.profiles.find(p=>(p.operator_id||p.id)===S.operator)?.sector_id;}
-function recipientName(i){const id=i.pending_transfer?.status==="pending"?i.pending_transfer.to_operator_id:i.assigned_operator_id||S.profiles.find(p=>p.sector_id===i.primary_sector_id||p.sector_id===i.responsible_sector_id)?.operator_id||S.site?.operator_profiles?.find(p=>p.sector_id===i.primary_sector_id||p.sector_id===i.responsible_sector_id)?.id;return operatorName(id);}
+function recipientName(i){const profile=S.profiles.find(p=>p.sector_id===i.responsible_sector_id)||S.site?.operator_profiles?.find(p=>p.sector_id===i.responsible_sector_id);const id=i.pending_transfer?.status==="pending"?i.pending_transfer.to_operator_id:i.assigned_operator_id||profile?.operator_id||profile?.id;return operatorName(id);}
 function belongsToPeople(i){return Boolean(i.employee_id||i.type==="unauthorized_access");}
 function ownSensor(sensor){
   if(S.role==="admin")return true;
@@ -99,15 +99,16 @@ function saveTabFilters(){S.tabFilters[S.tab]={state:$("filter-state").value,typ
 function switchIncidentTab(tab){
   if(tab!==S.tab){saveTabFilters();S.tab=tab;hideSelected();}
   const filters=S.tabFilters[tab];$("filter-state").value=filters.state;$("filter-type").value=filters.type;$("search-incidents").value=filters.query;$("incident-sort").value=filters.sort;
+  $("filter-type").querySelectorAll("option").forEach(option=>{option.hidden=tab==="people"&&!(["all","unauthorized_access","sensor_offline"].includes(option.value));});
   for(const name of ["objects","people"]){const button=$(`${name}-tab`);button.setAttribute("aria-selected",String(name===tab));button.classList.toggle("active",name===tab);}
   $("incident-workspace").setAttribute("aria-labelledby",`${tab}-tab`);
   $("checkpoint-panel").hidden=tab!=="people"||!(S.role==="admin"||S.operator==="dispatcher-3");
   if(typeof OperationsView!=="undefined"){OperationsView.configure({role:S.role,operator:S.operator,tab});OperationsView.update(api);}
-  renderIncidents();$("incidents").scrollTop=filters.scroll||0;
+  renderIncidents();renderNotifications();$("incidents").scrollTop=filters.scroll||0;
 }
 function configureWorkspace(){
   const admin=S.role==="admin";document.body.classList.toggle("admin-workspace",admin);document.querySelector(".operator").hidden=admin;document.querySelector(".activity-bar").hidden=admin;$("activity-export").hidden=admin;$("my-sector").hidden=admin;
-  const people=admin||S.operator==="dispatcher-3";$("people-tab").hidden=!people;if(!people&&S.tab==="people")S.tab="objects";
+  const people=admin||S.operator==="dispatcher-3"||S.incidents.some(belongsToPeople);$("people-tab").hidden=!people;if(!people&&S.tab==="people")S.tab="objects";
   if(typeof OperationsView!=="undefined")OperationsView.configure({role:S.role,operator:S.operator,tab:S.tab});switchIncidentTab(S.tab);
 }
 function renderSummary(){
@@ -131,7 +132,7 @@ function renderIncidents(){
 }
 async function clearIncidents(){
   const button=$("clear-incidents");if(button.disabled)return;button.disabled=true;
-  try{await api("/incidents/clear","POST",{});S.incidents=[];S.noticeRows=[];$("notifications").textContent="";hideSelected();for(const filters of Object.values(S.tabFilters))filters.page=0;await refresh();}catch(error){showError(error);}finally{button.disabled=false;}
+  try{await api("/incidents/clear","POST",{});S.context++;S.incidents=[];S.noticeRows=[];$("notifications").textContent="";hideSelected();for(const filters of Object.values(S.tabFilters))filters.page=0;await refresh();}catch(error){showError(error);}finally{button.disabled=false;}
 }
 
 async function selectIncident(id){S.selected=id;S.detail=null;S.detailId=null;S.job=null;S.detailRequest++;$("selected-panel").hidden=false;$("selected-panel").open=true;S.mapRenderer?.clearHighlight();$("selected-id").textContent=id;$("details").textContent="Загрузка карточки…";renderIncidents();await renderDetails();}
@@ -162,8 +163,8 @@ function recipientOptions(i){
   const select=$("recipient"),previous=select.value;
   const ids=profiles.map(p=>p.operator_id||p.id).join("|");
   if(select.dataset.ids!==ids){select.innerHTML=profiles.map(p=>`<option value="${esc(p.operator_id||p.id)}">${esc(p.name||p.operator_id||p.id)}</option>`).join("");select.dataset.ids=ids;}
-  for(const option of select.options){const p=profiles.find(p=>(p.operator_id||p.id)===option.value);option.disabled=!p?.operator_ready;option.textContent=`${p?.name||option.value}${p?.operator_ready?"":" · не готов"}`;}
-  const available=profiles.filter(p=>p.operator_ready).map(p=>p.operator_id||p.id);
+  for(const option of select.options){const p=profiles.find(p=>(p.operator_id||p.id)===option.value);option.disabled=!(p?.can_receive_transfer??p?.operator_ready);option.textContent=`${p?.name||option.value}${p?.operator_ready?" · на смене":p?.can_receive_transfer?" · ожидает входа":" · недоступен"}`;}
+  const available=profiles.filter(p=>p.can_receive_transfer??p.operator_ready).map(p=>p.operator_id||p.id);
   select.value=available.includes(previous)?previous:available.includes(S.operator)?S.operator:available[0]||"";
   select.disabled=S.commandBusy||!available.length;
 }
@@ -210,7 +211,7 @@ function applyDetails(i){
 }
 
 async function renderDetails(){
-  if(!S.selected)return;
+  if(!S.selected||!$("selected-panel").open)return;
   const id=S.selected,context=S.context,request=++S.detailRequest;
   const i=await api(`/incidents/${encodeURIComponent(id)}`);
   if(!sameSelection(id,context)||request!==S.detailRequest)return;
@@ -236,7 +237,7 @@ async function renderJob(){
   const list=(title,values)=>Array.isArray(values)&&values.length?`<strong>${title}</strong><ul class="analysis-list">${values.map(v=>`<li>${esc(typeof v==="string"?v:v.text||v.description||JSON.stringify(v))}</li>`).join("")}</ul>`:"";
   setMarkup("analysis",`<strong>Анализ: ${esc({pending:"Ожидается",queued:"В очереди",running:"Выполняется",completed:"Готов",failed:"Ошибка"}[j.status]||j.status)} ${stale?"· УСТАРЕЛ — данные изменились":""}</strong>${j.error?`<p>${esc(j.error.message||j.error)}</p>`:""}${j.result?`<p>${esc(j.result.summary)}</p>${list("Наблюдения",j.result.facts)}${list("Предположения",j.result.hypotheses)}${list("Рекомендации",j.result.recommendations)}<details class="detail-extra"><summary>Ход проверки ИИ</summary><pre>${esc(JSON.stringify(j.result.tool_trace||[],null,2))}</pre></details>`:""}`);
 }
-function renderSensors(){if(S.diagnostics){S.diagnostics.update(S.sensors.filter(ownSensor));return;}setMarkup("sensors",S.sensors.map(s=>`<div class="sensor-row"><div><strong>${esc(s.sensor_id)}</strong><small> · ${esc(s.type)} ${esc(s.asset_id||s.building_id||"")}</small><br><small>${esc(age(s.last_received_at))}</small></div><span class="${esc(s.status)}">${esc(labels[s.status]||s.status)}</span></div>`).join(""));}
+function renderSensors(){if(S.diagnostics){S.diagnostics.update(S.sensors.filter(ownSensor));return;}setMarkup("sensors",S.sensors.filter(ownSensor).map(s=>`<div class="sensor-row"><div><strong>${esc(s.sensor_id)}</strong><small> · ${esc(s.type)} ${esc(s.asset_id||s.building_id||"")}</small><br><small>${esc(age(s.last_received_at))}</small></div><span class="${esc(s.status)}">${esc(labels[s.status]||s.status)}</span></div>`).join(""));}
 function renderNotifications(){
   const rows=S.noticeRows.filter(n=>S.incidents.some(i=>i.incident_id===n.incident_id&&workable(i)&&belongsToPeople(i)===(S.tab==="people"))).slice(-3).reverse();
   $("notifications").textContent=rows.map(n=>`${notificationNames[n.kind]||"Изменение обработки"} · ${n.incident_id}`).join(". ");
@@ -252,7 +253,7 @@ function renderDemo(demo){
   const signature=scenarios.map(id=>`${id}:${demoScenarioName(id)}`).join("|");
   if(available&&scenarios.length&&select.dataset.scenarios!==signature){const previous=select.dataset.scenarios?select.value:null;select.innerHTML=scenarios.map(id=>`<option value="${esc(id)}">${esc(demoScenarioName(id))}</option>`).join("");select.value=scenarios.includes(previous)?previous:scenarios.includes(demo.scenario)?demo.scenario:scenarios[0];select.dataset.scenarios=signature;}
   select.onchange=renderScenarioExpectation;renderScenarioExpectation();
-  $("sim-status").textContent=demo.error?`Ошибка источника: ${demo.error}`:!available?"Источник движения пока не подключён":demo.running?`${demoScenarioName(demo.scenario)}`:"Сценарий остановлен · новые сигналы не поступают";
+  $("sim-status").textContent=demo.error?`Ошибка источника: ${demo.error}`:!available?"Источник движения пока не подключён":demo.running?`${demoScenarioName(demo.scenario)}${demo.demonstration_complete?" · эпизод завершён":""}`:"Сценарий остановлен · новые сигналы не поступают";
   $("start").disabled=!available||S.demoBusy;$("stop").disabled=!available||!demo.running||S.demoBusy;select.disabled=!available||S.demoBusy;
   $("start").title=available?"Запустить выбранный сценарий для всех рабочих мест":"Источник движения не подключён. Карта и ручная обработка доступны.";
 }
@@ -284,7 +285,7 @@ async function refresh(){
     if(S.auth?.enabled)await api("/auth/me","GET",undefined,operator);
     const [assets,sensors,incidents,summary,health,demo,profiles]=await Promise.all([api("/assets","GET",undefined,operator),api("/sensors","GET",undefined,operator),api(`/incidents?scope=${S.role==="admin"?"all":"workstation"}&limit=200`,"GET",undefined,operator),api("/dispatch-summary","GET",undefined,operator),api("/health","GET",undefined,operator),api("/demo/status","GET",undefined,operator),api("/operator-profiles","GET",undefined,operator)]);
     if(context!==S.context)return;
-    S.assets=array(assets,"assets");S.sensors=array(sensors,"sensors");S.incidents=array(incidents,"incidents");if(S.selected&&!S.incidents.some(i=>i.incident_id===S.selected&&workable(i)))hideSelected();S.summary=summary;S.profiles=array(profiles,"operator_profiles");
+    S.assets=array(assets,"assets");S.sensors=array(sensors,"sensors");S.incidents=array(incidents,"incidents");if(S.selected&&!S.incidents.some(i=>i.incident_id===S.selected&&workable(i)))hideSelected();S.summary=summary;S.profiles=array(profiles,"operator_profiles");$("people-tab").hidden=!(S.role==="admin"||S.operator==="dispatcher-3"||S.incidents.some(belongsToPeople));
     const agentStatus=typeof health.agent==="object"?health.agent.status:health.agent;
     S.agentAvailable=agentStatus==="ready";
     $("agent-status").textContent=S.agentAvailable?"ИИ: готов к анализу":"ИИ: нет связи с локальной моделью";
@@ -321,7 +322,7 @@ async function switchOperator(operator){
     $("details").textContent="Выберите происшествие";$("selected-id").textContent="";$("notifications").textContent="";$("incidents").textContent="Загрузка рабочего места…";
     await sendPresence(operator,S.session,$("ready").checked?"ready":"away");
     await notifications(true);
-    focusSector();
+    configureWorkspace();S.mapRenderer?.setOperator?.(S.operator,S.role);focusSector();
     if(typeof window!=="undefined"){const url=new URL(window.location.href);url.searchParams.set("operator",operator);window.history.replaceState(null,"",url);}
   }catch(e){$("operator").value=S.operator;showError(e);}
   finally{S.switching=false;$("operator").disabled=Boolean(S.auth?.enabled);}
