@@ -70,14 +70,8 @@
     const label=number?`Диспетчер ${number}`:profile?.name||"Не назначен";
     return {operatorId,sectorId,label,compactLabel:number?`Д${number}`:"—",shortLabel:number?`Дисп. ${number}`:label};
   }
-  function controlledLabelMetrics(building,control,width,height){
-    const compact=height<28||width<35,ownerFontSize=8.5;
-    const ownerLabel=compact?control.compactLabel:estimatedLabelWidth(control.label,ownerFontSize)<=width-8?control.label:control.shortLabel;
-    const ownerWidth=estimatedLabelWidth(ownerLabel,ownerFontSize)+8;
-    const name=labelMetrics(building,compact?Math.max(0,width-ownerWidth):width,compact?height:Math.max(0,height-12));
-    return {...name,width:Math.max(0,width),height:Math.max(0,height),compact,ownerLabel,ownerFontSize};
-  }
-  function create({elementId="map",site,onAsset=()=>{},onSensor=()=>{},onBuilding=()=>{}}){
+  const operatorColors={"dispatcher-1":"#79baff","dispatcher-2":"#75d4a0","dispatcher-3":"#bca3ed"};
+  function create({elementId="map",site,operator=null,role="dispatcher",onAsset=()=>{},onSensor=()=>{},onBuilding=()=>{}}){
     const Leaflet=globalThis.L;
     if(!Leaflet)throw Error("Локальная библиотека карты ещё не загружена");
     if(!site)throw Error("Нет геометрии предприятия");
@@ -89,7 +83,16 @@
     pane("enterpriseGrid",220);pane("enterpriseSectors",260);pane("enterpriseRoads",300);pane("enterprisePedestrians",310);pane("enterpriseRoutes",320);pane("enterpriseZones",330);pane("enterpriseObjects",360);pane("enterpriseLabels",420);pane("enterpriseHighlight",450);pane("enterpriseSensors",620);
     const roads=[],pedestrians=[],personalRoutes=new Map(),buildings=new Map(),zones=new Map(),assets=new Map(),sensors=new Map(),sensorDefinitions=new Map((site.sensors||[]).map(s=>[s.id||s.sensor_id,s]));
     const grid=Leaflet.layerGroup().addTo(map),highlightLayer=Leaflet.layerGroup().addTo(map);
-    let state={assets:[],sensors:[],incidents:[],serverOffset:0},selection=null,selectedAsset=null,routesVisible=true,gridSignature="",destroyed=false,viewMode="all",focusedSectorId=null,settingView=false,animationFrame=null,lastPaint=0;
+    let state={assets:[],sensors:[],incidents:[],serverOffset:0},selection=null,selectedAsset=null,followedAsset=null,routesVisible=true,gridSignature="",destroyed=false,viewMode="all",focusedSectorId=null,settingView=false,animationFrame=null,lastPaint=0;
+    let currentOperator=operator,currentRole=role;
+    const siteAssets=new Map((site.assets||[]).map(a=>[a.id,a]));
+    function areaOperator(areaId){const area=(site.site_areas||[]).find(a=>a.id===areaId);return (site.operator_profiles||[]).find(p=>p.sector_id===area?.responsible_sector_id)?.id||"dispatcher-3";}
+    function assetOperator(assetId){const definition=siteAssets.get(assetId);const building=(site.buildings||[]).find(b=>b.id===definition?.destination);return building?buildingControl(site,building).operatorId:areaOperator(definition?.site_area_id);}
+    function sensorOperator(definition){return definition.asset_id?assetOperator(definition.asset_id):areaOperator(definition.site_area_id);}
+    const visibleOwner=id=>currentRole==="admin"||currentOperator==="admin"||!currentOperator||currentOperator===id;
+    const ownershipColor=id=>visibleOwner(id)?operatorColors[id]||"#bca3ed":"#87929d";
+    function buildingStyle(record){const color=ownershipColor(record.control.operatorId);return {color,fillColor:color,fillOpacity:visibleOwner(record.control.operatorId) ? 0.31 : 0.16};}
+    function setOperator(id,nextRole="dispatcher"){currentOperator=id;currentRole=nextRole;for(const record of buildings.values())record.layer.setStyle(buildingStyle(record));update(state);}
     const hatchId=`enterprise-forbidden-hatch-${++instanceSequence}`;
     const motionClock=()=>typeof performance!=="undefined"?performance.now():Date.now();
     const reducedMotion=typeof matchMedia!=="undefined"&&matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -134,10 +137,8 @@
     for(const building of site.buildings||[]){
       const r=building.rectangle;if(!r)continue;
       const control=buildingControl(site,building),controlTitle=`${building.name} · Под контролем: ${control.label}`;
-      const office=building.id==="O1";
-      const fillColor=/^#[0-9a-f]{6}$/i.test(building.color||"")?building.color:office?"#445779":"#24465c";
-      const borderColor=office?"#a9b6df":"#668faa";
-      const layer=Leaflet.rectangle(rectangleBounds(r),{pane:"enterpriseObjects",color:borderColor,weight:1.5,fillColor,fillOpacity:.95});
+      const borderColor=ownershipColor(control.operatorId),fillColor=borderColor;
+      const layer=Leaflet.rectangle(rectangleBounds(r),{pane:"enterpriseObjects",color:borderColor,weight:1.5,fillColor,fillOpacity:visibleOwner(control.operatorId) ? 0.31 : 0.16});
       layer.addTo(map).bindTooltip(`${escape(controlTitle)} · ${escape(building.id)}`);
       layer.on("click",()=>onBuilding(building.id));
       const label=Leaflet.marker(xy(r.x+r.width/2,r.y+r.height/2),{pane:"enterpriseLabels",interactive:false,keyboard:false,icon:Leaflet.divIcon({className:"enterprise-label-marker",html:"",iconSize:[0,0]})}).addTo(map);
@@ -152,10 +153,10 @@
       for(const {road,edge,fill} of roads){const width=roadWidthPixels(road.width,unit);edge.setStyle({weight:width+2});fill.setStyle({weight:width});}
       for(const record of buildings.values()){
         const r=record.building.rectangle,p1=map.latLngToLayerPoint(xy(r.x,r.y)),p2=map.latLngToLayerPoint(xy(r.x+r.width,r.y+r.height));
-        const m=controlledLabelMetrics(record.building,record.control,Math.abs(p2.x-p1.x)-4,Math.abs(p2.y-p1.y)-4),signature=JSON.stringify(m);
+        const m=labelMetrics(record.building,Math.abs(p2.x-p1.x)-4,Math.abs(p2.y-p1.y)-4),signature=JSON.stringify(m);
         if(signature===record.labelSignature)continue;
         record.labelSignature=signature;
-        record.label.setIcon(Leaflet.divIcon({className:"enterprise-label-marker",html:`<span class="enterprise-building-label controlled ${m.compact?"compact":""}" data-building-id="${escape(record.building.id)}" style="width:${m.width}px;height:${m.height}px;font-size:${m.fontSize}px" title="${escape(record.controlTitle)}"><span class="enterprise-building-name">${escape(m.label)}</span><small class="enterprise-building-control" data-operator-id="${escape(record.control.operatorId||"")}" style="font-size:${m.ownerFontSize}px">${escape(m.ownerLabel)}</small></span>`,iconSize:[m.width,m.height],iconAnchor:[m.width/2,m.height/2]}));
+        record.label.setIcon(Leaflet.divIcon({className:"enterprise-label-marker",html:`<span class="enterprise-building-label" data-building-id="${escape(record.building.id)}" style="width:${m.width}px;height:${m.height}px;font-size:${m.fontSize}px" title="${escape(record.controlTitle)}"><span class="enterprise-building-name">${escape(m.label)}</span></span>`,iconSize:[m.width,m.height],iconAnchor:[m.width/2,m.height/2]}));
       }
       for(const record of zones.values()){
         const r=record.zone.rectangle,p1=map.latLngToLayerPoint(xy(r.x,r.y)),p2=map.latLngToLayerPoint(xy(r.x+r.width,r.y+r.height));
@@ -190,13 +191,15 @@
     }
     const sensorSvg='<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="9" width="12" height="11" rx="2"/><path d="M12 9V4m-4 3a5 5 0 0 1 8 0M5 4a9 9 0 0 1 14 0M3 12h3m12 0h3M3 17h3m12 0h3"/><circle cx="12" cy="14" r="1.4"/></svg>';
     function vehicleIcon(asset,alarm,stale,deviation){
+      const owner=assetOperator(asset.asset_id||asset.id),ownerColor=ownershipColor(owner),foreign=!visibleOwner(owner);
       const color=stale?"stale":alarm?"alarm":"normal",id=asset.asset_id||asset.id;
       const symbol=asset.vehicle_type==="forklift"?"П":"С",name=symbol==="П"?"Погрузчик":"Служебный транспорт";
-      return Leaflet.divIcon({className:`enterprise-vehicle-marker ${color}${deviation?" route-deviation":""}`,html:`<span class="enterprise-vehicle-glyph"><span class="enterprise-vehicle-symbol" title="${name}">${symbol}</span><b>${escape(id)}</b><time class="enterprise-signal-time" title="Последняя позиция: ${escape(asset.last_seen||"нет сигнала")}">${escape(signalTime(asset.last_seen))}</time>${stale?'<small class="enterprise-stale-badge" title="Последняя известная позиция">?</small>':deviation?'<small class="enterprise-route-warning" title="Отклонение от личного маршрута">!</small>':""}</span>`,iconSize:[36,50],iconAnchor:[18,20]});
+      return Leaflet.divIcon({className:`enterprise-vehicle-marker ${color}${deviation?" route-deviation":""}${foreign?" foreign":""}`,html:`<span class="enterprise-vehicle-glyph" style="--marker-color:${ownerColor}"><span class="enterprise-vehicle-symbol" title="${name}">${symbol}</span><b>${escape(id)}</b><time class="enterprise-signal-time" title="Последняя позиция: ${escape(asset.last_seen||"нет сигнала")}">${escape(signalTime(asset.last_seen))}</time>${stale?'<small class="enterprise-stale-badge" title="Последняя известная позиция">?</small>':deviation?'<small class="enterprise-route-warning" title="Отклонение от личного маршрута">!</small>':""}</span>`,iconSize:[36,50],iconAnchor:[18,20]});
     }
     function sensorIcon(sensor,status,mounted){
+      const owner=sensorOperator(sensor),ownerColor=ownershipColor(owner),foreign=!visibleOwner(owner);
       const type=sensor.type||"heartbeat";
-      return Leaflet.divIcon({className:`enterprise-sensor-marker ${escape(status)} ${mounted?"mounted":"stationary"}`,html:`<span class="enterprise-sensor-glyph" title="${escape(sensorTypeNames[type]||"Датчик")}">${sensorSvg}</span>${mounted?"":`<time class="enterprise-sensor-time" title="Последний сигнал: ${escape(sensor.last_received_at||"нет сигнала")}">${escape(signalTime(sensor.last_received_at))}</time>`}`,iconSize:mounted?[18,18]:[25,25],iconAnchor:mounted?[-10,25]:[12.5,12.5]});
+      return Leaflet.divIcon({className:`enterprise-sensor-marker ${escape(status)} ${mounted?"mounted":"stationary"}${foreign?" foreign":""}`,html:`<span class="enterprise-sensor-glyph" style="--sensor-color:${ownerColor}" title="${escape(sensorTypeNames[type]||"Датчик")}">${sensorSvg}</span>${mounted?"":`<time class="enterprise-sensor-time" title="Последний сигнал: ${escape(sensor.last_received_at||"нет сигнала")}">${escape(signalTime(sensor.last_received_at))}</time>`}`,iconSize:mounted?[18,18]:[25,25],iconAnchor:mounted?[-10,25]:[12.5,12.5]});
     }
     function ageText(stamp){
       const t=Date.parse(stamp);if(!Number.isFinite(t))return "сигнал ещё не получен";
@@ -220,14 +223,16 @@
       lastPaint=now;if(paintMotion(now))animationFrame=requestAnimationFrame(animationTick);
     }
     function scheduleMotion(){if(!destroyed&&animationFrame===null&&typeof requestAnimationFrame!=="undefined"&&[...assets.values()].some(r=>r.motion))animationFrame=requestAnimationFrame(animationTick);}
-    function update({assets:nextAssets=[],sensors:nextSensors=[],incidents:nextIncidents=[],serverOffset=0}){
+    function update({assets:nextAssets=[],sensors:nextSensors=[],incidents:nextIncidents=[],serverOffset=0,operator:nextOperator,operatorId,role:nextRole}){
+      if(nextOperator!==undefined||operatorId!==undefined)currentOperator=nextOperator??operatorId;
+      if(nextRole!==undefined)currentRole=nextRole;
       state={assets:nextAssets,sensors:nextSensors,incidents:nextIncidents,serverOffset};
       const liveAssets=new Map(nextAssets.map(a=>[a.asset_id||a.id,a]));
       const liveSensors=new Map(nextSensors.map(s=>[s.sensor_id||s.id,s]));
       for(const asset of nextAssets){
         const id=asset.asset_id||asset.id;if(!id||!validPoint(asset))continue;
         const alarm=nextIncidents.some(i=>incidentAssets(i).includes(id)&&i.condition_active&&workable(i)),stale=isStale(asset,serverOffset,site.dispatch_config?.position_stale_seconds||5),deviation=nextIncidents.some(i=>i.asset_id===id&&i.type==="route_deviation"&&i.condition_active&&workable(i));
-        const signature=[asset.vehicle_type,alarm,stale,deviation,signalTime(asset.last_seen)].join(":");
+        const signature=[asset.vehicle_type,alarm,stale,deviation,signalTime(asset.last_seen),currentOperator,currentRole].join(":");
         let record=assets.get(id);
         if(!record){const layer=Leaflet.marker(xy(asset.x,asset.y),{icon:vehicleIcon(asset,alarm,stale,deviation),riseOnHover:true}).addTo(map);layer.on("click",()=>{selectAsset(id);onAsset(id);});record={layer,signature,display:{x:asset.x,y:asset.y},stamp:asset.last_seen};assets.set(id,record);}
         if(record.signature!==signature){record.layer.setIcon(vehicleIcon(asset,alarm,stale,deviation));record.signature=signature;}
@@ -237,7 +242,7 @@
           else{record.motion=null;record.display={x:asset.x,y:asset.y};record.layer.setLatLng(xy(asset.x,asset.y));}
           record.stamp=asset.last_seen;
         }
-        record.layer.bindTooltip(`${escape(id)} · ${asset.vehicle_type==="forklift"?"Погрузчик":"Служебный транспорт"}<br>${stale?"Последняя известная позиция · текущее место неизвестно":"Полученная позиция"}<br>${ageText(asset.last_seen)} · ${escape(asset.last_seen||"—")}`);
+        record.layer.bindTooltip(`${escape(id)} · ${asset.vehicle_type==="forklift"?"Погрузчик":"Служебный транспорт"}<br>${stale?"Последняя известная позиция · текущее место неизвестно":"Полученная позиция"}<br>${ageText(asset.last_seen)} · ${escape(asset.last_seen||"—")}<br>Под контролем: ${escape((site.operator_profiles||[]).find(p=>p.id===assetOperator(id))?.name||"Диспетчер КПП")}`);
       }
       for(const [id,record] of assets)if(!liveAssets.has(id)||!validPoint(liveAssets.get(id))){map.removeLayer(record.layer);assets.delete(id);}
       const shownSensors=new Set();
@@ -247,7 +252,7 @@
         const position=mounted?assets.get(definition.asset_id)?.display||asset:definition.position||definition;
         if(!validPoint(position))continue;
         shownSensors.add(id);
-        const status=["online","offline"].includes(runtime.status)?runtime.status:"unknown",signature=[status,mounted,mounted?"":signalTime(runtime.last_received_at)].join(":");
+        const status=["online","offline"].includes(runtime.status)?runtime.status:"unknown",signature=[status,mounted,mounted?"":signalTime(runtime.last_received_at),currentOperator,currentRole].join(":");
         let record=sensors.get(id);
         if(!record){const layer=Leaflet.marker(xy(position.x,position.y),{pane:"enterpriseSensors",icon:sensorIcon(sensor,status,mounted),riseOnHover:true}).addTo(map);layer.on("click",()=>onSensor(id));record={layer,signature};sensors.set(id,record);}
         if(signature!==record.signature){record.layer.setIcon(sensorIcon(sensor,status,mounted));record.signature=signature;}
@@ -256,8 +261,10 @@
         record.layer.bindTooltip(`${escape(sensorTypeNames[definition.type]||"Датчик")} ${escape(id)}${location}<br>${sensorStatusNames[status]} · ${ageText(runtime.last_received_at)} · ${escape(runtime.last_received_at||"—")}<br>Связь и свежесть измерений проверяются отдельно`);
       }
       for(const [id,record] of sensors)if(!shownSensors.has(id)){map.removeLayer(record.layer);sensors.delete(id);}
-      for(const [id,record] of buildings){const danger=nextIncidents.some(i=>i.building_id===id&&i.condition_active&&workable(i));record.layer.setStyle({color:danger?"#ff7c7c":record.borderColor});}
+      for(const [id,record] of buildings){const danger=nextIncidents.some(i=>i.building_id===id&&i.condition_active&&workable(i));record.layer.setStyle({...buildingStyle(record),weight:danger?3:1.5});}
       applySelection();scheduleMotion();
+      if(followedAsset){const target=liveAssets.get(followedAsset);if(validPoint(target)&&!isStale(target,serverOffset,site.dispatch_config?.position_stale_seconds||5)){settingView=true;try{map.panTo(xy(target.x,target.y),{animate:!reducedMotion,duration:.65,noMoveStart:true});}finally{settingView=false;}}}
+
     }
     function selectedGeometry(incident){
       const geometry=[];
@@ -280,8 +287,8 @@
     function drawPersonalRoutes(){
       const selected=new Set(selection?incidentAssets(selection):selectedAsset?[selectedAsset]:[]);
       for(const [id,record] of personalRoutes){
-        const focused=selected.has(id),deviation=state.incidents.some(i=>i.asset_id===id&&i.type==="route_deviation"&&i.condition_active&&workable(i));
-        const color=deviation?"#ff9696":record.color;
+        const focused=selected.has(id);
+        const color=ownershipColor(assetOperator(id));
         record.layer.setStyle({color,opacity:routesVisible?(focused?.95:.23):0,weight:focused?3:1.5,dashArray:focused?"6 4":"5 7"});
         for(const destination of record.destinations){
           const signature=[routesVisible,focused,color].join(":");if(signature===destination.signature)continue;destination.signature=signature;
@@ -290,7 +297,7 @@
       }
     }
     function setRoutesVisible(visible){routesVisible=Boolean(visible);drawPersonalRoutes();}
-    function selectAsset(id){selectedAsset=personalRoutes.has(id)?id:null;selection=null;applySelection();return Boolean(selectedAsset);}
+    function selectAsset(id){followedAsset=null;selectedAsset=personalRoutes.has(id)?id:null;selection=null;applySelection();return Boolean(selectedAsset);}
     function applySelection(){
       for(const [id,r] of assets)r.layer.getElement()?.classList.toggle("enterprise-selected",Boolean(selection&&(incidentAssets(selection).includes(id)||sensorDefinitions.get(selection.sensor_id)?.asset_id===id)));
       for(const [id,r] of sensors)r.layer.getElement()?.classList.toggle("enterprise-selected",Boolean(selection&&selection.sensor_id===id));
@@ -300,11 +307,11 @@
       geometrySignature=signature;highlightLayer.clearLayers();
       for(const r of rectangles)Leaflet.rectangle(rectangleBounds(r),{pane:"enterpriseHighlight",className:"enterprise-incident-halo",color:"#ffd079",weight:3,fillOpacity:0,interactive:false}).addTo(highlightLayer);
     }
-    function highlight(incident){selection=incident||null;selectedAsset=null;applySelection();return selectionPoints(incident||{}).length>0;}
-    function clearHighlight(){selection=null;applySelection();}
-    function fitAll(){viewMode="all";focusedSectorId=null;settingView=true;try{map.stop?.();map.fitBounds(frame,{padding:[24,24],animate:false});}finally{settingView=false;}}
+    function highlight(incident,options={}){const key=i=>i?.incident_id||[...incidentAssets(i),i?.sensor_id].filter(Boolean).join(":");if(key(selection)!==key(incident)||!incident)followedAsset=null;selection=incident||null;selectedAsset=null;applySelection();if(options.recenter)return showIncident(incident);return selectionPoints(incident||{}).length>0;}
+    function clearHighlight(){followedAsset=null;selection=null;applySelection();}
+    function fitAll({animate=true}={}){followedAsset=null;viewMode="all";focusedSectorId=null;settingView=true;try{map.stop?.();if(animate&&!reducedMotion&&map.flyToBounds)map.flyToBounds(frame,{padding:[24,24],duration:.85});else map.fitBounds(frame,{padding:[24,24],animate:false});}finally{settingView=false;}}
     function focusSector(sectorId,{animate=false}={}){
-      const rectangles=sectorRectangles(site,sectorId);
+      followedAsset=null;const rectangles=sectorRectangles(site,sectorId);
       if(!rectangles.length){fitAll();return false;}
       viewMode="sector";focusedSectorId=sectorId;settingView=true;
       try{
@@ -315,15 +322,19 @@
       }finally{settingView=false;}return true;
     }
     function showIncident(incident){
-      highlight(incident);const points=selectionPoints(incident||{});if(!points.length)return false;
-      viewMode="incident";focusedSectorId=null;settingView=true;try{map.stop?.();map.fitBounds(points,{padding:[48,48],maxZoom:3.75,animate:false});}finally{settingView=false;}return true;
+      highlight(incident);
+      const identifiers=[...incidentAssets(incident),sensorDefinitions.get(incident?.sensor_id)?.asset_id].filter(Boolean);
+      const target=state.assets.find(a=>identifiers.includes(a.asset_id||a.id)&&validPoint(a));
+      const primary=target&&(target.asset_id||target.id),points=target?[xy(target.x,target.y)]:selectionPoints(incident||{});
+      if(!points.length)return false;
+      viewMode="incident";focusedSectorId=null;settingView=true;try{map.stop?.();map.fitBounds(points,{padding:[48,48],maxZoom:3.75,animate:false});}finally{settingView=false;}followedAsset=primary||null;return true;
     }
     map.on("zoomend moveend",redrawGeometry);
-    map.on("dragstart zoomstart",()=>{if(!settingView){viewMode="manual";focusedSectorId=null;}});
-    const resize=typeof ResizeObserver!=="undefined"?new ResizeObserver(()=>{if(!destroyed){map.invalidateSize({pan:false});if(viewMode==="all")fitAll();else if(viewMode==="sector")focusSector(focusedSectorId);redrawGeometry();}}):null;
+    map.on("dragstart zoomstart",()=>{if(!settingView){followedAsset=null;viewMode="manual";focusedSectorId=null;}});
+    const resize=typeof ResizeObserver!=="undefined"?new ResizeObserver(()=>{if(!destroyed){map.invalidateSize({pan:false});if(viewMode==="all")fitAll({animate:false});else if(viewMode==="sector")focusSector(focusedSectorId);redrawGeometry();}}):null;
     if(resize)resize.observe(map.getContainer());
-    fitAll();redrawGeometry();update(state);
-    return {map,update,fitAll,focusSector,highlight,clearHighlight,showIncident,setRoutesVisible,selectAsset,destroy(){destroyed=true;if(animationFrame!==null&&typeof cancelAnimationFrame!=="undefined")cancelAnimationFrame(animationFrame);resize?.disconnect();map.off("zoomend moveend",redrawGeometry);map.remove();},getLayerCounts(){return {buildings:buildings.size,roads:roads.length,pedestrians:pedestrians.length,routes:personalRoutes.size,assets:assets.size,sensors:sensors.size,grid:grid.getLayers().length};}};
+    fitAll({animate:false});redrawGeometry();update(state);
+    return {map,update,fitAll,focusSector,highlight,clearHighlight,showIncident,setRoutesVisible,selectAsset,setOperator,destroy(){destroyed=true;if(animationFrame!==null&&typeof cancelAnimationFrame!=="undefined")cancelAnimationFrame(animationFrame);resize?.disconnect();map.off("zoomend moveend",redrawGeometry);map.remove();},getLayerCounts(){return {buildings:buildings.size,roads:roads.length,pedestrians:pedestrians.length,routes:personalRoutes.size,assets:assets.size,sensors:sensors.size,grid:grid.getLayers().length};}};
   }
   return {create,labelMetrics,buildingControl,estimatedLabelWidth,roadWidthPixels,isStale,interpolatePoint,sectorRectangles,zoneStyle,zonePolicyText,signalTime};
 });
