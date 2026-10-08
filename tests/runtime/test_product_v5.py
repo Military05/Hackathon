@@ -97,8 +97,15 @@ class ProductV5Acceptance(unittest.TestCase):
         self.assertEqual(foreign.status_code, 403, foreign.text)
         self.assertEqual(foreign.json()["code"], "incident_sector_required")
         self.assertEqual(one.get("/api/incidents?scope=all", headers={"X-Demo-Operator": "dispatcher-3"}).json(), [])
+        before = self.service.get_incident(incident_id)
         forbidden, _ = self.claim(one, {**one_headers, "X-Demo-Operator": "dispatcher-3"})
-        self.assertEqual(forbidden.status_code, 409, forbidden.text)
+        # A valid session cannot gain sector access through a forged profile header.
+        # Authorization fails before the command/revision conflict checks.
+        self.assertEqual(forbidden.status_code, 403, forbidden.text)
+        self.assertEqual(forbidden.json()["code"], "incident_sector_required")
+        after = self.service.get_incident(incident_id)
+        for field in ("assigned_operator_id", "dispatch_revision", "history"):
+            self.assertEqual(after[field], before[field], field)
         three, three_headers = clients[2]
         own = three.get("/api/incidents/" + incident_id, headers={"X-Demo-Operator": "dispatcher-1"})
         self.assertTrue(own.json()["can_claim"])
