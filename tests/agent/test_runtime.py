@@ -297,6 +297,8 @@ def test_schema_final_after_tools_and_bounded_format_retry(provider, early_inval
         body = json.loads(request.content)
         wire.append(body)
         schema = body.get("format") if provider == "ollama" else body.get("response_format", {}).get("json_schema", {}).get("schema")
+        budget = body["options"]["num_predict"] if provider == "ollama" else body["max_tokens"]
+        assert budget == (1024 if schema is not None else 450)
         if len(wire) == 1:
             assert schema is None and body["tools"]
             message = {"role": "assistant", "content": "", "tool_calls": [tool_call(native=provider == "ollama")]}
@@ -314,6 +316,9 @@ def test_schema_final_after_tools_and_bounded_format_retry(provider, early_inval
             assert schema["$defs"]["FactClaim"]["properties"]["source"]["enum"] == [
                 "event", "policy", "sensor_health", "model_observation"]
             assert schema["$defs"]["Hypothesis"]["properties"]["limitations"]["minItems"] == 1
+            assert schema["properties"]["facts"]["maxItems"] == 4
+            assert schema["properties"]["hypotheses"]["maxItems"] == 1
+            assert schema["properties"]["recommendations"]["maxItems"] == 3
             assert schema["additionalProperties"] is False
             if provider == "openai_compatible":
                 assert body["response_format"]["type"] == "json_schema"
@@ -335,6 +340,53 @@ def test_schema_final_after_tools_and_bounded_format_retry(provider, early_inval
                 ["get_incident"] if early_invalid else ["get_incident", "get_asset_policy"])
         finally:
             await client.close()
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("provider", ["openai_compatible", "ollama"])
+@pytest.mark.parametrize("final_truncated", [False, True])
+def test_truncated_answer_uses_bounded_structured_retry_and_never_partial_success(provider, final_truncated):
+    wire = []
+    claim = {"source": "event", "id": "demo-position-0010", "field": "payload.x", "value": 20.0}
+
+    def transport(request):
+        body = json.loads(request.content)
+        wire.append(body)
+        if len(wire) == 1:
+            message = {"role": "assistant", "content": "", "tool_calls": [tool_call(native=provider == "ollama")]}
+            reason = "tool_calls"
+        else:
+            # Even parseable content must not become a result when the provider
+            # reports it was cut short; no Python repair or partial acceptance.
+            message = {"role": "assistant", "content": answer([claim])}
+            reason = "length" if len(wire) == 2 or final_truncated else "stop"
+        if len(wire) == 3:
+            assert not body["tools"]
+            schema = body["format"] if provider == "ollama" else body["response_format"]["json_schema"]["schema"]
+            assert schema["properties"]["facts"]["maxItems"] == 4
+            assert (body["options"]["num_predict"] if provider == "ollama" else body["max_tokens"]) == 1024
+        payload = ({"message": message, "done_reason": reason} if provider == "ollama" else
+                   {"choices": [{"message": message, "finish_reason": reason}]})
+        return httpx.Response(200, json=payload)
+
+    async def run():
+        config = AgentConfig(provider=provider, model="test-double",
+                             base_url="http://127.0.0.1:11434" if provider == "ollama" else "http://127.0.0.1:1234/v1")
+        client = LocalModelClient(config, httpx.MockTransport(transport))
+        try:
+            if final_truncated:
+                with pytest.raises(AgentError) as error:
+                    await run_analysis(client, snapshot(), config)
+                assert error.value.code == "model_reply_invalid"
+                assert error.value.details == {"finish_reason": "length", "output_token_limit": 1024}
+            else:
+                result = await run_analysis(client, snapshot(), config)
+                assert result["facts"][0]["value"] == 20.0
+                assert [row["tool"] for row in result["tool_trace"]] == ["get_incident"]
+            assert len(wire) == config.max_model_requests == 3
+        finally:
+            await client.close()
+
     asyncio.run(run())
 
 

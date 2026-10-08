@@ -60,6 +60,7 @@ class LocalModelClient:
             raise AgentError("execution_timeout", "Analysis execution budget expired.")
         if response_schema is not None and tools:
             raise AgentError("invalid_config", "A structured final answer cannot request tools.")
+        output_token_limit = 1024 if response_schema is not None else 450
         if self.config.provider == "ollama":
             wire_messages = []
             for message in messages:
@@ -75,15 +76,16 @@ class LocalModelClient:
                 wire_messages.append(item)
             body = {"model": self.config.model, "messages": wire_messages,
                     "tools": tools, "stream": False, "think": False,
-                    "options": {"temperature": 0, "num_predict": 450}}
+                    "options": {"temperature": 0, "num_predict": output_token_limit}}
             if response_schema is not None:
                 body["format"] = response_schema
             data = await self._json("POST", "api/chat", remaining, json=body)
             message = data.get("message") if isinstance(data, dict) else None
+            finish_reason = data.get("done_reason") if isinstance(data, dict) else None
         else:
             body = {"model": self.config.model, "messages": messages,
                     "tools": tools, "stream": False, "temperature": 0,
-                    "max_tokens": 450}
+                    "max_tokens": output_token_limit}
             if len(tools) == 1:
                 # Bionic accepts required/auto/none, not named object choices.
                 # One advertised tool plus required enforces the same first step.
@@ -93,11 +95,17 @@ class LocalModelClient:
                     "name": "dispatcher_answer", "strict": True, "schema": response_schema}}
             data = await self._json("POST", "chat/completions", remaining, json=body)
             try:
-                message = data["choices"][0]["message"]
+                choice = data["choices"][0]
+                message = choice["message"]
+                finish_reason = choice.get("finish_reason")
             except (KeyError, TypeError, IndexError):
                 message = None
         if not isinstance(message, dict):
             raise AgentError("model_reply_invalid", "Model did not return an assistant message.")
+        if finish_reason == "length":
+            # No partial prose or tool arguments can be accepted as a finished reply.
+            return {"role": "assistant", "content": "", "finish_reason": "length",
+                    "output_token_limit": output_token_limit}
         calls = []
         raw_calls = message.get("tool_calls") or []
         if not isinstance(raw_calls, list):
