@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Контур — мониторинг предприятия</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css"><link rel="stylesheet" href="styles.css?v=product-refinements-v9">
   <link rel="stylesheet" href="map-view.css?v=product-refinements-v9"><link rel="stylesheet" href="sensors-panel.css?v=product-refinements-v9"><link rel="stylesheet" href="dispatch-view.css?v=product-refinements-v9">
   <link rel="stylesheet" href="product-v5.css?v=product-refinements-v9">
@@ -13,7 +14,7 @@
 <section id="auth-screen" class="auth-screen">
   <div class="auth-card"><span class="eyebrow">КОНТУР · автомобильный завод</span><h1>Вход в систему</h1><p class="muted">Войдите в аккаунт диспетчера или администратора.</p>
     <form id="auth-login"><label>Логин<input name="username" autocomplete="username" required maxlength="40"></label><label>Пароль<input name="password" type="password" autocomplete="current-password" required maxlength="128"></label><button type="submit" class="primary">Войти</button><button id="show-register" type="button">Зарегистрироваться</button></form>
-    <form id="auth-register" hidden><label>Имя<input name="name" autocomplete="name" required maxlength="80"></label><label>Логин<input name="username" autocomplete="username" required minlength="3" maxlength="40" pattern="[A-Za-z0-9_.-]+"></label><label>Пароль<input name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="128"></label><label>Повторите пароль<input name="confirm_password" type="password" autocomplete="new-password" required minlength="8" maxlength="128"></label><p class="muted">Администратор подтвердит заявку и назначит сектор. До подтверждения доступ закрыт.</p><button type="submit" class="primary">Создать аккаунт диспетчера</button><button id="show-login" type="button">Вернуться ко входу</button></form>
+    <form id="auth-register" hidden><label>Имя<input name="name" autocomplete="name" required maxlength="80"></label><label>Логин<input name="username" autocomplete="username" required minlength="3" maxlength="40" pattern="[A-Za-z0-9_.\-]+"></label><label>Пароль<input name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="128"></label><label>Повторите пароль<input name="confirm_password" type="password" autocomplete="new-password" required minlength="8" maxlength="128"></label><p class="muted">Администратор подтвердит заявку и назначит сектор. До подтверждения доступ закрыт.</p><button type="submit" class="primary">Создать аккаунт диспетчера</button><button id="show-login" type="button">Вернуться ко входу</button></form>
     <p id="auth-message" class="auth-message" role="status"></p>
   </div>
 </section>

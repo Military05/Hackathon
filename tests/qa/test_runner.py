@@ -46,7 +46,10 @@ class DemoDouble:
         if self.last_heartbeat:
             received, started = self.last_heartbeat
             required = 0.1 if self.fault == "early-offline" else self.threshold
-            if time.monotonic() - started >= required and not self.active("sensor_offline"):
+            # The report checks the receipt/detection timestamps, not another clock.
+            # On Windows monotonic and UTC readings can cross the threshold differently.
+            measured = (datetime.now(timezone.utc) - datetime.fromisoformat(received)).total_seconds()
+            if time.monotonic() - started >= required and measured >= required and not self.active("sensor_offline"):
                 self.add("sensor_offline", [], sensor_id="HB-QA",
                          details={"last_received_at": received, "threshold_seconds": self.threshold})
 
@@ -141,7 +144,7 @@ class RunnerTests(unittest.TestCase):
             suite = qa.Suite(qa.Client(url), self.config, "all", wait=0.4, observe=0.12, poll=0.02,
                              event_factory=simulator_factory)
             results = suite.run({row[0] for row in qa.CASES})
-        self.assertEqual([row.status for row in results], ["PASS"] * 6)
+        self.assertEqual([row.status for row in results], ["PASS"] * 6, [(row.case_id,row.status,row.actual) for row in results])
         self.assertGreater(len(calls), 6)
         self.assertEqual(len(calls), len(set(calls)))
         self.assertTrue(all(row.requests for row in results))

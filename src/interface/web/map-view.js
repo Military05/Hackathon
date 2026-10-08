@@ -16,6 +16,7 @@
   const sensorStatusNames={online:"На связи",offline:"Нет связи",unknown:"Связь ещё не подтверждена"};
   const sensorTypeNames={position:"Датчик положения",access:"Датчик прохода",heartbeat:"Контроль связи"};
   function isStale(asset,serverOffset=0,thresholdSeconds=5,now=Date.now()){
+    if(asset?.monitoring_paused)return false;
     const stamp=Date.parse(asset?.last_seen);
     return !Number.isFinite(stamp)||now+serverOffset-stamp>=thresholdSeconds*1000;
   }
