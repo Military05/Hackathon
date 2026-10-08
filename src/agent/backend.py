@@ -157,6 +157,7 @@ def capture_snapshot(service, incident_id):
             # Age is derived from wall time, not a new measurement. Keep the stable
             # raw timestamp/threshold/status so polling does not invalidate every job.
             sensor.pop("age_seconds", None)
+            sensor.pop("monitoring_age_seconds", None)
             health[sensor_id] = sensor
         bounds = {"since": rows[0]["event_time"] if rows else incident["detected_at"],
                   "until": rows[-1]["event_time"] if rows else incident["detected_at"],

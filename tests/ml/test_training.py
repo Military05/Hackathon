@@ -121,13 +121,20 @@ def test_trained_observation_flows_to_verified_agent_result(trained, provider):
     tool_messages = [m for m in wire[-1]["messages"] if m["role"] == "tool"]
     assert len(tool_messages) == 1
     incident_data = json.loads(tool_messages[0]['content'])
-    assert incident_data["incident"] == snap.data["incident"]
-    assert incident_data["evidence"] == [snap.events[i] for i in observation["evidence_event_ids"]]
-    assert incident_data["observations"] == snap.data["observations"]
+    from src.agent.loop import model_tool_result
+    full_session = ToolSession(snap)
+    full_result = full_session.execute('get_incident', json.dumps({'incident_id': snap.incident_id}))
+    expected, visible = model_tool_result(full_result)
+    assert incident_data == expected
+    assert incident_data['model_input_selection']['partial']
+    assert set(incident_data['incident']['evidence_event_ids']) <= visible
+    assert len(incident_data['evidence']) <= 14
+    assert all(row == snap.events[row['event_id']] for row in incident_data['evidence'])
+    assert full_session.snapshot.export() == snap.export()
     assert all("snapshot" not in payload and "evidence_refs" not in payload
                for payload in (incident_data,))
-    # D4 must retain every raw event and exact MLP value while removing significant
-    # repeated metadata from the actual request, rather than trimming the fixture.
+    # Full raw evidence stays in the snapshot/validator; the model gets an explicit
+    # bounded selection plus exact MLP values, not a falsely complete history.
     full_session = ToolSession(snap)
     legacy_chars = sum(len(json.dumps(full_session.execute(name, json.dumps(args)), ensure_ascii=False))
                        for name, args in (("get_incident", {"incident_id": snap.incident_id}),
