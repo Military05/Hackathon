@@ -91,6 +91,9 @@ class Service:
         self._require(operator, self.profiles, "operator")
         return operator
 
+    def validate_reader(self, operator):
+        return operator if operator == "admin" else self.validate_operator(operator)
+
     def _load(self, db, table, key, value):
         # Table/key names are internal constants, never model/user arguments.
         row = db.execute(f"SELECT body FROM {table} WHERE {key}=?", (value,)).fetchone()
@@ -438,13 +441,11 @@ class Service:
         return view
 
     def can_claim(self, db, item, operator):
-        if not operator or not self._working(item) or item["assigned_operator_id"]:
+        if not operator or operator == "admin" or not self._working(item) or item["assigned_operator_id"]:
             return False
         if item["responsible_sector_id"] == self._profile_sector(operator):
             return True
-        return bool(db.execute("""SELECT 1 FROM notifications WHERE incident_id=? AND recipient_operator_id=?
-            AND json_extract(body,'$.kind') IN ('escalation','operator_unavailable','active_review','transfer_expired') LIMIT 1""",
-                               (item["incident_id"], operator)).fetchone())
+        return False
 
     def get_incident(self, incident_id, operator=None):
         with self.store.read() as db:
@@ -453,11 +454,28 @@ class Service:
                 raise ApiError(404, "unknown_incident", "Unknown incident", {"id": incident_id})
             view = self._incident_view(db, item)
             if operator:
-                self.validate_operator(operator)
+                self.validate_reader(operator)
+                if operator != "admin" and not self._visible_to(item, operator):
+                    raise ApiError(403, "incident_sector_required", "Происшествие относится к другому диспетчеру")
                 view["can_claim"] = self.can_claim(db, item, operator)
+            view["recipient_operator_id"] = self._recipient(item)
+            view["recipient_name"] = self.profiles[view["recipient_operator_id"]]["name"]
             return view
 
-    def list_incidents(self, status=None, scope=None, site_area_id=None, operator=None):
+    def _recipient(self, item):
+        transfer = item.get("pending_transfer") or {}
+        return transfer.get("to_operator_id") or item["assigned_operator_id"] or self._sector_operator(item["responsible_sector_id"])
+
+    def _visible_to(self, item, operator):
+        if operator == "admin":
+            return True
+        transfer = item.get("pending_transfer") or {}
+        owner = item.get("assigned_operator_id")
+        return (owner == operator or transfer.get("to_operator_id") == operator or
+                (owner is None and item["responsible_sector_id"] == self._profile_sector(operator)))
+
+    def list_incidents(self, status=None, scope=None, site_area_id=None, operator=None,
+                       include_closed=False, limit=80, offset=0):
         if status and status not in {"open", "acknowledged", "closed"}:
             raise ApiError(422, "invalid_status", "Unsupported status")
         if scope and scope not in {"all", "workstation"}:
@@ -465,22 +483,42 @@ class Service:
         if site_area_id:
             self._require(site_area_id, self.areas, "site_area")
         if operator or scope == "workstation":
-            self.validate_operator(operator)
+            self.validate_reader(operator)
         with self.store.read() as db:
-            addressed = set()
-            if scope == "workstation":
-                addressed = {r[0] for r in db.execute("SELECT incident_id FROM notifications WHERE recipient_operator_id=?", (operator,))}
+            archives = {r[0] for r in db.execute("SELECT incident_id FROM incident_archives WHERE operator_id IN ('*',?)", (operator or "",))}
             result = []
             for item in self._incidents(db):
+                if item["incident_id"] in archives:
+                    continue
                 if status and item["status"] != status or site_area_id and item["site_area_id"] != site_area_id:
                     continue
-                transfer = item.get("pending_transfer") or {}
-                if scope == "workstation" and not (item["responsible_sector_id"] == self._profile_sector(operator) or item["assigned_operator_id"] == operator or transfer.get("to_operator_id") == operator or item["incident_id"] in addressed):
+                if not include_closed and status != "closed" and not self._working(item):
                     continue
+                # A caller cannot broaden a dispatcher's permissions with scope=all.
+                if operator and not self._visible_to(item, operator):
+                    continue
+                recipient = self._recipient(item)
                 result.append({**item, "alarm_state": alarm_state(item),
+                               "recipient_operator_id": recipient, "recipient_name": self.profiles[recipient]["name"],
+                               "category": "people" if item.get("employee_id") or item["type"] == "unauthorized_access" else "objects",
                                **({"can_claim": self.can_claim(db, item, operator)} if operator else {})})
             priority = {"critical": 0, "warning": 1, "info": 2}
-            return sorted(result, key=lambda i: (priority[i["severity"]], bool(i["assigned_operator_id"]), i["detected_at"], i["incident_id"]))
+            result.sort(key=lambda i: i["detected_at"], reverse=True)
+            result.sort(key=lambda i: (priority[i["severity"]], bool(i["assigned_operator_id"])))
+            return result[offset:offset + limit]
+
+    def clear_incidents(self, operator):
+        self.validate_reader(operator)
+        with self.store.transaction() as db:
+            count = 0
+            scope = "*" if operator == "admin" else operator
+            for item in self._incidents(db):
+                if not self._visible_to(item, operator):
+                    continue
+                cursor = db.execute("INSERT OR IGNORE INTO incident_archives VALUES (?,?,?)",
+                                    (item["incident_id"], scope, stamp(self.clock())))
+                count += cursor.rowcount
+            return {"cleared": count, "scope": "all" if operator == "admin" else "workstation"}
 
     def _presence(self, db, operator):
         now = self.clock()
@@ -516,17 +554,24 @@ class Service:
             values = [{**json.loads(r["body"]), "seq": r["seq"]} for r in rows]
             return {"notifications": values, "next_seq": values[-1]["seq"] if values else after_seq}
 
-    def summary(self, by_area=False):
+    def summary(self, by_area=False, operator=None):
+        if operator:
+            self.validate_reader(operator)
         with self.store.read() as db:
-            incidents = self._incidents(db)
+            archives = {r[0] for r in db.execute("SELECT incident_id FROM incident_archives WHERE operator_id IN ('*',?)", (operator or "",))}
+            incidents = [item for item in self._incidents(db) if item["incident_id"] not in archives and self._working(item)
+                         and (not operator or self._visible_to(item, operator))]
             result = []
             for group in self.site["site_areas"] if by_area else self.site["sectors"]:
+                sector = group["responsible_sector_id"] if by_area else group["id"]
+                if operator and operator != "admin" and sector != self._profile_sector(operator):
+                    continue
                 key = "site_area_id" if by_area else "responsible_sector_id"
                 items = [i for i in incidents if i[key] == group["id"] and i.get("disposition") != "rejected_model_signal"]
                 entry = {"site_area_id" if by_area else "sector_id": group["id"],
                          "active_count": sum(bool(i["condition_active"]) for i in items),
                          "unclaimed_count": sum(self._working(i) and not i["assigned_operator_id"] for i in items),
-                         "escalated_count": sum(self._working(i) and i["escalation_level"] > 0 for i in items)}
+                         "escalated_count": 0}
                 if not by_area:
                     presence = self._presence(db, self._sector_operator(group["id"]))
                     entry.update({"operator_online": presence["client_online"], "operator_ready": presence["operator_ready"]})

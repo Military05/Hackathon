@@ -1,4 +1,4 @@
-"""Small local account/session service; no default credentials or external services."""
+"""Local account/session service with one reproducible demonstration administrator."""
 from collections import OrderedDict
 import hashlib
 import hmac
@@ -21,6 +21,8 @@ COOKIE_NAME = "dispatch_session"
 PASSWORD_ITERATIONS = 600_000
 SESSION_SECONDS = 8 * 60 * 60
 OPERATORS = ("dispatcher-1", "dispatcher-2", "dispatcher-3")
+ADMIN_USERNAME = "admin"
+ADMIN_PASSWORD = "123456768"
 
 
 def password_hash(password):
@@ -116,6 +118,40 @@ class AuthManager:
                     seq INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL,
                     action TEXT NOT NULL, actor_id TEXT, target_id TEXT, details TEXT NOT NULL);
             """)
+        self._ensure_administrator()
+
+    def _ensure_administrator(self):
+        """Keep the same dedicated administrator after updates and fresh installs."""
+        with self.store.transaction() as db:
+            for row in db.execute("SELECT * FROM auth_users WHERE role='admin' AND username<>?", (ADMIN_USERNAME,)).fetchall():
+                db.execute("UPDATE auth_users SET role='dispatcher',status='blocked',operator_id=NULL WHERE id=?", (row["id"],))
+                db.execute("DELETE FROM auth_sessions WHERE user_id=?", (row["id"],))
+                self._audit(db, "extra_admin_disabled", target_id=row["id"])
+            row = db.execute("SELECT * FROM auth_users WHERE username=?", (ADMIN_USERNAME,)).fetchone()
+            if row is None:
+                user_id = "user-" + secrets.token_hex(16)
+                db.execute("INSERT INTO auth_users VALUES (?,?,?,?,?,?,?,?)",
+                           (user_id, ADMIN_USERNAME, "Администратор", password_hash(ADMIN_PASSWORD), "admin", None, "active", stamp()))
+                self._audit(db, "administrator_initialized", target_id=user_id)
+            elif (row["role"] != "admin" or row["operator_id"] is not None or row["status"] != "active"
+                  or not password_matches(ADMIN_PASSWORD, row["password_hash"])):
+                db.execute("UPDATE auth_users SET role='admin',operator_id=NULL,status='active',password_hash=? WHERE id=?",
+                           (password_hash(ADMIN_PASSWORD), row["id"]))
+                db.execute("DELETE FROM auth_sessions WHERE user_id=?", (row["id"],))
+                self._audit(db, "administrator_migrated", target_id=row["id"])
+            db.executescript("""
+                CREATE UNIQUE INDEX IF NOT EXISTS one_administrator ON auth_users(role) WHERE role='admin';
+                CREATE TRIGGER IF NOT EXISTS dedicated_admin_insert BEFORE INSERT ON auth_users
+                WHEN NEW.role='admin' AND (NEW.username<>'admin' OR NEW.operator_id IS NOT NULL OR NEW.status<>'active')
+                BEGIN SELECT RAISE(ABORT, 'Administrator must be the dedicated admin account'); END;
+                CREATE TRIGGER IF NOT EXISTS dedicated_admin_update BEFORE UPDATE ON auth_users
+                WHEN (NEW.role='admin' AND (NEW.username<>'admin' OR NEW.operator_id IS NOT NULL OR NEW.status<>'active'))
+                  OR (OLD.username='admin' AND (NEW.username<>'admin' OR NEW.role<>'admin'))
+                BEGIN SELECT RAISE(ABORT, 'The dedicated administrator cannot become a dispatcher'); END;
+                CREATE TRIGGER IF NOT EXISTS dedicated_admin_delete BEFORE DELETE ON auth_users
+                WHEN OLD.username='admin'
+                BEGIN SELECT RAISE(ABORT, 'The dedicated administrator cannot be deleted'); END;
+            """)
 
     def _audit(self, db, action, actor_id=None, target_id=None, details=None):
         db.execute("INSERT INTO auth_audit(created_at,action,actor_id,target_id,details) VALUES (?,?,?,?,?)",
@@ -135,8 +171,8 @@ class AuthManager:
             raise ApiError(422, "invalid_name", "Имя содержит некорректные символы Unicode") from exc
         if role not in ("dispatcher", "admin") or status not in ("pending", "active", "blocked"):
             raise ApiError(422, "invalid_account", "Некорректная роль или состояние")
-        if role == "admin" and operator_id is None:
-            operator_id = "dispatcher-3"
+        if role == "admin" or username == ADMIN_USERNAME:
+            raise ApiError(409, "single_administrator", "Единственный администратор admin уже создан. Новых администраторов создавать нельзя")
         if operator_id is not None and operator_id not in OPERATORS:
             raise ApiError(422, "invalid_operator", "Укажите один из трёх диспетчерских профилей")
         if status == "active" and operator_id is None:
@@ -225,15 +261,13 @@ class AuthManager:
             row = db.execute("SELECT * FROM auth_users WHERE id=?", (user_id,)).fetchone()
             if not row:
                 raise ApiError(404, "unknown_user", "Аккаунт не найден")
+            if row["role"] == "admin":
+                raise ApiError(403, "administrator_immutable", "Администратору нельзя назначать диспетчерский профиль или блокировку")
             status, operator = body.get("status", row["status"]), body.get("operator_id", row["operator_id"])
             if status not in ("pending", "active", "blocked") or (operator is not None and operator not in OPERATORS):
                 raise ApiError(422, "invalid_account_update", "Некорректный статус или профиль")
             if status == "active" and operator is None:
                 raise ApiError(422, "operator_required", "При подтверждении назначьте диспетчерский профиль")
-            if row["role"] == "admin" and status != "active":
-                count = db.execute("SELECT COUNT(*) FROM auth_users WHERE role='admin' AND status='active'").fetchone()[0]
-                if row["status"] == "active" and count <= 1:
-                    raise ApiError(409, "last_admin", "Нельзя заблокировать последнего администратора")
             db.execute("UPDATE auth_users SET status=?,operator_id=? WHERE id=?", (status, operator, user_id))
             if status != row["status"] or operator != row["operator_id"]:
                 db.execute("DELETE FROM auth_sessions WHERE user_id=?", (user_id,))
@@ -307,13 +341,22 @@ def add_auth(app, service, enabled=True):
                     request.state.user = session["user"]
                     if path.startswith("/api/admin/") and session["user"]["role"] != "admin":
                         raise ApiError(403, "admin_required", "Операция доступна администратору")
+                    if session["user"]["role"] == "admin" and request.method not in ("GET", "HEAD", "OPTIONS"):
+                        permitted = (path.startswith("/api/admin/") or path in
+                                     {"/api/auth/logout", "/api/demo/start", "/api/demo/stop", "/api/incidents/clear"})
+                        if not permitted:
+                            raise ApiError(403, "dispatcher_required", "Администратор наблюдает происшествия, но не выполняет действия диспетчера")
+                    if path.startswith("/api/checkpoint/") or path == "/api/shifts/current":
+                        if session["user"]["role"] != "admin" and session["user"]["operator_id"] != "dispatcher-3":
+                            raise ApiError(403, "checkpoint_sector_required", "Журнал КПП доступен диспетчеру 3 и администратору")
                     if request.method not in ("GET", "HEAD", "OPTIONS"):
                         check_origin(request)
                         csrf = request.headers.get("x-csrf-token", "")
                         if not hmac.compare_digest(csrf.encode("utf-8"), session["csrf_token"].encode("utf-8")):
                             raise ApiError(403, "csrf_required", "Необходим CSRF-токен текущей сессии")
                     headers = [(key, value) for key, value in request.scope["headers"] if key.lower() != b"x-demo-operator"]
-                    headers.append((b"x-demo-operator", session["user"]["operator_id"].encode("ascii")))
+                    identity = "admin" if session["user"]["role"] == "admin" else session["user"]["operator_id"]
+                    headers.append((b"x-demo-operator", identity.encode("ascii")))
                     request.scope["headers"] = headers
                     # Request.headers may already be cached from the security checks.
                     if hasattr(request, "_headers"):
@@ -380,6 +423,20 @@ def add_auth(app, service, enabled=True):
     def update_user(user_id: str, request: Request, body: dict = Body(...)):
         admin(request)
         return {"user": manager.update_user(user_id, body, request.state.user)}
+
+    @app.post("/api/admin/users/{user_id}/block")
+    def block_user(user_id: str, request: Request, body: dict = Body(default={})):
+        admin(request)
+        if body:
+            raise ApiError(422, "extra_parameters", "Блокировка не принимает параметры")
+        return {"user": manager.update_user(user_id, {"status": "blocked"}, request.state.user)}
+
+    @app.post("/api/admin/users/{user_id}/unblock")
+    def unblock_user(user_id: str, request: Request, body: dict = Body(default={})):
+        admin(request)
+        if body:
+            raise ApiError(422, "extra_parameters", "Разблокировка не принимает параметры")
+        return {"user": manager.update_user(user_id, {"status": "active"}, request.state.user)}
 
     @app.get("/api/admin/audit")
     def audit(request: Request):

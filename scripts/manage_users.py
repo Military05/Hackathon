@@ -22,9 +22,12 @@ def main():
         for user in manager.users():
             print(f"{user['username']} | {user['name']} | {user['role']} | {user['status']} | {user['operator_id'] or 'не назначен'}")
         return 0
+    if args.command == "create-admin":
+        print("Единственный администратор admin уже создан автоматически; диспетчерского профиля у него нет.")
+        return 0
     username, name = input("Логин: "), input("Имя: ")
-    role = "admin" if args.command == "create-admin" else "dispatcher"
-    operator = "dispatcher-3" if role == "admin" else input("Профиль (dispatcher-1/dispatcher-2/dispatcher-3): ").strip()
+    role = "dispatcher"
+    operator = input("Профиль (dispatcher-1/dispatcher-2/dispatcher-3): ").strip()
     if operator not in OPERATORS:
         print("Неизвестный диспетчерский профиль", file=sys.stderr)
         return 1

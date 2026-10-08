@@ -23,6 +23,9 @@ class Store:
                     incident_id TEXT PRIMARY KEY, condition_key TEXT,
                     body TEXT NOT NULL);
                 CREATE INDEX IF NOT EXISTS incident_condition ON incidents(condition_key);
+                CREATE TABLE IF NOT EXISTS incident_archives (
+                    incident_id TEXT NOT NULL, operator_id TEXT NOT NULL, archived_at TEXT NOT NULL,
+                    PRIMARY KEY(incident_id,operator_id));
                 CREATE TABLE IF NOT EXISTS sensor_state (
                     sensor_id TEXT PRIMARY KEY, body TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS asset_state (
