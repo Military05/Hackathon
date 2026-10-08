@@ -35,7 +35,7 @@ function harness(handler=async()=>({})){
   let fetchHandler=handler;
   const calls=[];
   const context=vm.createContext({document,crypto:webcrypto,Date,URLSearchParams,URL,AbortController,setTimeout:()=>1,clearTimeout:()=>{},setInterval:()=>1,fetch:async(url,options)=>{calls.push({url,options,body:options.body?JSON.parse(options.body):undefined});const value=await fetchHandler(url,options);return value?.__response?value:{ok:true,status:200,json:async()=>value};}});
-  vm.runInContext(source+"\nglobalThis.ui={S,api,command,applyDetails,renderDetails,renderJob,startAnalysis,notifications,sendPresence,switchOperator,renderIncidents,updatePeopleTab,switchIncidentTab,refresh,configureWorkspace,compareIncidents,renderDemo,visibleDemoScenarios,runDemo,showAsset,incidentInWorkspace,renderAnalysisPicker,initialOperator,focusSector,selectIncident,showSelectedOnMap,entityName,placeName,clearIncidents,hideSelected,saveNote};",context);
+  vm.runInContext(source+"\nglobalThis.ui={S,api,command,applyDetails,renderDetails,renderJob,startAnalysis,notifications,sendPresence,switchOperator,renderIncidents,updatePeopleTab,switchIncidentTab,refresh,configureWorkspace,renderNotifications,markNoticesRead,compareIncidents,renderDemo,visibleDemoScenarios,runDemo,showAsset,incidentInWorkspace,renderAnalysisPicker,initialOperator,focusSector,selectIncident,showSelectedOnMap,entityName,placeName,clearIncidents,hideSelected,saveNote};",context);
   for(const id of ["filter-state","filter-type"])document.getElementById(id).value="all";document.getElementById("incident-sort").value="priority";
   context.ui.S.site={dispatch_config:{position_stale_seconds:5},site_areas:[],assets:[],sensors:[],buildings:[]};
   context.ui.S.map={fitBounds(){}};
@@ -391,4 +391,21 @@ test("queued and running analysis show actual elapsed time without a made-up per
   job={...job,status:"running",started_at:new Date(now-12000).toISOString()};await h.ui.renderJob();
   assert.match(h.$("analysis").innerHTML,/Анализ выполняется: 12 сек/);assert.match(h.$("analysis").innerHTML,/Время завершения пока неизвестно/);assert.doesNotMatch(h.$("analysis").innerHTML,/\d+%|progress/);
   job=readableJob();await h.ui.renderJob();assert.equal(h.$("analysis").attributes["aria-busy"],"false");assert.doesNotMatch(h.$("analysis").innerHTML,/analysis-wait-spinner/);
+});
+
+test("notifications use a compact unread badge without a permanent panel",()=>{
+  const h=harness();h.ui.S.incidents=[incident()];h.ui.S.noticeRows=[{seq:1,kind:"new_incident",incident_id:"I1"},{seq:2,kind:"transfer_requested",incident_id:"I1"},{seq:3,kind:"new_incident",incident_id:"foreign"}];
+  h.ui.renderNotifications();assert.equal(h.$("notifications-badge").textContent,"2");assert.equal(h.$("notifications-popover").hidden,true);assert.equal(h.$("notifications").innerHTML,"");
+  h.ui.S.noticesOpen=true;h.ui.renderNotifications();assert.equal(h.$("notifications-popover").hidden,false);assert.match(h.$("notifications").innerHTML,/Новое происшествие/);assert.doesNotMatch(h.$("notifications").innerHTML,/foreign/);
+  h.ui.markNoticesRead();assert.equal(h.$("notifications-badge").hidden,true);assert.equal(h.$("notifications-read").disabled,true);
+});
+test("admin removes personal claim filter but exposes the combined action export",()=>{
+  const h=harness();h.ui.S.role="admin";h.ui.S.tabFilters.objects.state="mine";
+  const option={value:"mine",remove(){this.removed=true;}};h.$("filter-state").options=[option];h.ui.configureWorkspace();
+  assert.equal(option.removed,true);assert.equal(h.$("filter-state").value,"all");assert.equal(h.$("activity-export").hidden,false);assert.match(h.$("activity-export").textContent,/общий журнал/);
+});
+test("paused scenario exposes resume only when server grants permission",()=>{
+  const h=harness();h.ui.S.role="admin";const demo={available:true,scenario:"normal",scenarios:["normal"],scenario_options:[{id:"normal",name:"Штатная работа"}],paused:true,can_resume:true};
+  h.ui.renderDemo(demo);assert.equal(h.$("resume").hidden,false);assert.equal(h.$("resume").disabled,false);assert.equal(h.$("stop").disabled,true);assert.match(h.$("sim-status").textContent,/пауза/);
+  h.ui.renderDemo({...demo,can_resume:false});assert.equal(h.$("resume").disabled,true);
 });

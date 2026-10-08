@@ -1,0 +1,16 @@
+.password-field{position:relative;display:block;width:100%}
+.auth-card .password-field input{padding-right:46px}
+.password-toggle{position:absolute;right:4px;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:36px;height:34px;padding:7px;border:0;background:transparent;color:var(--muted)}
+.password-toggle:hover{background:#2b4155;color:var(--text)}
+.password-toggle svg,.notification-toggle svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.password-toggle .eye-slash{display:none}.password-toggle[aria-pressed=true] .eye-slash{display:block}
+.server-controls{display:flex;align-items:center;gap:12px;margin-left:auto;flex-wrap:wrap}
+.server-controls .connection{margin-left:0}.server-controls .ready-control{white-space:nowrap}
+.notification-menu{position:relative}.notification-toggle{position:relative;display:grid;place-items:center;padding:7px;width:40px;height:38px}
+.notification-badge{position:absolute;top:-5px;right:-5px;min-width:18px;height:18px;border:2px solid var(--bg);border-radius:12px;background:var(--red);color:#08111b;padding:0 4px;font-size:10px;font-weight:700;line-height:14px;text-align:center}
+.notification-popover{position:absolute;right:0;top:calc(100% + 10px);width:min(340px,calc(100vw - 28px));max-height:380px;overflow:auto;z-index:1200;padding:10px;background:var(--panel);border:1px solid #375166;border-radius:12px;box-shadow:0 12px 35px #0008}
+.notification-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;font-size:12px}.notification-heading button{font-size:10px;padding:4px 7px}
+.notification-popover .notification-item{display:block;width:100%;text-align:left;padding:9px;margin-bottom:5px;font-size:12px}.notification-item small{display:block;color:var(--muted);font-size:10px}.notification-item.unread{border-left:3px solid var(--red)}.notification-popover p{margin:6px;font-size:12px}
+.simulation{display:flex;flex-wrap:wrap;gap:7px}.simulation select{flex:1 1 100%;border-radius:9px}.simulation button{flex:1 1 auto;font-size:11px;padding:8px}.admin-user select{border-radius:9px}
+.sensor-state.paused{color:var(--muted)}
+@media(max-width:600px){.server-controls{margin-left:0;gap:9px}.notification-menu{margin-left:auto}.user-controls{margin-left:0}.notification-heading{flex-wrap:wrap}.admin-dialog .section-head{flex-wrap:wrap}.admin-dialog #admin-refresh{font-size:10px}}

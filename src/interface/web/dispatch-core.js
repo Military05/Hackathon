@@ -48,7 +48,7 @@
             (incident.type === "forbidden_zone" && quality(asset, now).state !== "fresh")) {
             return `Текущее состояние неизвестно. Последнее наблюдение: ${incident.condition_active ? "нарушение было активно" : "условие не было активно"}`;
         }
-        return incident.condition_active ? "Условие активно" : "Условие восстановлено / разовое событие";
+        return incident.condition_active ? "Условие активно" : "Проблема устранена / разовое событие";
     }
     function canClaim(incident, profile) {
         return isWorkItem(incident) && !incident.assigned_operator_id &&

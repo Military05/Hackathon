@@ -50,7 +50,7 @@
     for(const id of ["gate-search","gate-direction","gate-permission","gate-since","gate-until","gate-sort"]){$(id).addEventListener(id==="gate-search"?"input":"change",()=>{clearTimeout(timer);offset=0;version++;timer=setTimeout(refreshCallback,250);});}
     $("gate-prev").onclick=()=>{offset=Math.max(0,offset-12);version++;refreshCallback();};$("gate-next").onclick=()=>{offset+=12;version++;refreshCallback();};
     $("gate-export").onclick=()=>{const query=filters();query.set("limit","200");query.set("offset","0");exportFile(`/checkpoint/export.csv?${query}`,"Журнал_проходов_КПП");};
-    $("activity-export").onclick=()=>exportFile("/dispatch-history/export.csv","Журнал_действий_диспетчера");
+    $("activity-export").onclick=()=>exportFile(context.role==="admin"?"/dispatch-history/export.csv?scope=all&limit=2000":"/dispatch-history/export.csv",context.role==="admin"?"Общий_журнал_действий_диспетчеров":"Журнал_действий_диспетчера");
     $("admin-open").onclick=()=>{$("admin-dialog").showModal();admin(request);};$("admin-close").onclick=()=>$("admin-dialog").close();$("admin-refresh").onclick=()=>admin(request);
   }
   root.OperationsView={bind,update,configure,renderGate,renderShift,renderActivity};
