@@ -347,7 +347,7 @@ def add_auth(app, service, enabled=True):
                         raise ApiError(403, "admin_required", "Операция доступна администратору")
                     if session["user"]["role"] == "admin" and request.method not in ("GET", "HEAD", "OPTIONS"):
                         permitted = (path.startswith("/api/admin/") or path in
-                                     {"/api/auth/logout", "/api/demo/start", "/api/demo/stop", "/api/incidents/clear"})
+                                     {"/api/auth/logout", "/api/demo/start", "/api/demo/stop", "/api/demo/resume", "/api/incidents/clear"})
                         if not permitted:
                             raise ApiError(403, "dispatcher_required", "Администратор наблюдает происшествия, но не выполняет действия диспетчера")
                     if path.startswith("/api/checkpoint/") or path == "/api/shifts/current":
