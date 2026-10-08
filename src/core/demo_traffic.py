@@ -246,7 +246,7 @@ class DemoRunner:
                 speed, pause = (2.3 if asset["id"] == "V3" else 1.0), 4.0
             elif scenario == "service":
                 speed, pause = (1.9 if asset["id"] == "V3" else 1.2), 7.0
-            phase = 0.0 if scenario == "normal" and asset["id"] == "V3" else pause + 1 + index * route.length / speed / 3
+            phase = 0.0 if scenario in ("normal", "logistics") and asset["id"] == "V3" else pause + 1 + index * route.length / speed / 3
             self._journeys[asset["id"]] = Journey(route, route.nearest_distance(destination), speed, pause, phase)
         if scenario in ("forbidden-zone", "simultaneous", "orange-zone"):
             definition = self.service.site.get("demo_fault_routes", {}).get("V1")
@@ -397,7 +397,7 @@ class DemoRunner:
         return response
 
     def _normal_service_departure_safe(self, elapsed):
-        """Plan only built-in NORMAL traffic; safety still checks actual Events.
+        """Plan only built-in normal/logistics traffic; safety checks actual Events.
 
         V3 waits at its off-road-loop service approach before a circuit. A small
         conservative clearance covers interpolation between the 1 Hz samples.
@@ -439,7 +439,7 @@ class DemoRunner:
 
     def _position(self, asset_id, elapsed):
         journey = self._journeys[asset_id]
-        if self.scenario == "normal" and asset_id == "V3":
+        if self.scenario in ("normal", "logistics") and asset_id == "V3":
             return self._normal_service_position(elapsed)
         if self.scenario == "service" and asset_id != "V3":
             return {"V1": (3, 16), "V2": (96, 60)}.get(asset_id, journey.position(0)), "parked"
