@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from src.core.demo_traffic import ArcRoute, DemoRunner, Journey, SCENARIOS
 from src.core.geometry import rectangle_contains
-from src.core.main import create_app
+from tests.runtime.isolated_app import create_app
 from src.core.service import Service
 
 

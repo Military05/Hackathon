@@ -11,7 +11,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from src.core.auth import COOKIE_NAME
-from src.core.main import create_app
+from tests.runtime.isolated_app import ADMIN_PASSWORD, create_app
 from src.core.service import stamp
 
 
@@ -41,7 +41,6 @@ class ProductV5Acceptance(unittest.TestCase):
         self.app = create_app(db_path=Path(self.temp.name) / "product.db", enable_scheduler=False, clock=self.clock)
         self.auth = self.app.state.auth
         self.service = self.app.state.service
-        self.auth.create_user("admin.product", "Администратор", PASSWORD, role="admin", status="active")
         for number in range(1, 4):
             self.auth.create_user("dispatcher." + str(number), "Диспетчер " + str(number), PASSWORD,
                                   operator_id="dispatcher-" + str(number), status="active")
@@ -58,8 +57,8 @@ class ProductV5Acceptance(unittest.TestCase):
         client = TestClient(self.app, base_url="http://127.0.0.1:8000", client=("127.0.0.1", 50200 + len(self.clients)))
         self.clients.append(client)
         if operator or admin:
-            username = "admin.product" if admin else "dispatcher." + str(operator)
-            response = client.post("/api/auth/login", json={"username": username, "password": PASSWORD})
+            username = "admin" if admin else "dispatcher." + str(operator)
+            response = client.post("/api/auth/login", json={"username": username, "password": ADMIN_PASSWORD if admin else PASSWORD})
             self.assertEqual(response.status_code, 200, response.text)
             return client, {"X-CSRF-Token": response.json()["csrf_token"], "X-Expected-User": response.json()["user"]["id"]}
         return client
@@ -95,8 +94,9 @@ class ProductV5Acceptance(unittest.TestCase):
         one, one_headers = clients[0]
         incident_id = self.service.list_incidents()[0]["incident_id"]
         foreign = one.get("/api/incidents/" + incident_id, headers={"X-Demo-Operator": "dispatcher-3"})
-        self.assertFalse(foreign.json()["can_claim"])
-        self.assertFalse(one.get("/api/incidents?scope=all", headers={"X-Demo-Operator": "dispatcher-3"}).json()[0]["can_claim"])
+        self.assertEqual(foreign.status_code, 403, foreign.text)
+        self.assertEqual(foreign.json()["code"], "incident_sector_required")
+        self.assertEqual(one.get("/api/incidents?scope=all", headers={"X-Demo-Operator": "dispatcher-3"}).json(), [])
         forbidden, _ = self.claim(one, {**one_headers, "X-Demo-Operator": "dispatcher-3"})
         self.assertEqual(forbidden.status_code, 409, forbidden.text)
         three, three_headers = clients[2]

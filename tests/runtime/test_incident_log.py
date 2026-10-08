@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 from fastapi.testclient import TestClient
-from src.core.main import create_app
+from tests.runtime.isolated_app import ADMIN_PASSWORD, create_app
 from src.core.incident_log import preview, clear
 from src.core.service import ApiError
 from src.agent.backend import capture_snapshot
@@ -24,7 +24,6 @@ class IncidentLogTests(unittest.TestCase):
         self.path=Path(self.temp.name)/"test.db"
         self.app=create_app(db_path=self.path,enable_scheduler=False)
         self.service=self.app.state.service
-        self.app.state.auth.create_user("admin","Администратор","Admin-password-2026",role="admin",status="active")
         self.app.state.auth.create_user("operator","Диспетчер","Operator-password-2026",operator_id="dispatcher-1",status="active")
         self.client=TestClient(self.app,base_url="http://127.0.0.1:8000",client=("127.0.0.1",50100));self.client.__enter__()
         current=snapshot().data['incident']
@@ -40,7 +39,7 @@ class IncidentLogTests(unittest.TestCase):
     def tearDown(self):
         self.client.__exit__(None,None,None);self.env.stop();self.temp.cleanup()
     def login(self,admin=True):
-        r=self.client.post('/api/auth/login',json={'username':'admin' if admin else 'operator','password':'Admin-password-2026' if admin else 'Operator-password-2026'})
+        r=self.client.post('/api/auth/login',json={'username':'admin' if admin else 'operator','password':ADMIN_PASSWORD if admin else 'Operator-password-2026'})
         self.assertEqual(r.status_code,200,r.text)
         return {'X-CSRF-Token':r.json()['csrf_token']}
     def body(self):
