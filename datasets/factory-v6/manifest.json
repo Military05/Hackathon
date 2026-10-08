@@ -267,9 +267,9 @@
     "validation": 222,
     "test": 222
   },
-  "dataset_sha256": "51ccabc7178365f27da2f55cb61a3d72c484eabe76eb6891667fd8327ac212cf",
-  "site_sha256": "46eb6f047acf1e90386bfabbe86744d4fb648b0a3a791010b9afaa62095a7206",
-  "site_semantic_sha256": "a12dfeee79dc969c2f6b70baa0cb69b31d3a80e233a2f5994a0140bae12b8a9a",
+  "dataset_sha256": "e354f4d560f07d0cbc7035ca9c46e36c3ead66925ac184605cbb4b0a2d9d5cdb",
+  "site_sha256": "7d85c7b101830aa62ba10b23290cabdf327cf07e05b82d451ca8ac488067993e",
+  "site_semantic_sha256": "ebeb9995134802fc5764378590ee2349badadcf751ceac6cdfc57df068d087eb",
   "layout_version": "site-v6-connected-infrastructure",
   "policy_version": "demo-policy-v6",
   "coverage": {
@@ -714,40 +714,72 @@
           74
         ],
         [
-          58.9375,
-          74.4375
+          62,
+          74
         ],
         [
-          58.75,
-          74.75
+          62,
+          79
         ],
         [
-          58.4375,
-          74.9375
+          57,
+          79
         ],
         [
-          58.0,
-          75.0
+          62,
+          79
         ],
         [
-          44,
-          75
+          62,
+          84
         ],
         [
-          43.5625,
-          74.9375
+          52,
+          84
         ],
         [
-          43.25,
-          74.75
+          52,
+          87
         ],
         [
-          43.0625,
-          74.4375
+          52,
+          84
         ],
         [
-          43.0,
-          74.0
+          40,
+          84
+        ],
+        [
+          25,
+          84
+        ],
+        [
+          25,
+          91
+        ],
+        [
+          22,
+          91
+        ],
+        [
+          25,
+          91
+        ],
+        [
+          25,
+          84
+        ],
+        [
+          40,
+          84
+        ],
+        [
+          40,
+          74
+        ],
+        [
+          43,
+          74
         ]
       ],
       "road_ids": [],
