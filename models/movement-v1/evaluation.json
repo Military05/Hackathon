@@ -1,0 +1,74 @@
+{
+  "model_version": "movement-mlp-v2-e354f4d560f0",
+  "dataset_sha256": "e354f4d560f07d0cbc7035ca9c46e36c3ead66925ac184605cbb4b0a2d9d5cdb",
+  "artifact_sha256": "203e86aa2c6574486225c9f6d5729753518e70fa016f3a0355dd938833840774",
+  "test_used_for_threshold": false,
+  "mlp": {
+    "threshold": 0.9057877839749207,
+    "windows": 3342,
+    "precision": 0.9984423676012462,
+    "recall": 0.991492652745553,
+    "f1": 0.9949553744664338,
+    "confusion_matrix": [
+      [
+        2047,
+        2
+      ],
+      [
+        11,
+        1282
+      ]
+    ],
+    "confusion_order": [
+      "normal",
+      "anomaly"
+    ],
+    "episodes": 222,
+    "anomaly_episodes": 111,
+    "detected_anomaly_episodes": 110,
+    "episodes_with_false_alarm": 1,
+    "false_incidents": 1,
+    "missed_anomaly_episodes": 1,
+    "latency_seconds_median": 30.0,
+    "latency_seconds_max": 45.0,
+    "latency_scope": "event-time onset to first positive homogeneous window; includes 30s context accumulation"
+  },
+  "baseline": {
+    "threshold": 2.3385937544519466,
+    "windows": 3342,
+    "precision": 0.9550408719346049,
+    "recall": 0.5421500386697602,
+    "f1": 0.69166255550074,
+    "confusion_matrix": [
+      [
+        2016,
+        33
+      ],
+      [
+        592,
+        701
+      ]
+    ],
+    "confusion_order": [
+      "normal",
+      "anomaly"
+    ],
+    "episodes": 222,
+    "anomaly_episodes": 111,
+    "detected_anomaly_episodes": 67,
+    "episodes_with_false_alarm": 16,
+    "false_incidents": 24,
+    "missed_anomaly_episodes": 44,
+    "latency_seconds_median": 30.0,
+    "latency_seconds_max": 45.0,
+    "latency_scope": "event-time onset to first positive homogeneous window; includes 30s context accumulation"
+  },
+  "inference_milliseconds": {
+    "samples": 124,
+    "median": 1.7791999998735264,
+    "p95": 2.4553450002713357,
+    "max": 3.6505999996734317,
+    "machine": "Windows-10-10.0.19045-SP0",
+    "scope": "local CPU single-window measurement; not a concurrent-load benchmark"
+  }
+}
