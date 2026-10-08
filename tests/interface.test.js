@@ -35,15 +35,36 @@ function harness(handler=async()=>({})){
   let fetchHandler=handler;
   const calls=[];
   const context=vm.createContext({document,crypto:webcrypto,Date,URLSearchParams,URL,AbortController,setTimeout:()=>1,clearTimeout:()=>{},setInterval:()=>1,fetch:async(url,options)=>{calls.push({url,options,body:options.body?JSON.parse(options.body):undefined});const value=await fetchHandler(url,options);return value?.__response?value:{ok:true,status:200,json:async()=>value};}});
-  vm.runInContext(source+"\nglobalThis.ui={S,api,command,applyDetails,renderDetails,renderJob,startAnalysis,notifications,sendPresence,switchOperator,renderIncidents,updatePeopleTab,switchIncidentTab,refresh,configureWorkspace,compareIncidents,showAsset,initialOperator,focusSector,selectIncident,showSelectedOnMap,entityName,placeName,clearIncidents,hideSelected,saveNote};",context);
+  vm.runInContext(source+"\nglobalThis.ui={S,api,command,applyDetails,renderDetails,renderJob,startAnalysis,notifications,sendPresence,switchOperator,renderIncidents,updatePeopleTab,switchIncidentTab,refresh,configureWorkspace,compareIncidents,showAsset,incidentInWorkspace,renderAnalysisPicker,initialOperator,focusSector,selectIncident,showSelectedOnMap,entityName,placeName,clearIncidents,hideSelected,saveNote};",context);
   for(const id of ["filter-state","filter-type"])document.getElementById(id).value="all";document.getElementById("incident-sort").value="priority";
   context.ui.S.site={dispatch_config:{position_stale_seconds:5},site_areas:[],assets:[],sensors:[],buildings:[]};
   context.ui.S.map={fitBounds(){}};
   context.ui.S.profiles=[{operator_id:"dispatcher-1",name:"Склады",sector_id:"logistics",operator_ready:true},{operator_id:"dispatcher-2",name:"Цех",sector_id:"production",operator_ready:true},{operator_id:"dispatcher-3",name:"Координатор",sector_id:"coordination",operator_ready:true}];
   return {setConfirm(fn){context.confirm=fn;},ui:context.ui,$:document.getElementById,calls,setFetch(fn){fetchHandler=fn;}};
 }
-function incident(extra={}){return {incident_id:"I1",type:"forbidden_zone",severity:"critical",detected_at:"2026-10-07T09:00:00Z",status:"open",condition_active:true,condition_state:"active",dispatch_revision:7,assigned_operator_id:null,site_area_id:"warehouse-raw",asset_id:"V1",pending_transfer:null,escalation_level:0,evidence_event_ids:[],history:[],response_plan:{contact:"Служба безопасности",steps:["Принять случай","Проверить источник"]},...extra};}
+function incident(extra={}){return {incident_id:"I1",responsible_sector_id:"logistics",type:"forbidden_zone",severity:"critical",detected_at:"2026-10-07T09:00:00Z",status:"open",condition_active:true,condition_state:"active",dispatch_revision:7,assigned_operator_id:null,site_area_id:"warehouse-raw",asset_id:"V1",pending_transfer:null,escalation_level:0,evidence_event_ids:[],history:[],response_plan:{contact:"Служба безопасности",steps:["Принять случай","Проверить источник"]},...extra};}
 function deferred(){let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};}
+test("analysis picker follows each dispatcher and preserves addressed transfers",()=>{
+  const h=harness();h.ui.S.incidents=[incident(),incident({incident_id:"I2",responsible_sector_id:"production"}),incident({incident_id:"I3",responsible_sector_id:"coordination"}),incident({incident_id:"T1",assigned_operator_id:"dispatcher-2",pending_transfer:{status:"pending",to_operator_id:"dispatcher-1"}})];
+  for(const [operator,expected] of [["dispatcher-1","I1"],["dispatcher-2","I2"],["dispatcher-3","I3"]]){
+    h.ui.S.operator=operator;h.ui.renderAnalysisPicker();const html=h.$("analysis-incident").innerHTML;
+    assert.match(html,new RegExp(`value="${expected}"`));
+    for(const id of ["I1","I2","I3"].filter(x=>x!==expected))assert.doesNotMatch(html,new RegExp(`value="${id}"`));
+    assert.equal(html.includes('value="T1"'),operator!=="dispatcher-3");
+  }
+  h.ui.S.role="admin";h.ui.renderAnalysisPicker();assert.equal(h.$("analysis-picker").hidden,true);
+});
+test("foreign responsibility blocks analysis before any request including changed ownership",async()=>{
+  const h=harness();h.ui.S.selected="I1";h.ui.applyDetails(incident());
+  h.ui.S.incidents=[incident({assigned_operator_id:"dispatcher-2"})];
+  await h.ui.startAnalysis();assert.equal(h.calls.length,0);assert.match(h.$("analysis").innerHTML,/Анализ не начался/);
+  h.ui.applyDetails(incident({assigned_operator_id:"dispatcher-2",dispatch_revision:8}));assert.match(h.$("detail-actions").innerHTML,/id="analyse" disabled/);
+});
+test("registered asset without telemetry is visible without inventing a position",()=>{
+  const h=harness();h.ui.S.site.assets=[{id:"V1",name:"Погрузчик 1"}];h.ui.S.assets=[];h.$("asset-info").hidden=true;
+  h.ui.showAsset("V1");assert.equal(h.$("asset-info").hidden,false);assert.match(h.$("asset-info").textContent,/Погрузчик 1.*зарегистрирован/);assert.match(h.$("asset-info").textContent,/Текущее место неизвестно/);
+  h.ui.showAsset("missing");assert.match(h.$("asset-info").textContent,/не найден в справочнике/);assert.equal(h.ui.S.objectSelection.id,"missing");
+});
 function errorResponse(status,body){return {__response:true,ok:false,status,json:async()=>body};}
 
 test("snapshot rejection stays visible in analysis after polling without a fake completed job",async()=>{
@@ -336,7 +357,7 @@ test("archiving clears visible results and invalidates polling without deleting 
 
 // Regression checks for the v8 audit fixes; pending a run after coordinator approval.
 test("refresh switches away from a disappearing people tab and preserves both filter sets",async()=>{
-  let objects=[incident()];const h=harness(async url=>url.includes("/assets")?{assets:[]}:url.includes("/sensors")?{sensors:[]}:url.includes("/incidents?")?{incidents:objects}:url.includes("/operator-profiles")?{operator_profiles:[]}:url.includes("/health")?{agent:"ready",ml:"ready"}:url.includes("/dispatch-notifications")?{notifications:[],next_seq:0}:{});
+  let objects=[incident()];const h=harness(async url=>url.includes("/assets")?{assets:[]}:url.includes("/sensors")?{sensors:[]}:url.includes("/incidents?")?{incidents:objects}:url.includes("/operator-profiles")?{operator_profiles:[{operator_id:"dispatcher-1",sector_id:"logistics"}]}:url.includes("/health")?{agent:"ready",ml:"ready"}:url.includes("/dispatch-notifications")?{notifications:[],next_seq:0}:{});
   h.ui.S.incidents=[...objects,incident({incident_id:"P1",employee_id:"U1",type:"unauthorized_access"})];
   h.$("search-incidents").value="V1";h.$("incident-sort").value="newest";h.ui.switchIncidentTab("people");
   h.$("search-incidents").value="U1";h.$("incident-sort").value="oldest";h.$("incidents").scrollTop=42;h.ui.S.selected="P1";
