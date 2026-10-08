@@ -205,7 +205,7 @@ async function renderJob(){
   if(!sameSelection(id,context)||job!==S.job||j.incident_id&&j.incident_id!==id)return;
   const stale=j.stale||j.result?.stale;
   const list=(title,values)=>Array.isArray(values)&&values.length?`<strong>${title}</strong><ul class="analysis-list">${values.map(v=>`<li>${esc(typeof v==="string"?v:v.text||v.description||JSON.stringify(v))}</li>`).join("")}</ul>`:"";
-  setMarkup("analysis",`<strong>Анализ: ${esc({pending:"Ожидается",running:"Выполняется",completed:"Готов",failed:"Ошибка"}[j.status]||j.status)} ${stale?"· УСТАРЕЛ — данные изменились":""}</strong>${j.error?`<p>${esc(j.error.message||j.error)}</p>`:""}${j.result?`<p>${esc(j.result.summary)}</p>${list("Наблюдения",j.result.facts)}${list("Предположения",j.result.hypotheses)}${list("Рекомендации",j.result.recommendations)}<details class="detail-extra"><summary>Ход проверки ИИ</summary><pre>${esc(JSON.stringify(j.result.tool_trace||[],null,2))}</pre></details>`:""}`);
+  setMarkup("analysis",`<strong>Анализ: ${esc({pending:"Ожидается",queued:"В очереди",running:"Выполняется",completed:"Готов",failed:"Ошибка"}[j.status]||j.status)} ${stale?"· УСТАРЕЛ — данные изменились":""}</strong>${j.error?`<p>${esc(j.error.message||j.error)}</p>`:""}${j.result?`<p>${esc(j.result.summary)}</p>${list("Наблюдения",j.result.facts)}${list("Предположения",j.result.hypotheses)}${list("Рекомендации",j.result.recommendations)}<details class="detail-extra"><summary>Ход проверки ИИ</summary><pre>${esc(JSON.stringify(j.result.tool_trace||[],null,2))}</pre></details>`:""}`);
 }
 function renderSensors(){if(S.diagnostics){S.diagnostics.update(S.sensors);return;}setMarkup("sensors",S.sensors.map(s=>`<div class="sensor-row"><div><strong>${esc(s.sensor_id)}</strong><small> · ${esc(s.type)} ${esc(s.asset_id||s.building_id||"")}</small><br><small>${esc(age(s.last_received_at))}</small></div><span class="${esc(s.status)}">${esc(labels[s.status]||s.status)}</span></div>`).join(""));}
 function beep(kind="alarm"){if(!S.sound||!S.audio)return;const o=S.audio.createOscillator(),g=S.audio.createGain();o.frequency.value=kind==="check"?440:660;g.gain.value=kind==="check"?.025:.045;o.connect(g);g.connect(S.audio.destination);o.start();o.stop(S.audio.currentTime+(kind==="check"?.12:.22));}
@@ -257,7 +257,8 @@ async function refresh(){
     if(context!==S.context)return;
     S.assets=array(assets,"assets");S.sensors=array(sensors,"sensors");S.incidents=array(incidents,"incidents");S.summary=summary;S.profiles=array(profiles,"operator_profiles");
     const agentStatus=typeof health.agent==="object"?health.agent.status:health.agent;
-    S.agentAvailable=agentStatus!=="unavailable"&&agentStatus!=="not_connected";
+    S.agentAvailable=agentStatus==="ready";
+    $("agent-status").textContent=S.agentAvailable?"ИИ: готов к анализу":"ИИ: нет связи с локальной моделью";
     if(summary.as_of){S.asOf=Date.parse(summary.as_of);S.serverOffset=S.asOf-Date.now();}
     $("connection").textContent="● Сервер на связи";$("connection").style.color="#5bceae";
     const mlStatus=typeof health.ml==="object"?health.ml.status:health.ml;

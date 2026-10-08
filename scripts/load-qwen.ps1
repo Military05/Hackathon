@@ -1,9 +1,12 @@
 ﻿$ErrorActionPreference = 'Stop'
 $localCli = Get-Command lms -ErrorAction SilentlyContinue
 $localCliPath = if ($localCli) { $localCli.Source } else {
-    'C:\Program Files\Bionic\resources\app\.webpack-bionic\lms.exe'
+    @(
+        (Join-Path $env:USERPROFILE '.lmstudio\bin\lms.exe'),
+        'C:\Program Files\Bionic\resources\app\.webpack-bionic\lms.exe'
+    ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
 }
-if (!(Test-Path -LiteralPath $localCliPath)) {
+if (!$localCliPath -or !(Test-Path -LiteralPath $localCliPath)) {
     throw 'Не найден lms. Установите Bionic или LM Studio'
 }
 $modelsJson = & $localCliPath ls --json
