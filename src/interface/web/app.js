@@ -130,6 +130,7 @@ function updatePeopleTab(){
 }
 function configureWorkspace(){
   const admin=S.role==="admin";document.body.classList.toggle("admin-workspace",admin);document.querySelector(".operator").hidden=admin;document.querySelector(".activity-bar").hidden=admin;$("activity-export").hidden=admin;$("my-sector").hidden=admin;
+  if(S.demo)renderDemo(S.demo);
   updatePeopleTab();
   if(typeof OperationsView!=="undefined")OperationsView.configure({role:S.role,operator:S.operator,tab:S.tab});switchIncidentTab(S.tab);
 }
@@ -298,17 +299,27 @@ function renderNotifications(){
 }
 function demoScenarioName(id){return S.demo?.scenario_options?.find(s=>s.id===id)?.name||scenarioNames[id]||id;}
 function renderScenarioExpectation(){const el=$("scenario-expectation");if(!el)return;const option=S.demo?.scenario_options?.find(s=>s.id===$("scenario").value);el.textContent=option?.expected_alarm?`Ожидается: ${option.expected_alarm}`:"";el.hidden=!el.textContent;}
+function visibleDemoScenarios(demo){
+  const scenarios=Array.isArray(demo?.scenarios)?demo.scenarios:[];
+  if(S.role==="admin")return scenarios;
+  if(demo?.scenario_operator_id!==S.operator)return [];
+  return scenarios.filter(id=>demo.scenario_options?.find(option=>option.id===id)?.responsible_sector_ids?.includes(mySector()));
+}
 function renderDemo(demo){
   S.demo=demo;const available=demo.available!==false&&demo.status!=="unavailable";
-  const select=$("scenario"),scenarios=Array.isArray(demo.scenarios)?demo.scenarios:[];
-  const signature=scenarios.map(id=>`${id}:${demoScenarioName(id)}`).join("|");
-  if(available&&scenarios.length&&select.dataset.scenarios!==signature){const previous=select.dataset.scenarios?select.value:null;select.innerHTML=scenarios.map(id=>`<option value="${esc(id)}">${esc(demoScenarioName(id))}</option>`).join("");select.value=scenarios.includes(previous)?previous:scenarios.includes(demo.scenario)?demo.scenario:scenarios[0];select.dataset.scenarios=signature;}
+  $("scenario-scope").textContent=S.role==="admin"?"Все сценарии предприятия":`Сценарии рабочего места: ${operatorName(S.operator)} · ${sectorNames[mySector()]||"Сектор не определён"}`;
+  const select=$("scenario"),scenarios=visibleDemoScenarios(demo);
+  const signature=`${S.role}:${S.operator}:`+scenarios.map(id=>`${id}:${demoScenarioName(id)}`).join("|");
+  if(select.dataset.scenarios!==signature){const previous=select.value;select.innerHTML=scenarios.length?scenarios.map(id=>`<option value="${esc(id)}">${esc(demoScenarioName(id))}</option>`).join(""):'<option value="">Нет сценариев для вашего рабочего места</option>';select.value=scenarios.includes(previous)?previous:scenarios.includes(demo.scenario)?demo.scenario:scenarios[0]||"";select.dataset.scenarios=signature;}
   select.onchange=renderScenarioExpectation;renderScenarioExpectation();
-  $("sim-status").textContent=demo.error?`Ошибка источника: ${demo.error}`:!available?"Источник движения пока не подключён":demo.running?`${demoScenarioName(demo.scenario)}${demo.demonstration_complete?" · эпизод завершён":""}`:"Сценарий остановлен · новые сигналы не поступают";
-  $("start").disabled=!available||S.demoBusy;$("stop").disabled=!available||!demo.running||S.demoBusy;select.disabled=!available||S.demoBusy;
-  $("start").title=available?"Запустить выбранный сценарий для всех рабочих мест":"Источник движения не подключён. Карта и ручная обработка доступны.";
+  $("sim-status").textContent=demo.error?`Ошибка источника: ${demo.error}`:!available?"Источник движения пока не подключён":demo.running?S.role!=="admin"&&!scenarios.includes(demo.scenario)?"Сейчас работает сценарий другого сектора":`${demoScenarioName(demo.scenario)}${demo.demonstration_complete?" · эпизод завершён":""}`:"Сценарий остановлен · новые сигналы не поступают";
+  const canStop=S.role==="admin"||(demo.scenario_operator_id===S.operator&&demo.can_stop===true);
+  $("start").disabled=!available||!scenarios.length||S.demoBusy;$("stop").disabled=!available||!demo.running||!canStop||S.demoBusy;select.disabled=!available||!scenarios.length||S.demoBusy;
+  $("start").title=available?S.role==="admin"?"Запустить демонстрационный сценарий":"Запустить сценарий своего сектора. Источник демонстрации общий для завода.":"Источник движения не подключён. Карта и ручная обработка доступны.";
 }
 async function runDemo(action){
+  if(action==="start"&&!visibleDemoScenarios(S.demo).includes($("scenario").value)){showError(Error("Выберите сценарий своего рабочего места."));return;}
+  if(action==="stop"&&S.role!=="admin"&&(S.demo?.scenario_operator_id!==S.operator||S.demo?.can_stop!==true)){showError(Error("Остановить сценарий другого сектора может администратор."));return;}
   if(S.demoBusy)return;S.demoBusy=true;if(S.demo)renderDemo(S.demo);
   try{await api(`/demo/${action}`,"POST",action==="start"?{scenario:$("scenario").value}:{});$("error").hidden=true;}
   catch(e){showError(e);}finally{S.demoBusy=false;if(S.demo)renderDemo(S.demo);await refresh();}

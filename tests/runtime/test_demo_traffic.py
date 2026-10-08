@@ -238,11 +238,13 @@ class TrafficLifecycle(unittest.TestCase):
                 self.assertEqual(status["source"], "builtin_factory_traffic")
                 self.assertEqual(set(status["scenarios"]), set(SCENARIOS))
                 self.assertGreaterEqual(status["event_count"], 5)
-                headers = {"X-Demo-Operator": "dispatcher-2"}
+                headers = {"X-Demo-Operator": "dispatcher-1"}
                 self.assertEqual(client.post("/api/demo/start", json={"scenario": "absent"}, headers=headers).status_code, 422)
                 stopped = client.post("/api/demo/stop", json={}, headers=headers).json()
                 self.assertFalse(stopped["running"])
-                started = client.post("/api/demo/start", json={"scenario": "logistics"}, headers=headers).json()
+                response = client.post("/api/demo/start", json={"scenario": "logistics"}, headers=headers)
+                self.assertEqual(response.status_code, 200, response.text)
+                started = response.json()
                 self.assertTrue(started["running"])
                 self.assertEqual(started["scenario"], "logistics")
                 health = client.get("/api/health").json()
