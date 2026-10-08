@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Контур — мониторинг предприятия</title>
-  <link rel="stylesheet" href="vendor/leaflet/leaflet.css"><link rel="stylesheet" href="styles.css?v=dispatcher-v7">
-  <link rel="stylesheet" href="map-view.css?v=factory-map-v7"><link rel="stylesheet" href="sensors-panel.css?v=dispatcher-v7"><link rel="stylesheet" href="dispatch-view.css?v=dispatcher-v7">
-  <link rel="stylesheet" href="product-v5.css?v=dispatcher-v7">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css"><link rel="stylesheet" href="styles.css?v=dispatcher-v7-final">
+  <link rel="stylesheet" href="map-view.css?v=factory-map-v7"><link rel="stylesheet" href="sensors-panel.css?v=dispatcher-v7-final"><link rel="stylesheet" href="dispatch-view.css?v=dispatcher-v7-final">
+  <link rel="stylesheet" href="product-v5.css?v=dispatcher-v7-final">
 </head>
 <body>
 <div id="preview-stage" class="preview-stage" hidden aria-live="polite"></div>
@@ -20,7 +20,7 @@
 <div id="product-shell" hidden>
 <header class="app-header">
   <div class="brand"><span class="brand-icon" aria-hidden="true">К</span><div><strong>КОНТУР</strong><small>Центр мониторинга предприятия</small></div></div>
-  <div class="operator"><label for="operator">Сектор</label><select id="operator"><option value="dispatcher-1">Логистика · Диспетчер 1</option><option value="dispatcher-2">Производство · Диспетчер 2</option><option value="dispatcher-3">КПП · Диспетчер 3</option></select><label class="ready-control"><input type="checkbox" id="ready" checked title="Снимите на время перерыва: резерв и передачи учитывают вашу доступность">На смене</label></div>
+  <div class="operator"><label for="operator">Сектор</label><select id="operator"><option value="dispatcher-1">Логистика · Диспетчер 1</option><option value="dispatcher-2">Производство · Диспетчер 2</option><option value="dispatcher-3">КПП · Диспетчер 3</option></select><label class="ready-control"><input type="checkbox" id="ready" checked title="Снимите на время перерыва: получатель передачи видит вашу доступность">На смене</label></div>
   <div id="user-controls" class="user-controls" hidden><span id="current-user"></span><button id="admin-open" hidden>Администрирование</button><button id="logout">Выйти</button></div>
   <span id="connection" class="connection" role="status">Подключение…</span>
 </header>
@@ -56,6 +56,6 @@
 </div>
 </div>
 <dialog id="admin-dialog" class="admin-dialog"><div class="section-head"><h2>Администрирование</h2><div><button id="admin-refresh">Обновить</button><button id="admin-close" aria-label="Закрыть админ-панель">✕</button></div></div><p id="admin-message" class="gate-note" role="status"></p><div id="admin-users"></div><details><summary>Журнал входов и административных действий</summary><div id="admin-audit"></div></details></dialog>
-<script src="vendor/leaflet/leaflet.js"></script><script src="map-view.js?v=factory-map-v7"></script><script src="sensors-panel.js?v=dispatcher-v7"></script><script src="auth-view.js?v=dispatcher-v7"></script><script src="operations-view.js?v=dispatcher-v7"></script><script src="progress-view.js?v=dispatcher-v7"></script><script src="app.js?v=dispatcher-v7"></script>
+<script src="vendor/leaflet/leaflet.js"></script><script src="map-view.js?v=factory-map-v7"></script><script src="sensors-panel.js?v=dispatcher-v7-final"></script><script src="auth-view.js?v=dispatcher-v7-final"></script><script src="operations-view.js?v=dispatcher-v7-final"></script><script src="progress-view.js?v=dispatcher-v7-final"></script><script src="app.js?v=dispatcher-v7-final"></script>
 </body>
 </html>

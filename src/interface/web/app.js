@@ -3,11 +3,10 @@ const $ = id => document.getElementById(id);
 const titles = {forbidden_zone:"Въезд в запрещённую зону",unauthorized_access:"Подтверждённый проход без допуска",sensor_offline:"Нет сигнала датчика",model_anomaly:"Необычное движение",route_deviation:"Отклонение от маршрута",collision:"Пересечение транспорта"};
 const labels = {open:"Не принято",acknowledged:"Принято",closed:"Завершено",active:"Условие активно",restored:"Условие восстановлено",unknown:"Нужно проверить",online:"На связи",offline:"Нет связи",rejected_model_signal:"Подозрение отклонено"};
 const sectorNames = {logistics:"Логистика и склады",production:"Производство",coordination:"КПП"};
-const actionNames = {detected:"Обнаружено",claim:"Ответственность принята",record_response:"Реакция записана",condition_restored:"Условие восстановлено",request_transfer:"Передача предложена",accept_transfer:"Передача принята",cancel_transfer:"Передача отменена",reassign_unavailable:"Переназначение отсутствующего оператора",dismiss_model:"Модельное подозрение отклонено",close:"Обработка завершена"};
 const S = {site:null,map:null,assets:[],sensors:[],incidents:[],profiles:[],summary:{},selected:null,detail:null,detailId:null,operator:"dispatcher-1",cursor:0,role:"dispatcher",tab:"objects",tabFilters:{objects:{state:"all",type:"all",query:"",sort:"priority",page:0,scroll:0},people:{state:"all",type:"all",query:"",sort:"priority",page:0,scroll:0}},job:null,session:crypto.randomUUID(),buildingLayers:new Map(),assetLayers:new Map(),sensorLayers:new Map(),asOf:Date.now(),serverOffset:0,busy:false,context:0,detailRequest:0,commandBusy:false,switching:false,presenceChain:Promise.resolve(),connectionError:false,agentAvailable:true,analysisSubmitting:false};
 Object.assign(S,{mapRenderer:null,diagnostics:null,noticeRows:[],objectSelection:null,demoBusy:false,demo:null});
 const scenarioNames={normal:"Штатная работа завода",logistics:"Доставка комплектующих",shift:"Начало смены",service:"Обход служебного транспорта","forbidden-zone":"Въезд в закрытую зону","unauthorized-access":"Проход без допуска","sensor-offline":"Потеря сигнала датчика",simultaneous:"Несколько происшествий","unusual-movement":"Необычное движение"};
-const notificationNames={new_incident:"Новое происшествие",reminder:"Случай ожидает реакции",transfer_requested:"Предложена передача",transfer_accepted:"Передача принята",transfer_cancelled:"Передача отменена",transfer_expired:"Срок передачи истёк",operator_unavailable:"Ответственный отсутствует",active_review:"Пора повторно проверить случай"};
+const notificationNames={new_incident:"Новое происшествие",transfer_requested:"Предложена передача",transfer_accepted:"Передача принята",transfer_cancelled:"Передача отменена",transfer_expired:"Срок передачи истёк"};
 const vehicleNames={forklift:"Погрузчик",service_vehicle:"Служебный автомобиль",service:"Служебный автомобиль",truck:"Грузовик"};
 const esc = x => String(x??"—").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function showError(e){
@@ -23,7 +22,7 @@ async function api(path,method="GET",body,operator=S.operator){
     let v;
     try{v=await r.json();}catch{throw Error("Сервер вернул некорректный ответ");}
     if(!r.ok){
-      const messages={revision_conflict:"Карточка изменилась у другого оператора. Посмотрите обновлённые данные и повторите действие осознанно.",operator_available:"Отсутствие ответственного ещё не подтверждено. Подождите установленный срок и проверьте сводку.",startup_grace:"Система восстанавливает рабочие места после запуска. Повторите позже.",operator_conflict:"Действие доступно ответственному оператору или назначенному резерву.",unavailable:"Локальная модель недоступна. Мониторинг и ручная обработка продолжаются."};
+      const messages={revision_conflict:"Карточка изменилась у другого оператора. Посмотрите обновлённые данные и повторите действие осознанно.",operator_available:"Отсутствие ответственного ещё не подтверждено. Подождите установленный срок и проверьте сводку.",startup_grace:"Система восстанавливает рабочие места после запуска. Повторите позже.",operator_conflict:"Действие доступно диспетчеру ответственного сектора или получателю передачи.",unavailable:"Локальная модель недоступна. Мониторинг и ручная обработка продолжаются."};
       const e=Error(messages[v.code]||v.message||v.detail?.message||`HTTP ${r.status}`);
       Object.assign(e,{status:r.status,code:v.code,details:v.details});
       throw e;
@@ -157,7 +156,6 @@ async function command(action,extra={}){
   }finally{S.commandBusy=false;if(S.detail)updateActions(S.detail);}
 }
 function reason(){return ($("reason")?.value||"").trim();}
-function recoveryAllowed(){return false;}
 function recipientOptions(i){
   const profiles=S.profiles.filter(p=>(p.operator_id||p.id)!==S.operator);
   const select=$("recipient"),previous=select.value;
@@ -174,14 +172,14 @@ function updateActions(i){
     $("recipient-wrap").hidden=true;$("response-controls").hidden=true;$("response-plan").hidden=true;$("analysis").hidden=true;
     setMarkup("detail-actions",'<button id="show-on-map">Показать на карте</button>');$("show-on-map").onclick=showSelectedOnMap;return;
   }
-  const own=i.assigned_operator_id===S.operator,working=workable(i),pending=i.pending_transfer?.status==="pending",recover=false;
-  $("recipient-wrap").hidden=!((own&&!pending&&working)||recover);
+  const own=i.assigned_operator_id===S.operator,working=workable(i),pending=i.pending_transfer?.status==="pending";
+  $("recipient-wrap").hidden=!(own&&!pending&&working);
   recipientOptions(i);
   $("recipient").onchange=()=>updateActions(S.detail);
   const readyRecipient=Boolean($("recipient").value);
   const disabled=S.commandBusy?" disabled":"";
   const button=(id,text,primary=false,extraDisabled=false)=>`<button id="${id}"${primary?' class="primary"':""}${disabled||extraDisabled?" disabled":""}>${text}</button>`;
-  setMarkup("detail-actions",`${button("show-on-map","Показать на карте")}${!i.assigned_operator_id&&working&&i.can_claim!==false?button("claim","Принять ответственность",true):""}${own&&working?button("contact","Записать: связался")+button("inspect","Записать: запросил проверку"):""}${own&&i.condition_active===false&&i.condition_state!=="unknown"&&!pending&&working?button("close","Завершить обработку"):""}${own&&i.type==="model_anomaly"&&working?button("dismiss","Отклонить модельное подозрение"):""}${own&&!pending&&working?button("transfer","Предложить передачу",false,!readyRecipient):""}${recover?button("reassign","Переназначить отсутствующего",false,!readyRecipient):""}${pending?`<span class="pill">Передача → ${esc(operatorName(i.pending_transfer.to_operator_id))}</span><small class="transfer-clock">${esc(transferClock(i))}</small>${i.pending_transfer.to_operator_id===S.operator?button("accept","Принять передачу",true):""}${own?button("cancel","Отменить передачу"):""}`:""}${button("analyse",S.agentAvailable?"Проанализировать ИИ":"ИИ ещё не подключён",false,!S.agentAvailable||S.analysisSubmitting)}`);
+  setMarkup("detail-actions",`${button("show-on-map","Показать на карте")}${!i.assigned_operator_id&&working&&i.can_claim!==false?button("claim","Принять ответственность",true):""}${own&&working?button("contact","Записать: связался")+button("inspect","Записать: запросил проверку"):""}${own&&i.condition_active===false&&i.condition_state!=="unknown"&&!pending&&working?button("close","Завершить обработку"):""}${own&&i.type==="model_anomaly"&&working?button("dismiss","Отклонить модельное подозрение"):""}${own&&!pending&&working?button("transfer","Предложить передачу",false,!readyRecipient):""}${pending?`<span class="pill">Передача → ${esc(operatorName(i.pending_transfer.to_operator_id))}</span><small class="transfer-clock">${esc(transferClock(i))}</small>${i.pending_transfer.to_operator_id===S.operator?button("accept","Принять передачу",true):""}${own?button("cancel","Отменить передачу"):""}`:""}${button("analyse",S.agentAvailable?"Проанализировать ИИ":"ИИ ещё не подключён",false,!S.agentAvailable||S.analysisSubmitting)}`);
 
   const bind=(id,fn)=>{if($(id))$(id).onclick=async()=>{try{await fn();}catch(e){showError(e);}};};
   bind("claim",()=>command("claim"));
@@ -190,7 +188,6 @@ function updateActions(i){
   bind("inspect",()=>command("record_response",{response_code:"inspection_requested",reason:reason()||"Оператор сообщил о запросе проверки"}));
   bind("dismiss",()=>command("dismiss_model",{reason:reason()||"Проверено оператором: штатная операция"}));
   bind("transfer",()=>command("request_transfer",{to_operator_id:$("recipient").value,reason:reason()||"Запрошена помощь"}));
-  bind("reassign",()=>command("reassign_unavailable",{to_operator_id:$("recipient").value,reason:reason()||"Ответственный отсутствует, резерв принимает обработку"}));
   bind("accept",()=>command("accept_transfer",{transfer_id:S.detail.pending_transfer.transfer_id}));
   bind("cancel",()=>command("cancel_transfer",{transfer_id:S.detail.pending_transfer.transfer_id,reason:reason()||"Передача отменена отправителем"}));
   bind("analyse",startAnalysis);
