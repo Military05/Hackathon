@@ -3,7 +3,8 @@
 **Обновление интеграции:** по прямому поручению координатора Qwen и MLP
 интегрированы с backend v6. Текущие зависимости, переменные `LOCAL_LLM_*`,
 веса MLP в репозитории и команды запуска описаны в
-[AI_MLP_V5](AI_MLP_V5.md). Ниже сохранён исторический аудит других кандидатов;
+[AI_CONNECTION](AI_CONNECTION.md) и [AI_MLP_V5](AI_MLP_V5.md).
+Ниже сохранён исторический аудит других кандидатов;
 их пути, версии и отсутствие реализации не описывают новую поставку.
 
 Проверка 8 октября 2026: чтение Git и отдельных локальных файлов, без запуска
@@ -199,8 +200,8 @@ git ls-tree -r --name-only origin/codex/rtx4060-ai-runtime src/agent src/ml src/
 ```powershell
 $env:DISPATCH_ENABLE_ML='1'
 $env:DISPATCH_ENABLE_AGENT='1'
-$env:LOCAL_MODEL_URL='http://127.0.0.1:1234/v1'
-$env:LOCAL_MODEL_ID='ID, который реально отдаёт ваш runtime'
+$env:LOCAL_LLM_BASE_URL='http://127.0.0.1:1234/v1'
+$env:LOCAL_LLM_MODEL='ID, который реально отдаёт ваш runtime'
 powershell -ExecutionPolicy Bypass -File scripts/start.ps1
 ```
 

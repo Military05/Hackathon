@@ -1,6 +1,8 @@
 """Attach the existing B1 service to v5 authentication, lifecycle and shared SQLite."""
 import asyncio
+from contextlib import suppress
 from dataclasses import replace
+import logging
 
 from fastapi import APIRouter, Header
 from fastapi.responses import JSONResponse
@@ -12,8 +14,12 @@ from .model_client import LocalModelClient
 from .providers import CaptureProvider
 from .service import AgentService
 
+log = logging.getLogger(__name__)
+
 
 class AgentManager(AgentService):
+    availability_interval_seconds = 10
+
     def __init__(self, backend, db_path, client=None, config=None):
         self.backend = backend
         config = replace(config or AgentConfig.from_env(), database=str(db_path))
@@ -23,20 +29,54 @@ class AgentManager(AgentService):
 
         super().__init__(config, CaptureProvider(capture), client or LocalModelClient(config))
         self.runtime_available = False
+        self.availability_monitor = None
 
     def health(self):
-        return {"status": "ready" if self.runtime_available else "unavailable",
-                "worker_running": self.worker is not None and not self.worker.done(),
+        worker_running = self.worker is not None and not self.worker.done()
+        return {"status": "ready" if self.runtime_available and worker_running else "unavailable",
+                "worker_running": worker_running,
                 "model_name": self.config.model, "provider": self.config.provider}
 
-    async def start(self):
-        await super().start()
+    async def check_availability(self):
         try:
-            await self.client.ensure_available()
-        except AgentError:
+            # Catalogue only: never perform inference from health checks.
+            await asyncio.wait_for(self.client.ensure_available(), timeout=3)
+        except (AgentError, TimeoutError):
             self.runtime_available = False
+        except Exception:
+            self.runtime_available = False
+            log.exception("Local model availability check failed")
         else:
             self.runtime_available = True
+
+    async def monitor_availability(self):
+        while True:
+            await asyncio.sleep(self.availability_interval_seconds)
+            await self.check_availability()
+
+    async def start(self):
+        if self.availability_monitor is not None and not self.availability_monitor.done():
+            return
+        await super().start()
+        try:
+            await self.check_availability()
+            self.availability_monitor = asyncio.create_task(
+                self.monitor_availability(), name="local-model-availability")
+        except BaseException:
+            await super().stop()
+            raise
+
+    async def stop(self):
+        monitor, self.availability_monitor = self.availability_monitor, None
+        self.runtime_available = False
+        try:
+            if monitor is not None:
+                monitor.cancel()
+                with suppress(asyncio.CancelledError):
+                    await monitor
+        finally:
+            # Cancel the probe before AgentService closes its shared HTTP client.
+            await super().stop()
 
     async def request(self, incident_id, operator_id):
         try:

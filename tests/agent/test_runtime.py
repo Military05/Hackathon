@@ -16,8 +16,97 @@ from src.agent.errors import AgentError
 from src.agent.loop import run_analysis
 from src.agent.model_client import LocalModelClient
 from src.agent.providers import CaptureProvider, FrozenSnapshot
+from src.agent.runtime import AgentManager
 from src.agent.service import AgentService
 from tests.agent.test_tools_and_result import answer, snapshot
+
+
+def test_attached_provider_recovers_and_stops_without_a_user_request(tmp_path):
+    class Client:
+        available = False
+        closed = False
+        calls = 0
+
+        async def ensure_available(self):
+            assert not self.closed
+            self.calls += 1
+            if not self.available:
+                raise AgentError("unavailable", "Explicit offline provider fixture.", 503)
+
+        async def close(self):
+            self.closed = True
+
+    async def run():
+        client = Client()
+        manager = AgentManager(None, str(tmp_path / "jobs.sqlite"), client=client,
+                               config=AgentConfig(model="test-double"))
+        manager.availability_interval_seconds = .01
+
+        async def wait_status(status):
+            async def changed():
+                while manager.health()["status"] != status:
+                    await asyncio.sleep(.001)
+            await asyncio.wait_for(changed(), timeout=1)
+
+        await manager.start()
+        try:
+            assert manager.health()["status"] == "unavailable"
+            assert manager.health()["worker_running"]
+            monitor = manager.availability_monitor
+            await manager.start()
+            assert manager.availability_monitor is monitor and client.calls == 1
+            client.available = True
+            await wait_status("ready")
+            client.available = False
+            await wait_status("unavailable")
+            client.available = True
+            await wait_status("ready")
+            manager.worker.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await manager.worker
+            assert manager.health()["status"] == "unavailable"
+        finally:
+            await manager.stop()
+        assert monitor.done() and manager.availability_monitor is None
+        assert manager.worker is None and client.closed
+        assert manager.health()["status"] == "unavailable"
+
+    asyncio.run(run())
+
+
+def test_attached_provider_probe_is_cancelled_before_client_close(tmp_path):
+    class Client:
+        def __init__(self):
+            self.calls = 0
+            self.probing = asyncio.Event()
+            self.cancelled = False
+
+        async def ensure_available(self):
+            self.calls += 1
+            if self.calls == 1:
+                return
+            self.probing.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                self.cancelled = True
+
+        async def close(self):
+            assert self.cancelled
+
+    async def run():
+        client = Client()
+        manager = AgentManager(None, str(tmp_path / "jobs.sqlite"), client=client,
+                               config=AgentConfig(model="test-double"))
+        manager.availability_interval_seconds = .001
+        await manager.start()
+        try:
+            await asyncio.wait_for(client.probing.wait(), timeout=1)
+        finally:
+            await manager.stop()
+        assert client.cancelled and manager.availability_monitor is None
+
+    asyncio.run(run())
 
 
 def tool_call(name="get_incident", arguments=None, native=False):
@@ -208,6 +297,8 @@ def test_schema_final_after_tools_and_bounded_format_retry(provider, early_inval
         body = json.loads(request.content)
         wire.append(body)
         schema = body.get("format") if provider == "ollama" else body.get("response_format", {}).get("json_schema", {}).get("schema")
+        budget = body["options"]["num_predict"] if provider == "ollama" else body["max_tokens"]
+        assert budget == (1024 if schema is not None else 450)
         if len(wire) == 1:
             assert schema is None and body["tools"]
             message = {"role": "assistant", "content": "", "tool_calls": [tool_call(native=provider == "ollama")]}
@@ -225,6 +316,9 @@ def test_schema_final_after_tools_and_bounded_format_retry(provider, early_inval
             assert schema["$defs"]["FactClaim"]["properties"]["source"]["enum"] == [
                 "event", "policy", "sensor_health", "model_observation"]
             assert schema["$defs"]["Hypothesis"]["properties"]["limitations"]["minItems"] == 1
+            assert schema["properties"]["facts"]["maxItems"] == 4
+            assert schema["properties"]["hypotheses"]["maxItems"] == 1
+            assert schema["properties"]["recommendations"]["maxItems"] == 3
             assert schema["additionalProperties"] is False
             if provider == "openai_compatible":
                 assert body["response_format"]["type"] == "json_schema"
@@ -246,6 +340,93 @@ def test_schema_final_after_tools_and_bounded_format_retry(provider, early_inval
                 ["get_incident"] if early_invalid else ["get_incident", "get_asset_policy"])
         finally:
             await client.close()
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("provider", ["openai_compatible", "ollama"])
+@pytest.mark.parametrize("final_truncated", [False, True])
+def test_truncated_answer_uses_bounded_structured_retry_and_never_partial_success(provider, final_truncated):
+    wire = []
+    claim = {"source": "event", "id": "demo-position-0010", "field": "payload.x", "value": 20.0}
+
+    def transport(request):
+        body = json.loads(request.content)
+        wire.append(body)
+        if len(wire) == 1:
+            message = {"role": "assistant", "content": "", "tool_calls": [tool_call(native=provider == "ollama")]}
+            reason = "tool_calls"
+        else:
+            # Even parseable content must not become a result when the provider
+            # reports it was cut short; no Python repair or partial acceptance.
+            message = {"role": "assistant", "content": answer([claim])}
+            reason = "length" if len(wire) == 2 or final_truncated else "stop"
+        if len(wire) == 3:
+            assert not body["tools"]
+            schema = body["format"] if provider == "ollama" else body["response_format"]["json_schema"]["schema"]
+            assert schema["properties"]["facts"]["maxItems"] == 4
+            assert (body["options"]["num_predict"] if provider == "ollama" else body["max_tokens"]) == 1024
+        payload = ({"message": message, "done_reason": reason} if provider == "ollama" else
+                   {"choices": [{"message": message, "finish_reason": reason}]})
+        return httpx.Response(200, json=payload)
+
+    async def run():
+        config = AgentConfig(provider=provider, model="test-double",
+                             base_url="http://127.0.0.1:11434" if provider == "ollama" else "http://127.0.0.1:1234/v1")
+        client = LocalModelClient(config, httpx.MockTransport(transport))
+        try:
+            if final_truncated:
+                with pytest.raises(AgentError) as error:
+                    await run_analysis(client, snapshot(), config)
+                assert error.value.code == "model_reply_invalid"
+                assert error.value.details == {"finish_reason": "length", "output_token_limit": 1024}
+            else:
+                result = await run_analysis(client, snapshot(), config)
+                assert result["facts"][0]["value"] == 20.0
+                assert [row["tool"] for row in result["tool_trace"]] == ["get_incident"]
+            assert len(wire) == config.max_model_requests == 3
+        finally:
+            await client.close()
+
+    asyncio.run(run())
+
+
+def test_model_anomaly_requires_linked_mlp_schema_immediately_after_incident_tool():
+    data = snapshot().export()
+    observation = {"observation_id": "observation-test", "status": "anomaly", "score": .91,
+                   "threshold": .8, "evidence_event_ids": ["demo-position-0010"]}
+    data["incident"]["type"] = "model_anomaly"
+    data["incident"]["details"] = {"observation_id": observation["observation_id"]}
+    data["observations"] = [observation]
+    snap = FrozenSnapshot(data)
+
+    class Client:
+        def __init__(self):
+            self.deadlines = []
+
+        async def chat(self, messages, tools, deadline, response_schema=None):
+            self.deadlines.append(deadline)
+            if len(self.deadlines) == 1:
+                assert response_schema is None and tools[0]["function"]["name"] == "get_incident"
+                return {"role": "assistant", "content": "", "tool_calls": [tool_call()]}
+            assert len(self.deadlines) == 2 and not tools and response_schema is not None
+            claim = response_schema["$defs"]["FactClaim"]["properties"]
+            assert claim["source"]["enum"] == ["model_observation"]
+            assert claim["id"]["enum"] == [observation["observation_id"]]
+            assert claim["field"]["enum"] == ["status", "score", "threshold"]
+            assert claim["value"]["enum"] == [observation[field] for field in ("status", "score", "threshold")]
+            assert response_schema["properties"]["facts"]["minItems"] == response_schema["properties"]["facts"]["maxItems"] == 3
+            return {"role": "assistant", "content": answer([
+                {"source": "model_observation", "id": observation["observation_id"],
+                 "field": field, "value": observation[field]} for field in ("status", "score", "threshold")])}
+
+    async def run():
+        client = Client()
+        result = await run_analysis(client, snap, AgentConfig(model="test-double"))
+        assert len(client.deadlines) == 2 and len(set(client.deadlines)) == 1
+        assert {fact["field"] for fact in result["facts"]} == {"status", "score", "threshold"}
+        assert result["evidence_event_ids"] == ["demo-position-0010"]
+        assert [item["tool"] for item in result["tool_trace"]] == ["get_incident"]
+
     asyncio.run(run())
 
 

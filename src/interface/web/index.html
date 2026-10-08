@@ -5,7 +5,7 @@
   <title>Контур — мониторинг предприятия</title>
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css"><link rel="stylesheet" href="styles.css?v=factory-v6">
   <link rel="stylesheet" href="map-view.css?v=building-control-v1"><link rel="stylesheet" href="sensors-panel.css?v=factory-v6"><link rel="stylesheet" href="dispatch-view.css?v=factory-v6">
-  <link rel="stylesheet" href="product-v5.css?v=factory-v6">
+  <link rel="stylesheet" href="product-v5.css?v=ai-connected-v1">
 </head>
 <body>
 <div id="preview-stage" class="preview-stage" hidden aria-live="polite"></div>
@@ -38,7 +38,7 @@
         <div class="legend"><span title="П — погрузчик; С — служебный транспорт"><i class="legend-vehicle" aria-hidden="true">П</i>Транспорт</span><span><i class="legend-sensor" aria-hidden="true"></i>Датчик</span><span><i class="legend-zone forbidden" aria-hidden="true"></i>Въезд запрещён</span><span><i class="legend-zone permit" aria-hidden="true"></i>Въезд по допуску</span><span><i class="legend-walk" aria-hidden="true"></i>Пешеходный путь</span><span><i class="legend-sector" aria-hidden="true"></i>Сектор</span><span><i class="dot alarm" aria-hidden="true"></i>Нарушение</span><span><i class="dot stale" aria-hidden="true"></i>Старый сигнал</span></div>
         <div id="asset-info" class="asset-info" aria-live="polite" hidden></div>
       </section>
-      <details class="sensor-panel"><summary class="panel-summary"><span><strong>Датчики и диагностика</strong><small>Последние сигналы · ручная проверка</small></span><span id="ml-status"></span></summary><div id="sensors"></div></details>
+      <details class="sensor-panel"><summary class="panel-summary"><span><strong>Датчики и диагностика</strong><small>Последние сигналы · ручная проверка</small></span><span class="runtime-status"><span id="ml-status"></span><small id="agent-status">ИИ: проверка связи…</small></span></summary><div id="sensors"></div></details>
       </div>
       <div class="dispatch-column">
       <details class="demo-panel" open><summary class="panel-summary"><span><strong>Движение и сценарии</strong><small id="sim-status">Сценарий остановлен</small></span><span class="disclosure-note">Управление</span></summary><div class="simulation"><label for="scenario" class="sr-only">Сценарий</label><select id="scenario"><option value="normal">Штатная работа</option></select><button id="start" class="primary">Запустить сценарий</button><button id="stop">Остановить</button></div><p id="scenario-expectation" class="muted" hidden></p></details>
@@ -56,6 +56,6 @@
 </div>
 </div>
 <dialog id="admin-dialog" class="admin-dialog"><div class="section-head"><h2>Администрирование</h2><div><button id="admin-refresh">Обновить</button><button id="admin-close" aria-label="Закрыть админ-панель">✕</button></div></div><p id="admin-message" class="gate-note" role="status"></p><div id="admin-users"></div><details><summary>Журнал входов и административных действий</summary><div id="admin-audit"></div></details></dialog>
-<script src="vendor/leaflet/leaflet.js"></script><script src="map-view.js?v=building-control-v1"></script><script src="sensors-panel.js?v=factory-v6"></script><script src="auth-view.js?v=factory-v6"></script><script src="operations-view.js?v=factory-v6"></script><script src="progress-view.js?v=factory-v6"></script><script src="app.js?v=factory-v6.1"></script>
+<script src="vendor/leaflet/leaflet.js"></script><script src="map-view.js?v=building-control-v1"></script><script src="sensors-panel.js?v=factory-v6"></script><script src="auth-view.js?v=factory-v6"></script><script src="operations-view.js?v=factory-v6"></script><script src="progress-view.js?v=factory-v6"></script><script src="app.js?v=ai-connected-v1"></script>
 </body>
 </html>
