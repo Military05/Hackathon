@@ -226,15 +226,15 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
     @app.get("/api/checkpoint/journal")
     def checkpoint_journal(q: str | None = Query(default=None, max_length=100), direction: str | None = None,
                            permission: str | None = None, since: str | None = None, until: str | None = None,
-                           limit: int = Query(default=50, ge=1, le=200), offset: int = Query(default=0, ge=0, le=100000)):
-        return operations.journal(q, direction, permission, since, until, limit, offset)
+                           sort: str = "newest", limit: int = Query(default=50, ge=1, le=200), offset: int = Query(default=0, ge=0, le=100000)):
+        return operations.journal(q, direction, permission, since, until, limit, offset, sort)
 
     @app.get("/api/checkpoint/export.csv")
     def checkpoint_export(q: str | None = Query(default=None, max_length=100), direction: str | None = None,
                           permission: str | None = None, since: str | None = None, until: str | None = None,
-                          limit: int = Query(default=200, ge=1, le=200), offset: int = Query(default=0, ge=0, le=100000)):
+                          sort: str = "newest", limit: int = Query(default=200, ge=1, le=200), offset: int = Query(default=0, ge=0, le=100000)):
         payload = operations.checkpoint_csv(q=q, direction=direction, permission=permission, since=since, until=until,
-                                             limit=limit, offset=offset)
+                                             limit=limit, offset=offset, sort=sort)
         return Response(payload, media_type="text/csv; charset=utf-8", headers={"Content-Disposition": "attachment; filename=checkpoint.csv; filename*=UTF-8''" + quote("Журнал_проходов_КПП.csv"),
                         "X-Export-Limit": str(limit), "X-Export-Offset": str(offset)})
 
@@ -244,7 +244,7 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
 
     @app.get("/api/operator-activity")
     def operator_activity(x_demo_operator: str | None = Header(default=None)):
-        return operations.dispatch_activity(service.validate_operator(x_demo_operator))
+        return operations.dispatch_activity(service.validate_reader(x_demo_operator))
 
     @app.get("/api/dispatch-history/export.csv")
     def dispatch_export(request: Request, scope: str = "mine", limit: int = Query(default=1000, ge=1, le=2000),
@@ -253,7 +253,7 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
             raise ApiError(422, "invalid_scope", "Укажите mine или all")
         if scope == "all" and getattr(request.state, "user", {}).get("role") != "admin":
             raise ApiError(403, "admin_required", "Общий журнал доступен администратору")
-        operator = service.validate_operator(x_demo_operator) if scope == "mine" else None
+        operator = service.validate_operator(x_demo_operator) if scope == "mine" and x_demo_operator != "admin" else None
         return Response(operations.dispatch_history_csv(operator, limit), media_type="text/csv; charset=utf-8",
                         headers={"Content-Disposition": "attachment; filename=dispatcher-actions.csv; filename*=UTF-8''" + quote("Журнал_действий_диспетчера.csv"), "X-Export-Limit": str(limit)})
 

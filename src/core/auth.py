@@ -254,7 +254,7 @@ class AuthManager:
         with self.store.read() as db:
             return [public_user(row) for row in db.execute("SELECT * FROM auth_users ORDER BY created_at,id")]
 
-    def update_user(self, user_id, body, actor):
+    def update_user(self, user_id, body, actor, *, allow_unblock=False):
         if not isinstance(body, dict) or not body or set(body) - {"status", "operator_id"}:
             raise ApiError(422, "invalid_account_update", "Допустимы status и operator_id")
         with self.store.transaction() as db:
@@ -266,11 +266,15 @@ class AuthManager:
             status, operator = body.get("status", row["status"]), body.get("operator_id", row["operator_id"])
             if status not in ("pending", "active", "blocked") or (operator is not None and operator not in OPERATORS):
                 raise ApiError(422, "invalid_account_update", "Некорректный статус или профиль")
+            if row["status"] == "blocked" and status != "blocked" and not allow_unblock:
+                raise ApiError(409, "explicit_unblock_required", "Для возобновления доступа нажмите «Разблокировать»")
             if status == "active" and operator is None:
                 raise ApiError(422, "operator_required", "При подтверждении назначьте диспетчерский профиль")
             db.execute("UPDATE auth_users SET status=?,operator_id=? WHERE id=?", (status, operator, user_id))
             if status != row["status"] or operator != row["operator_id"]:
                 db.execute("DELETE FROM auth_sessions WHERE user_id=?", (user_id,))
+                if row["operator_id"]:
+                    db.execute("DELETE FROM presence WHERE operator_id=?", (row["operator_id"],))
             self._audit(db, "account_updated", actor_id=actor["id"], target_id=user_id,
                         details={"status": status, "operator_id": operator})
             return public_user(db.execute("SELECT * FROM auth_users WHERE id=?", (user_id,)).fetchone())
@@ -349,6 +353,9 @@ def add_auth(app, service, enabled=True):
                     if path.startswith("/api/checkpoint/") or path == "/api/shifts/current":
                         if session["user"]["role"] != "admin" and session["user"]["operator_id"] != "dispatcher-3":
                             raise ApiError(403, "checkpoint_sector_required", "Журнал КПП доступен диспетчеру 3 и администратору")
+                    if path.startswith("/api/incidents/") and path != "/api/incidents/clear" and session["user"]["role"] == "dispatcher":
+                        incident_id = path.split("/")[3]
+                        await asyncio.to_thread(service.get_incident, incident_id, session["user"]["operator_id"])
                     if request.method not in ("GET", "HEAD", "OPTIONS"):
                         check_origin(request)
                         csrf = request.headers.get("x-csrf-token", "")
@@ -436,7 +443,11 @@ def add_auth(app, service, enabled=True):
         admin(request)
         if body:
             raise ApiError(422, "extra_parameters", "Разблокировка не принимает параметры")
-        return {"user": manager.update_user(user_id, {"status": "active"}, request.state.user)}
+        user = next((item for item in manager.users() if item["id"] == user_id), None)
+        if user is None:
+            raise ApiError(404, "unknown_user", "Аккаунт не найден")
+        status = "active" if user["operator_id"] in OPERATORS else "pending"
+        return {"user": manager.update_user(user_id, {"status": status}, request.state.user, allow_unblock=True)}
 
     @app.get("/api/admin/audit")
     def audit(request: Request):
