@@ -38,6 +38,8 @@ def main():
               "checked_at": stamp()}
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="hackathon-ai-live-") as temp:
+        # The module-level app also boots on import: keep it away from real accounts.
+        os.environ["DISPATCH_DB"] = str(Path(temp) / "import-bootstrap.db")
         from src.core.main import create_app
         clock_now = datetime.now(timezone.utc)
         app = create_app(db_path=Path(temp) / "dispatch.db", enable_scheduler=False, clock=lambda: clock_now)
@@ -107,6 +109,17 @@ def main():
                 incident = next(item for item in backend.list_incidents()
                                 if item['type'] == {'d4': 'model_anomaly', 'collision': 'collision',
                                                     'forbidden-zone': 'forbidden_zone'}[args.scenario])
+                fixture_operator = next(profile["operator_id"] for profile in backend.operator_profiles()
+                                        if profile["sector_id"] == incident["responsible_sector_id"])
+                report["fixture_operator"] = fixture_operator
+                if fixture_operator != "dispatcher-1":
+                    # Assign only this temporary fixture account to the actual recipient.
+                    administrator = next(user for user in app.state.auth.users() if user["role"] == "admin")
+                    app.state.auth.update_user(login.json()["user"]["id"], {"operator_id": fixture_operator}, administrator)
+                    login = client.post("/api/auth/login", json={"username": "live.acceptance", "password": password})
+                    login.raise_for_status()
+                    headers = {"X-CSRF-Token": login.json()["csrf_token"],
+                               "X-Expected-User": login.json()["user"]["id"]}
                 if args.scenario == 'forbidden-zone':
                     # Explicit historical fixture in the disposable test database only.
                     historical = dict(incident, incident_id='fixture-previous-zone', status='closed',
