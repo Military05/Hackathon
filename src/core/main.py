@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from src.core.service import ApiError, Service, stamp
 from src.core.operations import Operations
+from src.core.demo_access import allowed_scenarios, scenario_sectors
 
 ROOT = Path(__file__).resolve().parents[2]
 log = logging.getLogger("dispatch")
@@ -132,18 +133,26 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
         return service.site
 
     @app.get("/api/demo/status")
-    def demo_status():
+    def demo_status(x_demo_operator: str | None = Header(default=None)):
         status = demo.status() if demo else {"running": False, "scenario": None, "source_count": 0,
                                             "error": "Simulator extension is not connected"}
-        return {**status, "available": demo is not None, "scenarios": list(scenarios)}
+        operator = service.validate_reader(x_demo_operator) if x_demo_operator else "admin"
+        permitted = allowed_scenarios(service, operator, scenarios)
+        options = [{**option, "responsible_sector_ids": scenario_sectors(service, option["id"])}
+                   for option in status.get("scenario_options", []) if option["id"] in permitted]
+        return {**status, "available": demo is not None, "scenarios": permitted,
+                "scenario_options": options, "scenario_operator_id": operator,
+                "can_stop": operator == "admin" or status.get("scenario") in permitted}
 
     @app.post("/api/demo/start")
     async def demo_start(body: dict = Body(...), x_demo_operator: str | None = Header(default=None)):
-        service.validate_reader(x_demo_operator)
+        operator = service.validate_reader(x_demo_operator)
         if not demo:
             raise ApiError(503, "simulator_unavailable", "Симулятор подключает Гриша / второй агент")
         if set(body) != {"scenario"} or not isinstance(body.get("scenario"), str) or body["scenario"] not in scenarios:
             raise ApiError(422, "invalid_scenario", "Укажите один поддерживаемый scenario")
+        if body["scenario"] not in allowed_scenarios(service, operator, scenarios):
+            raise ApiError(403, "scenario_sector_required", "Этот сценарий относится к другому сектору. Выберите сценарий своего рабочего места.")
         async with demo_lock:
             try:
                 return await demo.start(body["scenario"])
@@ -152,12 +161,14 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
 
     @app.post("/api/demo/stop")
     async def demo_stop(body: dict = Body(default={}), x_demo_operator: str | None = Header(default=None)):
-        service.validate_reader(x_demo_operator)
+        operator = service.validate_reader(x_demo_operator)
         if body:
             raise ApiError(422, "extra_parameters", "Операция stop не принимает параметры")
         if not demo:
             raise ApiError(503, "simulator_unavailable", "Симулятор ещё не подключён")
         async with demo_lock:
+            if operator != "admin" and demo.scenario and demo.scenario not in allowed_scenarios(service, operator, scenarios):
+                raise ApiError(403, "scenario_sector_required", "Остановить сценарий другого сектора может администратор.")
             return await demo.stop()
 
     @app.post("/api/events")

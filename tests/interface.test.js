@@ -35,7 +35,7 @@ function harness(handler=async()=>({})){
   let fetchHandler=handler;
   const calls=[];
   const context=vm.createContext({document,crypto:webcrypto,Date,URLSearchParams,URL,AbortController,setTimeout:()=>1,clearTimeout:()=>{},setInterval:()=>1,fetch:async(url,options)=>{calls.push({url,options,body:options.body?JSON.parse(options.body):undefined});const value=await fetchHandler(url,options);return value?.__response?value:{ok:true,status:200,json:async()=>value};}});
-  vm.runInContext(source+"\nglobalThis.ui={S,api,command,applyDetails,renderDetails,renderJob,startAnalysis,notifications,sendPresence,switchOperator,renderIncidents,updatePeopleTab,switchIncidentTab,refresh,configureWorkspace,compareIncidents,showAsset,incidentInWorkspace,renderAnalysisPicker,initialOperator,focusSector,selectIncident,showSelectedOnMap,entityName,placeName,clearIncidents,hideSelected,saveNote};",context);
+  vm.runInContext(source+"\nglobalThis.ui={S,api,command,applyDetails,renderDetails,renderJob,startAnalysis,notifications,sendPresence,switchOperator,renderIncidents,updatePeopleTab,switchIncidentTab,refresh,configureWorkspace,compareIncidents,renderDemo,visibleDemoScenarios,runDemo,showAsset,incidentInWorkspace,renderAnalysisPicker,initialOperator,focusSector,selectIncident,showSelectedOnMap,entityName,placeName,clearIncidents,hideSelected,saveNote};",context);
   for(const id of ["filter-state","filter-type"])document.getElementById(id).value="all";document.getElementById("incident-sort").value="priority";
   context.ui.S.site={dispatch_config:{position_stale_seconds:5},site_areas:[],assets:[],sensors:[],buildings:[]};
   context.ui.S.map={fitBounds(){}};
@@ -66,6 +66,23 @@ test("registered asset without telemetry is visible without inventing a position
   h.ui.showAsset("missing");assert.match(h.$("asset-info").textContent,/не найден в справочнике/);assert.equal(h.ui.S.objectSelection.id,"missing");
 });
 function errorResponse(status,body){return {__response:true,ok:false,status,json:async()=>body};}
+test("scenario dropdown is personal and clears stale choices across all three profiles",()=>{
+  const h=harness(),options=[{id:"normal",name:"Штатная работа",responsible_sector_ids:["logistics","production","coordination"]},{id:"red-zone",name:"Красная зона",responsible_sector_ids:["logistics"]},{id:"production-zone",name:"Производство",responsible_sector_ids:["production"]},{id:"unauthorized-access",name:"КПП",responsible_sector_ids:["coordination"]},{id:"simultaneous",name:"Несколько происшествий",responsible_sector_ids:[]}];
+  for(const [operator,own] of [["dispatcher-1","red-zone"],["dispatcher-2","production-zone"],["dispatcher-3","unauthorized-access"]]){
+    h.ui.S.operator=operator;h.$("scenario").value="red-zone";
+    h.ui.renderDemo({available:true,scenario_operator_id:operator,scenarios:options.map(o=>o.id),scenario_options:options,can_stop:false,running:true});
+    assert.match(h.$("scenario").innerHTML,new RegExp(`value="${own}"`));assert.match(h.$("scenario").innerHTML,/value="normal"/);
+    for(const foreign of ["red-zone","production-zone","unauthorized-access","simultaneous"].filter(id=>id!==own))assert.doesNotMatch(h.$("scenario").innerHTML,new RegExp(`value="${foreign}"`));
+    assert.equal(h.$("stop").disabled,true);
+    if(operator!=="dispatcher-1")assert.notEqual(h.$("scenario").value,"red-zone");
+  }
+  h.ui.S.role="admin";h.ui.renderDemo({available:true,scenarios:options.map(o=>o.id),scenario_options:options});assert.match(h.$("scenario").innerHTML,/simultaneous/);
+});
+test("old profile scenario response and forged select cannot send a start request",async()=>{
+  const h=harness();h.ui.renderDemo({available:true,scenario_operator_id:"dispatcher-2",scenarios:["production-zone"],scenario_options:[{id:"production-zone",responsible_sector_ids:["production"]}]});
+  assert.equal(h.$("scenario").disabled,true);assert.equal(h.$("start").disabled,true);
+  h.$("scenario").value="production-zone";await h.ui.runDemo("start");assert.equal(h.calls.length,0);assert.match(h.$("error").textContent,/своего рабочего места/);
+});
 
 test("snapshot rejection stays visible in analysis after polling without a fake completed job",async()=>{
   const h=harness(async()=>errorResponse(422,{code:"snapshot_invalid",message:"Доказательства превышают предел 100 событий.",details:{payload:"internal"}}));
