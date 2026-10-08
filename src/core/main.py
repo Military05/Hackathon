@@ -139,7 +139,7 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
 
     @app.post("/api/demo/start")
     async def demo_start(body: dict = Body(...), x_demo_operator: str | None = Header(default=None)):
-        service.validate_operator(x_demo_operator)
+        service.validate_reader(x_demo_operator)
         if not demo:
             raise ApiError(503, "simulator_unavailable", "Симулятор подключает Гриша / второй агент")
         if set(body) != {"scenario"} or not isinstance(body.get("scenario"), str) or body["scenario"] not in scenarios:
@@ -152,7 +152,7 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
 
     @app.post("/api/demo/stop")
     async def demo_stop(body: dict = Body(default={}), x_demo_operator: str | None = Header(default=None)):
-        service.validate_operator(x_demo_operator)
+        service.validate_reader(x_demo_operator)
         if body:
             raise ApiError(422, "extra_parameters", "Операция stop не принимает параметры")
         if not demo:
@@ -180,8 +180,15 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
 
     @app.get("/api/incidents")
     def incidents(status: str | None = None, scope: str | None = None, site_area_id: str | None = None,
-                  x_demo_operator: str | None = Header(default=None)):
-        return service.list_incidents(status, scope, site_area_id, x_demo_operator)
+                  x_demo_operator: str | None = Header(default=None), include_closed: bool = False,
+                  limit: int = Query(default=80, ge=1, le=200), offset: int = Query(default=0, ge=0, le=100000)):
+        return service.list_incidents(status, scope, site_area_id, x_demo_operator, include_closed, limit, offset)
+
+    @app.post("/api/incidents/clear")
+    def clear_incidents(body: dict = Body(default={}), x_demo_operator: str | None = Header(default=None)):
+        if body:
+            raise ApiError(422, "extra_parameters", "Очистка списка не принимает параметры")
+        return service.clear_incidents(x_demo_operator)
 
     @app.get("/api/incidents/{incident_id}")
     def incident(incident_id: str, x_demo_operator: str | None = Header(default=None)):
@@ -200,12 +207,12 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
         return service.operator_presence(x_demo_operator, body)
 
     @app.get("/api/dispatch-summary")
-    def summary():
-        return service.summary()
+    def summary(x_demo_operator: str | None = Header(default=None)):
+        return service.summary(operator=x_demo_operator)
 
     @app.get("/api/site-areas/summary")
-    def area_summary():
-        return service.summary(by_area=True)
+    def area_summary(x_demo_operator: str | None = Header(default=None)):
+        return service.summary(by_area=True, operator=x_demo_operator)
 
     @app.get("/api/dispatch-notifications")
     def notifications(after_seq: int = Query(default=0, ge=0), limit: int = Query(default=50, ge=1, le=100),
