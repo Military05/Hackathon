@@ -1,0 +1,181 @@
+{
+  "model_version": "movement-mlp-v2-e354f4d560f0",
+  "artifact_sha256": "203e86aa2c6574486225c9f6d5729753518e70fa016f3a0355dd938833840774",
+  "site_sha256": "7d85c7b101830aa62ba10b23290cabdf327cf07e05b82d451ca8ac488067993e",
+  "seconds_per_scenario": 180,
+  "scenarios": {
+    "normal": {
+      "events": 1080,
+      "windows": 108,
+      "states": {
+        "insufficient_data": 18,
+        "normal": 90
+      },
+      "model_incidents": 0,
+      "all_incident_types": {},
+      "max_score": 1.4990263634714676e-06,
+      "normal_motion_acceptance": true,
+      "anomalies_by_asset": {},
+      "previous_anomaly_windows": null
+    },
+    "logistics": {
+      "events": 1080,
+      "windows": 108,
+      "states": {
+        "insufficient_data": 18,
+        "normal": 90
+      },
+      "model_incidents": 0,
+      "all_incident_types": {
+        "collision": 1
+      },
+      "max_score": 3.2408251409547388e-06,
+      "normal_motion_acceptance": true,
+      "anomalies_by_asset": {},
+      "previous_anomaly_windows": null
+    },
+    "service": {
+      "events": 1080,
+      "windows": 108,
+      "states": {
+        "insufficient_data": 18,
+        "normal": 90
+      },
+      "model_incidents": 0,
+      "all_incident_types": {},
+      "max_score": 0.27465685303033516,
+      "normal_motion_acceptance": true,
+      "anomalies_by_asset": {},
+      "previous_anomaly_windows": null
+    },
+    "shift": {
+      "events": 1083,
+      "windows": 108,
+      "states": {
+        "insufficient_data": 18,
+        "normal": 90
+      },
+      "model_incidents": 0,
+      "all_incident_types": {},
+      "max_score": 6.657040463742817e-06,
+      "normal_motion_acceptance": true,
+      "anomalies_by_asset": {},
+      "previous_anomaly_windows": null
+    },
+    "safe-passing": {
+      "events": 1080,
+      "windows": 108,
+      "states": {
+        "insufficient_data": 18,
+        "normal": 90
+      },
+      "model_incidents": 0,
+      "all_incident_types": {},
+      "max_score": 1.0267195565679365e-06,
+      "normal_motion_acceptance": true,
+      "anomalies_by_asset": {},
+      "previous_anomaly_windows": null
+    },
+    "anomaly-oscillation": {
+      "events": 1080,
+      "windows": 108,
+      "states": {
+        "insufficient_data": 18,
+        "anomaly": 2,
+        "normal": 88
+      },
+      "model_incidents": 1,
+      "all_incident_types": {
+        "model_anomaly": 1
+      },
+      "max_score": 0.9999457088028834,
+      "normal_motion_acceptance": false,
+      "anomalies_by_asset": {
+        "V1": 2
+      },
+      "previous_anomaly_windows": null
+    },
+    "anomaly-wall": {
+      "events": 1080,
+      "windows": 108,
+      "states": {
+        "insufficient_data": 18,
+        "anomaly": 2,
+        "normal": 88
+      },
+      "model_incidents": 1,
+      "all_incident_types": {
+        "model_anomaly": 1,
+        "route_deviation": 1
+      },
+      "max_score": 0.999300270960971,
+      "normal_motion_acceptance": false,
+      "anomalies_by_asset": {
+        "V1": 2
+      },
+      "previous_anomaly_windows": null
+    },
+    "anomaly-erratic": {
+      "events": 1080,
+      "windows": 108,
+      "states": {
+        "insufficient_data": 18,
+        "anomaly": 1,
+        "normal": 89
+      },
+      "model_incidents": 1,
+      "all_incident_types": {
+        "model_anomaly": 1
+      },
+      "max_score": 0.9918067285043496,
+      "normal_motion_acceptance": false,
+      "anomalies_by_asset": {
+        "V1": 1
+      },
+      "previous_anomaly_windows": null
+    },
+    "forbidden-zone": {
+      "events": 1080,
+      "windows": 108,
+      "states": {
+        "insufficient_data": 18,
+        "normal": 90
+      },
+      "model_incidents": 0,
+      "all_incident_types": {
+        "collision": 1,
+        "forbidden_zone": 1,
+        "route_deviation": 1
+      },
+      "max_score": 2.5872594649226096e-06,
+      "normal_motion_acceptance": false,
+      "anomalies_by_asset": {},
+      "previous_anomaly_windows": null
+    },
+    "collision": {
+      "events": 1080,
+      "windows": 108,
+      "states": {
+        "insufficient_data": 18,
+        "normal": 90
+      },
+      "model_incidents": 0,
+      "all_incident_types": {
+        "collision": 1
+      },
+      "max_score": 2.8254782844657498e-05,
+      "normal_motion_acceptance": false,
+      "anomalies_by_asset": {},
+      "previous_anomaly_windows": null
+    }
+  },
+  "normal_model_incidents": 0,
+  "adapter_milliseconds": {
+    "samples": 1080,
+    "median": 8.755400000154623,
+    "p95": 11.919415000329536,
+    "max": 79.70720000048459
+  },
+  "execution": "actual DemoRunner + Service + SQLite + trained MLP; event time accelerated, no LLM",
+  "limits": "synthetic replay, not a wall-clock load benchmark or industrial ground truth"
+}

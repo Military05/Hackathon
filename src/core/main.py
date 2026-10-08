@@ -64,12 +64,20 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
                     next_ml = asyncio.get_running_loop().time() + 5
                     now = service.clock()
                     now = now.fromtimestamp(int(now.timestamp()) // 5 * 5, tz=now.tzinfo)
+                    states = {asset["id"]: asset for asset in await asyncio.to_thread(service.list_assets)}
                     for asset in service.site["assets"]:
-                        if asset["type"] != "vehicle":
+                        if asset["type"] != "vehicle" or states.get(asset["id"], {}).get("monitoring_paused"):
                             continue
+                        generation = service.demo_monitoring_generation
+                        built_in = bool(service.demo_run_prefix and states.get(asset["id"], {}).get("event_id", "").startswith(service.demo_run_prefix))
                         events = await asyncio.to_thread(service.event_history, asset["id"], stamp(now - timedelta(seconds=10)), stamp(now), 100)
                         observation = await asyncio.to_thread(model.evaluate, asset["id"], events, stamp(now))
-                        await asyncio.to_thread(service.register_model_observation, observation)
+                        if built_in and generation != service.demo_monitoring_generation:
+                            continue
+                        latest = await asyncio.to_thread(service.list_assets)
+                        if any(item["id"] == asset["id"] and item.get("monitoring_paused") for item in latest):
+                            continue
+                        await asyncio.to_thread(service.register_model_observation, observation, expected_demo_generation=generation if built_in else None)
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -90,7 +98,7 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
             yield
         finally:
             if demo:
-                await demo.stop()
+                await getattr(demo, "shutdown", demo.stop)()
             if timer:
                 timer.cancel()
                 with suppress(asyncio.CancelledError):
@@ -134,7 +142,7 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
 
     @app.get("/api/demo/status")
     def demo_status(x_demo_operator: str | None = Header(default=None)):
-        status = demo.status() if demo else {"running": False, "scenario": None, "source_count": 0,
+        status = demo.status() if demo else {"running": False, "paused": False, "can_resume": False, "scenario": None, "source_count": 0,
                                             "error": "Simulator extension is not connected"}
         operator = service.validate_reader(x_demo_operator) if x_demo_operator else "admin"
         permitted = allowed_scenarios(service, operator, scenarios)
@@ -142,7 +150,8 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
                    for option in status.get("scenario_options", []) if option["id"] in permitted]
         return {**status, "available": demo is not None, "scenarios": permitted,
                 "scenario_options": options, "scenario_operator_id": operator,
-                "can_stop": operator == "admin" or status.get("scenario") in permitted}
+                "can_stop": operator == "admin" or status.get("scenario") in permitted,
+                "can_resume": bool(status.get("can_resume") and (operator == "admin" or status.get("scenario") in permitted))}
 
     @app.post("/api/demo/start")
     async def demo_start(body: dict = Body(...), x_demo_operator: str | None = Header(default=None)):
@@ -170,6 +179,23 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
             if operator != "admin" and demo.scenario and demo.scenario not in allowed_scenarios(service, operator, scenarios):
                 raise ApiError(403, "scenario_sector_required", "Остановить сценарий другого сектора может администратор.")
             return await demo.stop()
+
+    @app.post("/api/demo/resume")
+    async def demo_resume(body: dict = Body(default={}), x_demo_operator: str | None = Header(default=None)):
+        operator = service.validate_reader(x_demo_operator)
+        if body:
+            raise ApiError(422, "extra_parameters", "Операция resume не принимает параметры")
+        if not demo or not hasattr(demo, "resume"):
+            raise ApiError(503, "simulator_unavailable", "Продолжение поддерживает встроенный демонстрационный источник")
+        async with demo_lock:
+            if operator != "admin" and demo.scenario and demo.scenario not in allowed_scenarios(service, operator, scenarios):
+                raise ApiError(403, "scenario_sector_required", "Продолжить сценарий другого сектора может администратор.")
+            if not demo.status().get("can_resume"):
+                raise ApiError(409, "demo_not_paused", "Нет приостановленного сценария для продолжения")
+            try:
+                return await demo.resume()
+            except ValueError as exc:
+                raise ApiError(503, "demo_configuration_invalid", str(exc)) from exc
 
     @app.post("/api/events")
     def post_event(body: dict = Body(...)):

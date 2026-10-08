@@ -28,7 +28,23 @@
       else{form.reset();$("auth-register").hidden=true;$("auth-login").hidden=false;message("Заявка отправлена. После подтверждения администратором войдите с вашим логином.");}
     }catch(error){message(error.message,true);}finally{button.disabled=false;}
   }
+  function setupPasswordToggles(){
+    document.querySelectorAll('input[type="password"],input[data-password-toggle]').forEach((input,index)=>{
+      if(input.dataset.passwordToggle)return;
+      input.dataset.passwordToggle="true";
+      if(!input.id)input.id=`password-field-${index}`;
+      const wrap=document.createElement("span"),button=document.createElement("button");
+      wrap.className="password-field";button.className="password-toggle";button.type="button";
+      button.setAttribute("aria-controls",input.id);button.setAttribute("aria-pressed","false");button.setAttribute("aria-label","Показать пароль");
+      button.innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="eye-slash" d="M3 3l18 18"/></svg>';
+      input.parentNode.insertBefore(wrap,input);wrap.append(input,button);
+      const hide=()=>{input.type="password";button.setAttribute("aria-pressed","false");button.setAttribute("aria-label","Показать пароль");};
+      button.onclick=()=>{const visible=input.type==="password";input.type=visible?"text":"password";button.setAttribute("aria-pressed",String(visible));button.setAttribute("aria-label",visible?"Скрыть пароль":"Показать пароль");};
+      input.form?.addEventListener("reset",hide);
+    });
+  }
   async function init(options={}){
+    setupPasswordToggles();
     $("auth-login").onsubmit=event=>{event.preventDefault();submit(event.currentTarget,"/auth/login");};
     $("auth-register").onsubmit=event=>{event.preventDefault();submit(event.currentTarget,"/auth/register");};
     $("show-register").onclick=()=>{$("auth-login").hidden=true;$("auth-register").hidden=false;message("Роль и рабочее место назначит администратор.");};
@@ -48,5 +64,5 @@
     const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement("a");
     link.href=url;link.download=filename;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
-  root.ProductAuth={init,headers,request,download,showLogin,getSession:()=>session};
+  root.ProductAuth={init,headers,request,download,showLogin,setupPasswordToggles,getSession:()=>session};
 })(globalThis);

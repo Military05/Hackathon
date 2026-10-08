@@ -1,5 +1,5 @@
 {
-  "model_version": "movement-mlp-v2-e354f4d560f0",
+  "model_version": "movement-mlp-v2-51ccabc71783",
   "feature_version": "movement-v2",
   "feature_names": [
     "speed_mean",
@@ -21,11 +21,11 @@
     1
   ],
   "positive_class": 1,
-  "threshold": 0.9057877839749207,
+  "threshold": 0.8696575842143364,
   "baseline_threshold": 2.3385937544519466,
-  "artifact_sha256": "203e86aa2c6574486225c9f6d5729753518e70fa016f3a0355dd938833840774",
-  "dataset_sha256": "e354f4d560f07d0cbc7035ca9c46e36c3ead66925ac184605cbb4b0a2d9d5cdb",
-  "code_sha256": "718fa45b461c67fcc0cc76f5525994de2601e102393f5605ed132250ba824543",
+  "artifact_sha256": "1e231a9ab9fa2ff77061e151f2f828c0f6f215841436bcbde9f069aa83f701dd",
+  "dataset_sha256": "51ccabc7178365f27da2f55cb61a3d72c484eabe76eb6891667fd8327ac212cf",
+  "code_sha256": "8cb5274457e971afc0eb2b303c643f17d17ef9002d23024dbdf032e4ec35cb6e",
   "versions": {
     "python": "3.12.10",
     "numpy": "2.3.5",
@@ -1159,7 +1159,7 @@
     "random_state": 42,
     "max_iter": 600,
     "iterations": 69,
-    "seconds": 2.0628679999999804,
+    "seconds": 2.0046068000010564,
     "warnings": [],
     "scaler_fit_split": "train",
     "threshold_fit_split": "validation",
@@ -1167,7 +1167,7 @@
   },
   "validation": {
     "mlp": {
-      "threshold": 0.9057877839749207,
+      "threshold": 0.8696575842143364,
       "windows": 3436,
       "precision": 1.0,
       "recall": 1.0,
@@ -1232,10 +1232,10 @@
   "step_seconds": 5,
   "min_samples": 6,
   "scope": "demo synthetic unusual movement, not collision probability",
-  "dataset_manifest_sha256": "e53598a3d260d850397218f2a3450ae2fc921da5d0722ac16b03bbc32d0ede56",
+  "dataset_manifest_sha256": "e62738e901894d0851c33327c2afa460767a55c6635721d6a06120838f47e4cd",
   "dataset_generator": "factory-map-v7",
-  "site_sha256": "7d85c7b101830aa62ba10b23290cabdf327cf07e05b82d451ca8ac488067993e",
-  "site_semantic_sha256": "ebeb9995134802fc5764378590ee2349badadcf751ceac6cdfc57df068d087eb",
+  "site_sha256": "46eb6f047acf1e90386bfabbe86744d4fb648b0a3a791010b9afaa62095a7206",
+  "site_semantic_sha256": "a12dfeee79dc969c2f6b70baa0cb69b31d3a80e233a2f5994a0140bae12b8a9a",
   "layout_version": "site-v6-connected-infrastructure",
   "policy_version": "demo-policy-v6",
   "coverage": {
@@ -1572,5 +1572,11 @@
         80
       ]
     ]
+  },
+  "acceptance": {
+    "independent_test": "NOT RUN: coordinator requested no tests on 2026-10-08",
+    "actual_factory_replay": "NOT RUN: coordinator requested no tests on 2026-10-08",
+    "validation_only": true,
+    "limitations": "synthetic train/validation; scenario-level recall and false positives remain unverified"
   }
 }

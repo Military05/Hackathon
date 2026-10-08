@@ -5,12 +5,12 @@ const fs=require("node:fs");
 const path=require("node:path");
 const api=require("../src/interface/web/map-view.js");
 const site=JSON.parse(fs.readFileSync(path.join(__dirname,"../data/demo/site.json"),"utf8"));
-function harness(){
-  const layers=[],fits=[],handlers={};
+function harness(options={}){
+  const layers=[],fits=[],pans=[],handlers={};
   class Layer{
-    constructor(points,options={}){this.points=points;this.options=options;this.iconWrites=0;this.classes=new Set();this.children=[];}
+    constructor(points,options={}){this.points=points;this.options=options;this.iconWrites=0;this.styleWrites=0;this.classes=new Set();this.children=[];}
     addTo(target){this.target=target;if(target.children)target.children.push(this);layers.push(this);return this;}
-    setStyle(value){Object.assign(this.options,value);return this;}
+    setStyle(value){this.styleWrites++;Object.assign(this.options,value);return this;}
     bindTooltip(value){this.tooltip=value;return this;}
     on(type,handler){this.handler=handler;return this;}
     setIcon(icon){this.options.icon=icon;this.iconWrites++;return this;}
@@ -20,11 +20,11 @@ function harness(){
     clearLayers(){this.children=[];return this;}
     getLayers(){return this.children;}
   }
-  const map={children:[],removed:[],createPane(){return {style:{}};},setMaxBounds(points){this.maximumBounds=points;},fitBounds(points,options){fits.push({points,options});return this;},flyToBounds(points,options){fits.push({points,options,animated:true});return this;},latLngToLayerPoint(p){return {x:p[1]*4,y:p[0]*4};},getBounds(){return {getWest:()=>-40,getEast:()=>140,getSouth:()=>-20,getNorth:()=>120};},on(events,fn){handlers[events]=fn;},off(){},remove(){},removeLayer(layer){this.removed.push(layer);},getContainer(){return {};},invalidateSize(){}};
+  const map={children:[],removed:[],createPane(){return {style:{}};},setMaxBounds(points){this.maximumBounds=points;},panTo(point,options){pans.push({point,options});handlers["zoomend moveend"]?.();return this;},stop(){},fitBounds(points,options){fits.push({points,options});return this;},flyToBounds(points,options){fits.push({points,options,animated:true});return this;},latLngToLayerPoint(p){return {x:p[1]*4,y:p[0]*4};},getBounds(){return {getWest:()=>-40,getEast:()=>140,getSouth:()=>-20,getNorth:()=>120};},on(events,fn){handlers[events]=fn;},off(){},remove(){},removeLayer(layer){this.removed.push(layer);},getContainer(){return {};},invalidateSize(){}};
   globalThis.L={CRS:{Simple:{}},map(id,options){map.options=options;return map;},layerGroup:()=>new Layer(),polyline:(points,options)=>new Layer(points,options),rectangle:(points,options)=>new Layer(points,options),marker:(points,options)=>new Layer(points,options),divIcon:options=>options};
   const callbacks={asset:[],sensor:[],building:[]};
-  const instance=api.create({site,onAsset:id=>callbacks.asset.push(id),onSensor:id=>callbacks.sensor.push(id),onBuilding:id=>callbacks.building.push(id)});
-  return {instance,map,layers,fits,handlers,callbacks};
+  const instance=api.create({...options,site:options.site||site,onAsset:id=>callbacks.asset.push(id),onSensor:id=>callbacks.sensor.push(id),onBuilding:id=>callbacks.building.push(id)});
+  return {instance,map,layers,fits,pans,handlers,callbacks};
 }
 const freshAsset={asset_id:"V1",vehicle_type:"forklift",x:39,y:42,last_seen:new Date().toISOString()};
 test("labels shorten to stable codes when the projected building is too small",()=>{
@@ -98,10 +98,10 @@ test("sector button flies to its bounds while reduced motion uses an immediate v
   try{
     globalThis.matchMedia=()=>({matches:false});
     const h=harness();h.instance.focusSector("production",{animate:true});
-    assert.equal(h.fits.at(-1).animated,true);assert.equal(h.fits.at(-1).options.duration,.85);
+    assert.equal(h.fits.at(-1).animated,true);assert.equal(h.fits.at(-1).options.duration,.85);h.instance.destroy();
     globalThis.matchMedia=()=>({matches:true});
     const reduced=harness();reduced.instance.focusSector("production",{animate:true});
-    assert.equal(reduced.fits.at(-1).animated,undefined);assert.equal(reduced.fits.at(-1).options.animate,false);
+    assert.equal(reduced.fits.at(-1).animated,undefined);assert.equal(reduced.fits.at(-1).options.animate,false);reduced.instance.destroy();
   }finally{if(original)globalThis.matchMedia=original;else delete globalThis.matchMedia;}
 });
 
@@ -215,4 +215,121 @@ test("route deviation is warned on the affected vehicle and HH:MM signals avoid 
   const route=h.layers.find(l=>l.options.pane==="enterpriseRoutes");assert.equal(route.options.color,"#79baff");assert.match(vehicle.options.icon.className,/alarm.*route-deviation/);
   assert.match(api.signalTime("2026-10-07T10:12:13Z"),/^\d{2}:\d{2}$/);
   assert.doesNotMatch(vehicle.tooltip,/сек\. назад/);assert.match(vehicle.tooltip,/только что/);
+});
+
+function fakeMotion(){
+  const original={request:globalThis.requestAnimationFrame,cancel:globalThis.cancelAnimationFrame,performance:globalThis.performance,matchMedia:globalThis.matchMedia};
+  const frames=new Map();let next=0,now=1000;
+  globalThis.requestAnimationFrame=fn=>{frames.set(++next,fn);return next;};
+  globalThis.cancelAnimationFrame=id=>frames.delete(id);
+  globalThis.performance={now:()=>now};
+  globalThis.matchMedia=()=>({matches:false});
+  return {frames,step(time){now=time;const [id,fn]=frames.entries().next().value;frames.delete(id);fn(now);},restore(){for(const [key,value] of [["requestAnimationFrame",original.request],["cancelAnimationFrame",original.cancel],["performance",original.performance],["matchMedia",original.matchMedia]]){if(value===undefined)delete globalThis[key];else globalThis[key]=value;}}};
+}
+
+test("clicking any received vehicle centers once and follows its rendered motion at no more than 15 fps",()=>{
+  const motion=fakeMotion();let h;
+  try{
+    h=harness();const asset={...freshAsset,asset_id:"V99"};
+    h.instance.update({assets:[asset]});
+    const vehicle=h.layers.find(l=>l.options.icon?.className?.includes("vehicle-marker")),before=h.fits.length;
+    vehicle.handler();
+    assert.deepEqual(h.callbacks.asset,["V99"]);assert.equal(h.instance.getFollowedAsset(),"V99");
+    assert.equal(h.fits.length,before+1);assert.deepEqual(h.fits.at(-1).points,[[58,39]]);
+    h.instance.selectAsset("V99");assert.equal(h.fits.length,before+1,"Passive duplicate selection does not reframe the same target");
+    h.instance.update({assets:[{...asset,x:43,last_seen:new Date(Date.now()+1).toISOString()}]});
+    assert.equal(h.pans.length,0,"Polling starts interpolation without panning ahead to the raw endpoint");
+    const pending=[...motion.frames.keys()];
+    h.instance.update({assets:[{...asset,x:43,last_seen:new Date(Date.now()+2).toISOString()}]});
+    assert.deepEqual([...motion.frames.keys()],pending,"A 1 Hz refresh does not cancel or restart the animation loop");
+    const road=h.layers.find(l=>l.options.pane==="enterpriseRoads"),roadWrites=road.styleWrites;
+    motion.step(1100);
+    assert.deepEqual(h.pans.at(-1).point,vehicle.points);assert.ok(vehicle.points[1]>39&&vehicle.points[1]<43);
+    assert.equal(h.pans.at(-1).options.animate,false,"Each frame pans immediately rather than restarting a Leaflet animation");
+    const count=h.pans.length,position=[...vehicle.points];motion.step(1130);
+    assert.equal(h.pans.length,count);assert.deepEqual(vehicle.points,position,"Frames less than 1/15 second apart do not repaint");
+    motion.step(1180);assert.equal(h.pans.length,count+1);
+    motion.step(1800);assert.deepEqual(h.pans.at(-1).point,[58,43]);assert.equal(motion.frames.size,0,"An idle map schedules no frames");
+    assert.equal(road.styleWrites,roadWrites,"Following at the same zoom does not redraw static road geometry");
+  }finally{h?.instance.destroy();motion.restore();}
+});
+
+test("vehicle selection replaces follow, while manual movement, other objects and map overview stop it",()=>{
+  const h=harness(),other={...freshAsset,asset_id:"V3",x:60};
+  h.instance.update({assets:[freshAsset,other]});
+  const moving=()=>h.instance.selectAsset("V1");
+  moving();h.instance.selectAsset("V3");assert.equal(h.instance.getFollowedAsset(),"V3");
+  h.handlers["dragstart zoomstart"]();assert.equal(h.instance.getFollowedAsset(),null);
+  const before=h.pans.length;h.instance.update({assets:[{...freshAsset,x:42},other]});assert.equal(h.pans.length,before);
+  moving();h.layers.find(l=>l.options.pane==="enterpriseObjects").handler();assert.equal(h.instance.getFollowedAsset(),null);
+  moving();h.layers.find(l=>l.options.icon?.className?.includes("sensor-marker")).handler();assert.equal(h.instance.getFollowedAsset(),null);
+  moving();h.instance.focusSector("logistics");assert.equal(h.instance.getFollowedAsset(),null);
+  moving();h.instance.fitAll({animate:false});assert.equal(h.instance.getFollowedAsset(),null);
+  moving();h.instance.clearFollow();assert.equal(h.instance.getFollowedAsset(),null);
+  moving();assert.equal(h.instance.followAsset("missing"),false);assert.equal(h.instance.getFollowedAsset(),null);
+  assert.equal(h.instance.selectAsset("V2"),true);assert.equal(h.instance.getFollowedAsset(),null,"A registered object without received coordinates is never positioned");
+  h.instance.destroy();
+});
+
+test("Show on map first frames both collision vehicles and preserves follow during the same incident refresh",()=>{
+  const h=harness(),other={...freshAsset,asset_id:"V3",x:40.8,y:74};
+  const incident={incident_id:"C1",type:"collision",asset_id:"V1",other_asset_id:"V3",status:"open"};
+  h.instance.update({assets:[{...freshAsset,x:40,y:74},other]});
+  assert.equal(h.instance.showIncident(incident),true);assert.deepEqual(h.fits.at(-1).points,[[26,40],[26,40.8]]);
+  assert.equal(h.instance.getFollowedAsset(),"V1");
+  h.instance.highlight({...incident,revision:2});assert.equal(h.instance.getFollowedAsset(),"V1");
+  h.instance.update({assets:[{...freshAsset,x:41,y:74},other]});assert.deepEqual(h.pans.at(-1).point,[26,41]);
+  h.instance.highlight({building_id:"W1"});assert.equal(h.instance.getFollowedAsset(),null);
+  h.instance.showIncident(incident);h.instance.update({assets:[other]});assert.equal(h.instance.getFollowedAsset(),null,"A removed vehicle stops follow");
+  h.instance.destroy();
+});
+
+test("reduced motion follows only received positions, and stale or paused sources do not move the camera",()=>{
+  const original=globalThis.matchMedia,oldRequest=globalThis.requestAnimationFrame;let requested=0;
+  globalThis.matchMedia=()=>({matches:true});globalThis.requestAnimationFrame=()=>{requested++;return 1;};
+  const h=harness();
+  try{
+    h.instance.update({assets:[freshAsset]});h.instance.selectAsset("V1");
+    h.instance.update({assets:[{...freshAsset,x:43}]});assert.deepEqual(h.pans.at(-1).point,[58,43]);assert.equal(requested,0);
+    const count=h.pans.length;
+    h.instance.update({assets:[{...freshAsset,x:47,monitoring_paused:true}]});assert.equal(h.pans.length,count);
+    const vehicle=h.layers.find(l=>l.options.icon?.className?.includes("vehicle-marker"));assert.deepEqual(vehicle.points,[58,43],"Pause freezes the displayed position");
+    h.instance.update({assets:[{...freshAsset,x:50,last_seen:"2020-01-01T00:00:00Z"}]});assert.equal(h.pans.length,count);
+    h.instance.update({assets:[{...freshAsset,x:52}]});assert.deepEqual(h.pans.at(-1).point,[58,52]);
+  }finally{h.instance.destroy();if(original)globalThis.matchMedia=original;else delete globalThis.matchMedia;if(oldRequest)globalThis.requestAnimationFrame=oldRequest;else delete globalThis.requestAnimationFrame;}
+});
+
+test("My sector briefly highlights only owned buildings, clears the effect, and keeps unrelated objects grey",()=>{
+  const oldSet=globalThis.setTimeout,oldClear=globalThis.clearTimeout,oldMedia=globalThis.matchMedia;
+  const timers=new Map();let next=0;
+  globalThis.setTimeout=(fn,delay)=>{timers.set(++next,{fn,delay});return next;};
+  globalThis.clearTimeout=id=>timers.delete(id);globalThis.matchMedia=()=>({matches:true});
+  const h=harness({operator:"dispatcher-1"});
+  try{
+    const buildings=h.layers.filter(l=>l.options.pane==="enterpriseObjects");
+    h.instance.focusSector("logistics");assert.ok(buildings.every(l=>!l.classes.has("enterprise-sector-focus")),"Startup sector focus does not flash");
+    h.instance.focusSector("logistics",{animate:true});
+    const own=site.buildings.filter(b=>api.buildingControl(site,b).operatorId==="dispatcher-1");
+    assert.equal(buildings.filter(l=>l.classes.has("enterprise-sector-focus")).length,own.length);
+    const foreign=buildings.filter(l=>!l.classes.has("enterprise-sector-focus"));assert.ok(foreign.length);assert.ok(foreign.every(l=>l.options.color==="#87929d"));
+    h.instance.update({assets:[freshAsset]});assert.equal(buildings.filter(l=>l.classes.has("enterprise-sector-focus")).length,own.length,"Polling does not clear or restart the effect");
+    assert.equal(timers.size,1);const timer=timers.values().next().value;assert.equal(timer.delay,3000);timer.fn();
+    assert.equal(timers.size,0);assert.ok(buildings.every(l=>!l.classes.has("enterprise-sector-focus")));
+    h.instance.focusSector("logistics",{highlight:true});assert.equal(timers.size,1);h.instance.destroy();assert.equal(timers.size,0);
+    const css=fs.readFileSync(path.join(__dirname,"../src/interface/web/map-view.css"),"utf8");
+    assert.match(css,/enterprise-sector-emphasis 3s ease-out/);assert.doesNotMatch(css,/enterprise-sector-emphasis[^}]*infinite/);
+  }finally{h.instance.destroy();globalThis.setTimeout=oldSet;globalThis.clearTimeout=oldClear;if(oldMedia)globalThis.matchMedia=oldMedia;else delete globalThis.matchMedia;}
+});
+
+test("pausing during interpolation freezes the machine and follow camera and ends the frame loop",()=>{
+  const motion=fakeMotion();let h;
+  try{
+    h=harness();h.instance.update({assets:[freshAsset]});h.instance.selectAsset("V1");
+    const endpoint={...freshAsset,x:43,last_seen:new Date(Date.now()+1).toISOString()};
+    h.instance.update({assets:[endpoint]});motion.step(1300);
+    const vehicle=h.layers.find(l=>l.options.icon?.className?.includes("vehicle-marker")),position=[...vehicle.points],pans=h.pans.length;
+    h.instance.update({assets:[{...endpoint,monitoring_paused:true}]});
+    assert.deepEqual(vehicle.points,position);assert.equal(h.pans.length,pans);
+    motion.step(1400);assert.deepEqual(vehicle.points,position);assert.equal(h.pans.length,pans);assert.equal(motion.frames.size,0);
+  }finally{h?.instance.destroy();motion.restore();}
 });

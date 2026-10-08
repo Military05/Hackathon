@@ -61,6 +61,12 @@ class Service:
         self.profiles = {p.get("operator_id") or p.get("id"): p for p in self.site["operator_profiles"]}
         self.buildings = {b["id"]: b for b in self.site["buildings"]}
         self.model_version = "not_loaded"
+        self.paused_demo_prefix = None
+        self.demo_run_prefix = None
+        self.demo_segment_start_event_id = None
+        self.demo_monitoring_generation = 0
+        self.demo_paused_at = None
+        self.demo_pause_allowances = {}
         from src.core.vehicle_safety import VehicleSafety
         self.vehicle_safety = VehicleSafety(self)
         with self.store.transaction() as db:
@@ -388,6 +394,31 @@ class Service:
                 else:
                     self._save_incident(db, incident)
 
+    def pause_demo_monitoring(self, prefix):
+        with self.store.lock:
+            if self.paused_demo_prefix is None:
+                self.demo_paused_at = self.clock()
+                self.demo_monitoring_generation += 1
+            self.paused_demo_prefix = prefix
+
+    def resume_demo_monitoring(self):
+        with self.store.read() as db:
+            if self.demo_paused_at is not None:
+                duration = max(0.0, (self.clock() - self.demo_paused_at).total_seconds())
+                for sid in self.sensors_by_id:
+                    state = self._load(db, "sensor_state", "sensor_id", sid)
+                    event_id = state.get("last_event_id")
+                    if self.demo_monitoring_paused(event_id):
+                        old_event, allowance = self.demo_pause_allowances.get(sid, (None, 0.0))
+                        self.demo_pause_allowances[sid] = (event_id, (allowance if old_event == event_id else 0.0) + duration)
+                self.demo_monitoring_generation += 1
+            self.paused_demo_prefix = None
+            self.demo_paused_at = None
+
+    def demo_monitoring_paused(self, event_id):
+        """Only this deliberately paused built-in run; external samples remain live."""
+        return bool(self.paused_demo_prefix and event_id and event_id.startswith(self.paused_demo_prefix))
+
     def list_assets(self):
         now = self.clock()
         with self.store.read() as db:
@@ -398,6 +429,7 @@ class Service:
                 state["age_seconds"] = age
                 state["position_state"] = "fresh" if age is not None and age < self.config["position_stale_seconds"] else "unknown"
                 state["stale"] = state["position_state"] == "unknown"
+                state["monitoring_paused"] = self.demo_monitoring_paused(state.get("event_id"))
                 state.update(self._responsibility(asset_id=asset["id"]))
                 result.append(state)
             return result
@@ -418,11 +450,18 @@ class Service:
         state = self._load(db, "sensor_state", "sensor_id", sensor_id)
         now = self.clock()
         age = (now - parse_time(state["last_received_at"])).total_seconds() if state["last_received_at"] else None
+        old_event, allowance = self.demo_pause_allowances.get(sensor_id, (None, 0.0))
+        allowance = allowance if old_event == state.get("last_event_id") else 0.0
+        if self.demo_monitoring_paused(state.get("last_event_id")) and self.demo_paused_at is not None:
+            allowance += max(0.0, (now - self.demo_paused_at).total_seconds())
+        monitored_age = max(0.0, age - allowance) if age is not None else None
         if age is None:
             status = "unknown" if (now - parse_time(state["first_expected_at"])).total_seconds() < self.config["startup_sensor_grace_seconds"] else "offline"
         else:
-            status = "online" if age < self.config["sensor_offline_seconds"] else "offline"
+            status = "online" if monitored_age < self.config["sensor_offline_seconds"] else "offline"
         return {**sensor, **state, **self._responsibility(area_id=sensor.get("site_area_id"), asset_id=sensor.get("asset_id"), building_id=sensor.get("building_id")), "status": status, "age_seconds": age, "as_of": stamp(now),
+                "monitoring_paused": self.demo_monitoring_paused(state.get("last_event_id")),
+                "monitoring_age_seconds": monitored_age,
                 "threshold_seconds": self.config["sensor_offline_seconds"],
                 "startup_sensor_grace_seconds": self.config["startup_sensor_grace_seconds"]}
 
@@ -786,8 +825,11 @@ class Service:
             self.vehicle_safety.tick(db)
             for sid, sensor in self.sensors_by_id.items():
                 health = self._sensor_health(db, sid)
+                if health["monitoring_paused"]:
+                    continue
                 incident = self._ongoing(db, "offline:" + sid)
-                if health["status"] == "offline" and not incident:
+                monitored_offline = health["monitoring_age_seconds"] >= health["threshold_seconds"] if health["monitoring_age_seconds"] is not None else health["status"] == "offline"
+                if monitored_offline and not incident:
                     area = sensor.get("site_area_id")
                     asset_id = sensor.get("asset_id")
                     asset = self._load(db, "asset_state", "asset_id", asset_id) if asset_id else None
@@ -803,6 +845,8 @@ class Service:
             for item in self._incidents(db):
                 if item["type"] in {"forbidden_zone", "model_anomaly"} and item["condition_state"] != "restored":
                     state = self._load(db, "asset_state", "asset_id", item["asset_id"])
+                    if state and self.demo_monitoring_paused(state.get("event_id")):
+                        continue
                     if not state or (now - parse_time(state["last_seen"])).total_seconds() >= self.config["position_stale_seconds"]:
                         item["condition_state"] = "unknown"
                         item["details"]["exit_samples"] = 0
@@ -821,7 +865,7 @@ class Service:
                     self._notify(db, item, transfer["from_operator_id"], "transfer_expired", "transfer_expired", transfer["transfer_id"])
                     self._save_incident(db, item)
 
-    def register_model_observation(self, observation):
+    def register_model_observation(self, observation, *, expected_demo_generation=None):
         self._require(observation.get("asset_id"), self.assets_by_id, "asset")
         for field in ("observation_id", "window_start", "window_end", "status", "model_version", "feature_version", "evidence_event_ids"):
             if field not in observation:
@@ -831,6 +875,10 @@ class Service:
         item = {**observation, "demo": True}
         key = "model:" + item["asset_id"]
         with self.store.transaction() as db:
+            # An evaluation started before a planned pause/resume must not mutate
+            # incidents after the pause response. Check while owning Store.lock.
+            if expected_demo_generation is not None and (expected_demo_generation != self.demo_monitoring_generation or self.paused_demo_prefix is not None):
+                return None
             previous = self._load(db, "model_observations", "observation_id", item["observation_id"])
             if previous:
                 if canonical(previous) != canonical(item):

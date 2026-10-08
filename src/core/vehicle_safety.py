@@ -125,6 +125,10 @@ class VehicleSafety:
         values = (state["asset_id"], state["last_seen"], state["last_seen"], state["event_id"])
         if prefix:
             values += (prefix + "-%",)
+        boundary = self.service.demo_segment_start_event_id
+        if boundary and state["event_id"].startswith(self.service.demo_run_prefix or "unused-"):
+            condition += " AND event_id>=?"
+            values += (boundary,)
         row = db.execute("""SELECT body FROM events WHERE asset_id=? AND type='position'
             AND (event_time<? OR (event_time=? AND event_id<?))
             """ + condition + " ORDER BY event_time DESC,event_id DESC LIMIT 1", values).fetchone()
@@ -140,6 +144,8 @@ class VehicleSafety:
         key, memory_key = "collision:" + first + ":" + second, "safety-pair:" + first + ":" + second
         incident = self.service._ongoing(db, key)
         states = [self.service._load(db, "asset_state", "asset_id", identifier) for identifier in (first, second)]
+        if any(state and self.service.demo_monitoring_paused(state.get("event_id")) for state in states):
+            return
         if not all(self._fresh(state) for state in states):
             self._unknown(db, incident)
             memory = self._metadata(db, memory_key)
@@ -215,7 +221,10 @@ class VehicleSafety:
             if incident["type"] not in ("route_deviation", "collision") or incident["condition_state"] == "restored":
                 continue
             identifiers = [incident["asset_id"]] + ([incident["other_asset_id"]] if incident["type"] == "collision" else [])
-            if not all(self._fresh(self.service._load(db, "asset_state", "asset_id", identifier)) for identifier in identifiers):
+            states = [self.service._load(db, "asset_state", "asset_id", identifier) for identifier in identifiers]
+            if any(state and self.service.demo_monitoring_paused(state.get("event_id")) for state in states):
+                continue
+            if not all(self._fresh(state) for state in states):
                 self._unknown(db, incident)
                 if incident["type"] == "collision":
                     memory_key = "safety-pair:" + ":".join(sorted(identifiers))
