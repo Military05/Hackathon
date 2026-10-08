@@ -29,6 +29,12 @@ SCENARIOS = {
     "safe-passing": "Безопасный разъезд транспорта",
     "production-zone": "Погрузчик в производственной зоне",
     "service-zone": "Служебный транспорт в закрытой зоне",
+    "red-zone": "Красная зона: въезд запрещён всем",
+    "orange-zone": "Оранжевая зона: въезд без допуска",
+    "orange-authorized": "Оранжевая зона: въезд с допуском",
+    "anomaly-oscillation": "Аномалия: движение туда-сюда",
+    "anomaly-wall": "Аномалия: упор в стену",
+    "anomaly-erratic": "Аномалия: резкие смены движения",
 }
 
 SCENARIO_INFO = {
@@ -45,7 +51,31 @@ SCENARIO_INFO = {
     "safe-passing": ("Две машины разъезжаются с достаточным расстоянием.", "Пересечение транспорта не должно фиксироваться."),
     "production-zone": ("Погрузчик входит в красную зону запрета для своего типа и выходит.", "Запрет для типа транспорта; возможно отклонение от личного маршрута."),
     "service-zone": ("Служебная машина входит в запрещённый для неё участок и возвращается.", "Запрет для служебного транспорта и отклонение от личного маршрута."),
+    "red-zone": ("V1 по отдельному подъезду входит в красную Z6, выдерживает остановку и возвращается.", "Въезд в зону общего запрета; отдельное правило отклонения маршрута."),
+    "orange-zone": ("V1 входит по погрузочному подъезду в оранжевую Z1, не имея допуска, затем возвращается.", "Нарушение допуска в оранжевой зоне; отклонение от личного маршрута."),
+    "orange-authorized": ("V3 следует по связанным дорогам к погрузочному подъезду Z1 и возвращается; допуск у V3 есть.", "Тревоги допуска нет. Отклонение от личного маршрута проверяется независимо."),
+    "anomaly-oscillation": ("V1 трижды меняет направление на одном участке дороги, затем возвращается к обычному движению.", "MLP оценивает реальные точки; модельная тревога зависит от её вывода."),
+    "anomaly-wall": ("V1 подъезжает к стене W4 и многократно пытается продвинуться у границы, затем отъезжает.", "MLP получает длительную остановку и попытки движения; тревога зависит от вывода модели."),
+    "anomaly-erratic": ("V1 нерегулярно ускоряется, останавливается и меняет направление вдоль складского проезда.", "Реальные позиции для MLP; результат модели не подменяется сценарием."),
 }
+
+
+def scenario_paths(scenario):
+    """Bounded demonstrations on existing roads; the shared site/model hash is unchanged."""
+    def path(*waypoints):
+        return [{"at": at, "point": list(point)} for at, point in waypoints]
+
+    if scenario == "red-zone":
+        return {"duration_seconds": 24, "asset_paths": {"V1": path((0, (3, 49.5)), (5, (8.5, 49.5)), (13, (8.5, 49.5)), (19, (3, 49.5)), (24, (3, 40)))}}
+    if scenario == "orange-authorized":
+        return {"duration_seconds": 70, "asset_paths": {"V3": path((0, (43, 74)), (3, (40, 74)), (12, (40, 60)), (22, (25, 60)), (29, (25, 50)), (39, (25, 50)), (46, (25, 60)), (56, (40, 60)), (65, (40, 74)), (70, (43, 74)))}}
+    if scenario == "anomaly-oscillation":
+        return {"duration_seconds": 38, "asset_paths": {"V1": path((0, (40, 30)), (6, (40, 38)), (12, (40, 30)), (18, (40, 38)), (24, (40, 30)), (30, (40, 38)), (36, (40, 30)), (38, (40, 28.5)))}}
+    if scenario == "anomaly-wall":
+        return {"duration_seconds": 36, "asset_paths": {"V1": path((0, (40, 33)), (5, (36.2, 33)), (9, (36.2, 33)), (11, (36.8, 33)), (13, (36.2, 33)), (17, (36.2, 33)), (19, (36.8, 33)), (21, (36.2, 33)), (25, (36.2, 33)), (27, (36.8, 33)), (29, (36.2, 33)), (32, (36.2, 33)), (36, (40, 33)))}}
+    if scenario == "anomaly-erratic":
+        return {"duration_seconds": 38, "asset_paths": {"V1": path((0, (40, 16)), (2, (40, 23)), (5, (40, 19)), (7, (40, 28.5)), (12, (40, 28.5)), (14, (40, 21.5)), (17, (40, 33)), (19, (40, 25)), (24, (40, 25)), (26, (40, 38)), (29, (40, 30)), (33, (40, 39)), (38, (40, 40)))}}
+    return None
 
 
 class ArcRoute:
@@ -134,10 +164,14 @@ class DemoRunner:
         self._gate_sensor = None
         self._safety_paths = {}
         self._safety_returns = {}
+        self._demonstration_end = None
 
     def status(self):
         return {
             "running": self.running,
+            "demonstration_complete": self._demonstration_end is not None and self.last_elapsed >= self._demonstration_end,
+            "demonstration_duration_seconds": self._demonstration_end,
+            "phase": "normal" if self._demonstration_end is not None and self.last_elapsed >= self._demonstration_end else "demonstration",
             "scenario": self.scenario,
             "scenario_label": SCENARIOS.get(self.scenario),
             "source": self.source,
@@ -175,6 +209,7 @@ class DemoRunner:
         self._vehicles = {}
         self._journeys = {}
         self._fault_route = self._fault_journey = None
+        self._demonstration_end = None if scenario in ("normal", "logistics", "service") else 35.0
         self._run_id = uuid.uuid4().hex[:12]
         routes = self.service.site.get("demo_routes", self.service.site.get("routes", {}))
         vehicles = [asset for asset in self.service.site["assets"] if asset["type"] == "vehicle"]
@@ -195,7 +230,7 @@ class DemoRunner:
                 speed, pause = (1.9 if asset["id"] == "V3" else 1.2), 7.0
             phase = pause + 1 + index * route.length / speed / 3
             self._journeys[asset["id"]] = Journey(route, route.nearest_distance(destination), speed, pause, phase)
-        if scenario in ("forbidden-zone", "simultaneous"):
+        if scenario in ("forbidden-zone", "simultaneous", "orange-zone"):
             definition = self.service.site.get("demo_fault_routes", {}).get("V1")
             if not definition:
                 raise ValueError("The site needs a demo_fault_routes.V1 approach to the closed zone")
@@ -208,6 +243,7 @@ class DemoRunner:
             if math.dist(route.point(anchor), self._fault_route.points[0]) > 0.001:
                 raise ValueError("The closed-zone approach must connect exactly to the V1 road route")
             self._fault_journey = Journey(route, anchor, 1.6, 0.0)
+            self._demonstration_end = 2 * self._fault_route.length / 1.8 + 18.0
         if scenario in ("unauthorized-access", "simultaneous"):
             if not self._gate_sensor or "U4" not in self.service.assets_by_id:
                 raise ValueError("The checkpoint scenario requires a G1 access sensor and employee U4")
@@ -216,10 +252,17 @@ class DemoRunner:
         if scenario == "shift":
             self._shift_employees = self.service.site.get("shift_employees", ["U1", "U2", "U3"])
             self._shift_id = self.operations.start_shift(self._shift_employees)
-        definition = self.service.site.get("demo_safety_scenarios", {}).get(scenario)
+        definition = scenario_paths(scenario) or self.service.site.get("demo_safety_scenarios", {}).get(scenario)
         if scenario in ("route-deviation", "collision", "safe-passing", "production-zone", "service-zone") and not definition:
             raise ValueError("The site needs demo_safety_scenarios." + scenario)
         if definition:
+            definition = {**definition, "asset_paths": dict(definition.get("asset_paths", {}))}
+            self._demonstration_end = float(definition.get("duration_seconds", 30)) + 10.0
+            # Park unrelated sources safely: one demonstration has no accidental extra traffic episodes.
+            duration = float(definition.get("duration_seconds", 30))
+            for asset_id, point in {"V1": (3, 16), "V2": (96, 60), "V3": (43, 74)}.items():
+                if asset_id not in definition["asset_paths"]:
+                    definition["asset_paths"][asset_id] = [{"at": 0, "point": list(point)}, {"at": duration, "point": list(point)}]
             for asset_id, waypoints in definition.get("asset_paths", {}).items():
                 if asset_id not in self._journeys or len(waypoints) < 2:
                     raise ValueError("Safety paths need a known vehicle and at least two timestamped positions")
@@ -328,7 +371,7 @@ class DemoRunner:
         return journey.position(elapsed), journey.state(elapsed)
 
     def emit_frame(self, elapsed):
-        """Also usable with a controlled Service clock in acceptance tests."""
+        """Emit one measured frame; demonstration faults occur once per explicit start."""
         self.last_elapsed = max(0.0, elapsed)
         if self.scenario == "shift":
             for index, employee in enumerate(self._shift_employees):
