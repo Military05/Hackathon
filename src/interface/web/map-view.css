@@ -17,9 +17,9 @@
 #map .enterprise-vehicle-glyph b{font-size:10px;line-height:13px;color:#e8f1f6;background:#152936;padding:0 4px;border-radius:3px;font-weight:600}
 #map .enterprise-signal-time,#map .enterprise-sensor-time{font:9px/12px 'Segoe UI',sans-serif;font-variant-numeric:tabular-nums;color:#d4e3ec;background:#142b38eb;border-radius:2px;padding:0 2px;white-space:nowrap}
 #map .enterprise-sensor-time{position:absolute;left:50%;top:27px;transform:translateX(-50%)}
-#map .enterprise-vehicle-marker.stale .enterprise-vehicle-symbol{border-style:dashed;opacity:.85}
+#map .enterprise-vehicle-marker.stale .enterprise-vehicle-symbol{border-color:#efc05f;border-style:dashed;opacity:.85}
 #map .enterprise-stale-badge{position:absolute;top:-5px;right:0;border-radius:50%;background:#efc05f;color:#1c2c39;font:bold 11px/15px sans-serif;width:15px;height:15px;text-align:center}
-#map .enterprise-route-warning{position:absolute;top:-5px;right:0;border-radius:50%;background:#ff9696;color:#242c35;font:bold 11px/15px sans-serif;width:15px;height:15px;text-align:center}
+#map .enterprise-route-warning,#map .enterprise-alarm-badge{position:absolute;top:-5px;right:0;border-radius:50%;background:#ff9696;color:#242c35;font:bold 11px/15px sans-serif;width:15px;height:15px;text-align:center}
 #map .enterprise-route-destination-marker{border:0;background:none;pointer-events:none}
 #map .enterprise-route-endpoint{display:block;box-sizing:border-box;width:8px;height:8px;margin:1px;background:#142b38;border:1px solid currentColor;transform:rotate(45deg);opacity:.65}
 #map .enterprise-route-endpoint.focused{border-width:2px;opacity:1}
@@ -36,5 +36,5 @@
 @keyframes enterprise-zone-pulse{0%,100%{stroke-opacity:1}50%{stroke-opacity:.35}}
 @media(prefers-reduced-motion:reduce){#map .enterprise-selected .enterprise-vehicle-symbol,#map .enterprise-selected .enterprise-sensor-glyph,#map .enterprise-incident-halo{animation:none}}
 #map .enterprise-vehicle-marker.foreign .enterprise-vehicle-symbol,#map .enterprise-sensor-marker.foreign .enterprise-sensor-glyph{opacity:.65}
-#map .enterprise-vehicle-marker.alarm .enterprise-vehicle-symbol{border-style:double;border-width:3px}
-#map .enterprise-sensor-marker.offline .enterprise-sensor-glyph{border-style:dashed;border-width:2px}
+#map .enterprise-vehicle-marker.alarm .enterprise-vehicle-symbol{border-color:#ff8585;border-style:double;border-width:3px;filter:drop-shadow(0 0 3px #ff8585)}
+#map .enterprise-sensor-marker.offline .enterprise-sensor-glyph{border-color:#ff8585;border-style:double;border-width:3px;filter:drop-shadow(0 0 3px #ff8585)}

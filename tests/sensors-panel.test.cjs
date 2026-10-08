@@ -47,10 +47,10 @@ test("a failed manual read is visible and does not invent a healthy state",async
   const f=fixture({requestCheck:async()=>{throw Error("HTTP 503");}});f.panel.update([position({status:"offline",last_received_at:at(12)})]);
   assert.equal(await f.panel.manualCheck(),null);assert.match(f.panel.getState().lastError,/HTTP 503/);assert.equal(f.panel.getState().sensors[0].status,"offline");assert.equal(f.panel.getState().history.at(-1).kind,"error");f.panel.destroy();
 });
-test("automatic checks can be turned off; chimes need their own opt-in",()=>{
+test("automatic checks can be turned off and never emit removed chimes",()=>{
   let sounds=0;const f=fixture({onSound:(summary,mode)=>{assert.equal(mode,"auto");assert.equal(summary.total,1);sounds++;}});
   f.panel.update([position()]);f.panel.setAutomatic(false);f.tick();assert.equal(f.panel.getState().history.length,1);
-  f.panel.setAutomatic(true);f.panel.setChime(true);f.tick();assert.equal(sounds,1);f.panel.setChime(false);f.tick();assert.equal(sounds,1);f.panel.destroy();
+  f.panel.setAutomatic(true);f.tick();assert.equal(f.panel.getState().history.length,2);assert.equal(sounds,0);f.tick();assert.equal(sounds,0);assert.equal(f.panel.setChime,undefined);f.panel.destroy();
 });
 test("observations are bounded to 20 and recovery does not change server data",()=>{
   const f=fixture();f.panel.update([position({status:"offline",last_received_at:at(15)})]);f.panel.update([position()]);
