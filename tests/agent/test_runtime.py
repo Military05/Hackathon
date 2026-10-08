@@ -20,6 +20,39 @@ from src.agent.service import AgentService
 from tests.agent.test_tools_and_result import answer, snapshot
 
 
+def test_required_incident_retry_discards_unread_model_answer():
+    class Client:
+        def __init__(self):
+            self.calls = 0
+        async def chat(self, messages, tools, deadline, response_schema=None):
+            self.calls += 1
+            if self.calls == 1:
+                return {"role": "assistant", "content": "Данные якобы уже прочитаны"}
+            if self.calls == 2:
+                return {"role": "assistant", "content": "", "tool_calls": [tool_call()]}
+            assert not any(message.get('content') == 'Данные якобы уже прочитаны' for message in messages)
+            return {"role": "assistant", "content": answer([{"source": "event", "id": "demo-position-0010",
+                    "field": "payload.x", "value": 20.0}])}
+    client = Client()
+    result = asyncio.run(run_analysis(client, snapshot(), AgentConfig(model='test-double')))
+    assert client.calls == 3
+    assert [step['tool'] for step in result['tool_trace']] == ['get_incident']
+
+
+def test_missing_incident_read_cannot_become_success_after_retry():
+    class Client:
+        calls = 0
+        async def chat(self, *args, **kwargs):
+            self.calls += 1
+            return {"role": "assistant", "content": answer([{"source": "event", "id": "demo-position-0010",
+                    "field": "payload.x", "value": 20.0}])}
+    client = Client()
+    with pytest.raises(AgentError) as error:
+        asyncio.run(run_analysis(client, snapshot(), AgentConfig(model='test-double')))
+    assert error.value.code == 'invalid_evidence'
+    assert client.calls == 3
+
+
 def tool_call(name="get_incident", arguments=None, native=False):
     arguments = arguments or {"incident_id": "INC-ZONE-1"}
     return {"id": "call-1", "type": "function", "function": {"name": name,

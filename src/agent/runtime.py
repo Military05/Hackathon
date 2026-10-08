@@ -23,20 +23,41 @@ class AgentManager(AgentService):
 
         super().__init__(config, CaptureProvider(capture), client or LocalModelClient(config))
         self.runtime_available = False
+        self.availability_task = None
 
     def health(self):
-        return {"status": "ready" if self.runtime_available else "unavailable",
+        return {"status": "ready" if self.runtime_available else "unavailable", "enabled": True,
                 "worker_running": self.worker is not None and not self.worker.done(),
                 "model_name": self.config.model, "provider": self.config.provider}
 
     async def start(self):
         await super().start()
+        await self.check_availability()
+        if self.availability_task is None:
+            self.availability_task = asyncio.create_task(self.monitor_availability())
+
+    async def check_availability(self):
         try:
             await self.client.ensure_available()
         except AgentError:
             self.runtime_available = False
         else:
             self.runtime_available = True
+
+    async def monitor_availability(self):
+        while True:
+            await asyncio.sleep(5)
+            await self.check_availability()
+
+    async def stop(self):
+        if self.availability_task:
+            self.availability_task.cancel()
+            try:
+                await self.availability_task
+            except asyncio.CancelledError:
+                pass
+            self.availability_task = None
+        await super().stop()
 
     async def request(self, incident_id, operator_id):
         try:

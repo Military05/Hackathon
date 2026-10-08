@@ -118,3 +118,8 @@ powershell -ExecutionPolicy Bypass -File scripts/start.ps1
 Другой ноутбук и общие аккаунты: [REMOTE_CLIENT_V6](docs/REMOTE_CLIENT_V6.md).
 Передача и подключение готовых модулей Гриши/Гаджи:
 [AI_INTEGRATION_V6](docs/AI_INTEGRATION_V6.md).
+# Запуск AI в основном сервере
+
+Для подключения Qwen и MLP к существующим аккаунтам и истории используйте
+`scripts/start.ps1 -WithAI`. Порядок запуска и выбор существующей базы:
+[AI_SERVER_LAUNCH](docs/AI_SERVER_LAUNCH.md).

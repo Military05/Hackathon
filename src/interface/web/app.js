@@ -257,7 +257,7 @@ async function refresh(){
     if(context!==S.context)return;
     S.assets=array(assets,"assets");S.sensors=array(sensors,"sensors");S.incidents=array(incidents,"incidents");S.summary=summary;S.profiles=array(profiles,"operator_profiles");
     const agentStatus=typeof health.agent==="object"?health.agent.status:health.agent;
-    S.agentAvailable=agentStatus!=="unavailable"&&agentStatus!=="not_connected";
+    S.agentAvailable=agentStatus==="ready";
     if(summary.as_of){S.asOf=Date.parse(summary.as_of);S.serverOffset=S.asOf-Date.now();}
     $("connection").textContent="● Сервер на связи";$("connection").style.color="#5bceae";
     const mlStatus=typeof health.ml==="object"?health.ml.status:health.ml;
