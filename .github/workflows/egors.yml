@@ -10,9 +10,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
           cache: pip
-      - run: python -m pip install -r requirements.txt
+          cache-dependency-path: |
+            requirements.txt
+            requirements-ai.txt
+            requirements-ai-dev.txt
+      # Runtime discovery includes AI/ML integration tests, not just the basic server.
+      # Keep requirements.txt lightweight for users; install full test dependencies here.
+      - run: python -m pip install -r requirements-ai-dev.txt
       - run: python -m unittest discover -s tests/runtime -p 'test_*.py' -v
       - run: python -m unittest discover -s tests/qa -p 'test_*.py' -v
       - uses: actions/setup-node@v4
