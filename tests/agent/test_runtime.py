@@ -390,6 +390,46 @@ def test_truncated_answer_uses_bounded_structured_retry_and_never_partial_succes
     asyncio.run(run())
 
 
+def test_model_anomaly_requires_linked_mlp_schema_immediately_after_incident_tool():
+    data = snapshot().export()
+    observation = {"observation_id": "observation-test", "status": "anomaly", "score": .91,
+                   "threshold": .8, "evidence_event_ids": ["demo-position-0010"]}
+    data["incident"]["type"] = "model_anomaly"
+    data["incident"]["details"] = {"observation_id": observation["observation_id"]}
+    data["observations"] = [observation]
+    snap = FrozenSnapshot(data)
+
+    class Client:
+        def __init__(self):
+            self.deadlines = []
+
+        async def chat(self, messages, tools, deadline, response_schema=None):
+            self.deadlines.append(deadline)
+            if len(self.deadlines) == 1:
+                assert response_schema is None and tools[0]["function"]["name"] == "get_incident"
+                return {"role": "assistant", "content": "", "tool_calls": [tool_call()]}
+            assert len(self.deadlines) == 2 and not tools and response_schema is not None
+            claim = response_schema["$defs"]["FactClaim"]["properties"]
+            assert claim["source"]["enum"] == ["model_observation"]
+            assert claim["id"]["enum"] == [observation["observation_id"]]
+            assert claim["field"]["enum"] == ["status", "score", "threshold"]
+            assert claim["value"]["enum"] == [observation[field] for field in ("status", "score", "threshold")]
+            assert response_schema["properties"]["facts"]["minItems"] == response_schema["properties"]["facts"]["maxItems"] == 3
+            return {"role": "assistant", "content": answer([
+                {"source": "model_observation", "id": observation["observation_id"],
+                 "field": field, "value": observation[field]} for field in ("status", "score", "threshold")])}
+
+    async def run():
+        client = Client()
+        result = await run_analysis(client, snap, AgentConfig(model="test-double"))
+        assert len(client.deadlines) == 2 and len(set(client.deadlines)) == 1
+        assert {fact["field"] for fact in result["facts"]} == {"status", "score", "threshold"}
+        assert result["evidence_event_ids"] == ["demo-position-0010"]
+        assert [item["tool"] for item in result["tool_trace"]] == ["get_incident"]
+
+    asyncio.run(run())
+
+
 @pytest.mark.parametrize("final_value,expected_code", [(None, "model_reply_invalid"), (999, "invalid_evidence")])
 def test_structured_final_cannot_bypass_validation_or_request_budget(final_value, expected_code):
     wire = []
