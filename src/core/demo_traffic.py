@@ -41,7 +41,7 @@ SCENARIO_INFO = {
     "normal": ("Три машины следуют личным маршрутам с остановками у назначения.", "Нарушений не ожидается."),
     "logistics": ("Погрузка, движение по складскому маршруту и отгрузка.", "Нарушений не ожидается."),
     "shift": ("Сначала три подтверждённых прохода через КПП, затем движение транспорта.", "Разрешённые проходы; транспорт ждёт проверки людей."),
-    "service": ("Объезд служебного транспорта по личному маршруту.", "Нарушений не ожидается."),
+    "service": ("Служебная машина объезжает энергоцентр, производство, насосную, медпункт и офис по связанным дорогам. Погрузчики стоят.", "Нарушений не ожидается."),
     "forbidden-zone": ("Машина въезжает в зону без допуска, затем выезжает.", "Въезд без допуска; возможно отклонение от личного маршрута."),
     "unauthorized-access": ("Датчик КПП фиксирует вход U4 без допуска и выход.", "Подтверждённый проход без допуска."),
     "sensor-offline": ("Источник HB-QA прекращает передачу с 5-й до 17-й секунды.", "Потеря сигнала датчика; восстановление после настоящего heartbeat."),
@@ -145,6 +145,8 @@ class DemoRunner:
         self._wake = asyncio.Event()
         self._ready = asyncio.Event()
         self.running = False
+        self.paused = False
+        self.paused_at = None
         self.scenario = None
         self.started_at = None
         self.error = None
@@ -165,10 +167,16 @@ class DemoRunner:
         self._safety_paths = {}
         self._safety_returns = {}
         self._demonstration_end = None
+        self._normal_v3_elapsed = 0.0
+        self._normal_v3_last_frame = 0.0
+        self._normal_v3_departed = False
 
     def status(self):
         return {
             "running": self.running,
+            "paused": self.paused,
+            "paused_at": self.paused_at,
+            "can_resume": self.paused and self.scenario is not None and self.error is None,
             "demonstration_complete": self._demonstration_end is not None and self.last_elapsed >= self._demonstration_end,
             "demonstration_duration_seconds": self._demonstration_end,
             "phase": "normal" if self._demonstration_end is not None and self.last_elapsed >= self._demonstration_end else "demonstration",
@@ -182,7 +190,7 @@ class DemoRunner:
             "elapsed_seconds": round(self.last_elapsed, 1),
             "update_interval_seconds": self.interval,
             "error": self.error,
-            "vehicle_states": dict(self._vehicles),
+            "vehicle_states": {key: {**value, "paused": self.paused} for key, value in self._vehicles.items()},
             "scenario_options": [{"id": key, "name": name, "description": SCENARIO_INFO[key][0], "expected_alarm": SCENARIO_INFO[key][1]} for key, name in SCENARIOS.items()],
             "scenario_description": SCENARIO_INFO.get(self.scenario, (None, None))[0],
             "expected_alarm": SCENARIO_INFO.get(self.scenario, (None, None))[1],
@@ -192,6 +200,8 @@ class DemoRunner:
     def _prepare(self, scenario):
         if scenario not in SCENARIOS:
             raise ValueError("Unsupported traffic scenario")
+        with self.service.store.lock:
+            self.service.demo_monitoring_generation += 1
         self.operations.finish_shift(self._shift_id)
         self._shift_id = None
         self._transport_elapsed = None
@@ -201,6 +211,8 @@ class DemoRunner:
         self._gate_sensor = next((sid for sid, sensor in self.service.sensors_by_id.items()
                                   if sensor["type"] == "access" and sensor.get("building_id") == "G1"), None)
         self.scenario = scenario
+        self.paused = False
+        self.paused_at = None
         self.started_at = stamp(self.service.clock())
         self.error = None
         self.event_count = self._sequence = 0
@@ -208,9 +220,15 @@ class DemoRunner:
         self._once = set()
         self._vehicles = {}
         self._journeys = {}
+        self._normal_v3_elapsed = 0.0
+        self._normal_v3_last_frame = 0.0
+        self._normal_v3_departed = False
         self._fault_route = self._fault_journey = None
         self._demonstration_end = None if scenario in ("normal", "logistics", "service") else 35.0
         self._run_id = uuid.uuid4().hex[:12]
+        self.service.demo_run_prefix = "factory-" + self._run_id + "-"
+        self.service.demo_segment_start_event_id = self.service.demo_run_prefix + "000000001"
+        self.service.demo_pause_allowances = {}
         routes = self.service.site.get("demo_routes", self.service.site.get("routes", {}))
         vehicles = [asset for asset in self.service.site["assets"] if asset["type"] == "vehicle"]
         for index, asset in enumerate(vehicles):
@@ -228,7 +246,7 @@ class DemoRunner:
                 speed, pause = (2.3 if asset["id"] == "V3" else 1.0), 4.0
             elif scenario == "service":
                 speed, pause = (1.9 if asset["id"] == "V3" else 1.2), 7.0
-            phase = pause + 1 + index * route.length / speed / 3
+            phase = 0.0 if scenario == "normal" and asset["id"] == "V3" else pause + 1 + index * route.length / speed / 3
             self._journeys[asset["id"]] = Journey(route, route.nearest_distance(destination), speed, pause, phase)
         if scenario in ("forbidden-zone", "simultaneous", "orange-zone"):
             definition = self.service.site.get("demo_fault_routes", {}).get("V1")
@@ -282,24 +300,27 @@ class DemoRunner:
                 self._safety_returns[asset_id] = Journey(journey.route, anchor, journey.speed, 0.0)
 
     async def start(self, scenario):
-        await self.stop()
+        await self.shutdown()
         try:
             self._prepare(scenario)
         except Exception as exc:
             self.error = str(exc)
             raise
+        return await self._launch(0.0)
+
+    async def _launch(self, elapsed):
         self._stop_requested.clear()
         self._wake = asyncio.Event()
         self._ready = asyncio.Event()
         self.running = True
-        self._task = asyncio.create_task(self._run(), name="factory-demo-traffic")
+        self._task = asyncio.create_task(self._run(elapsed), name="factory-demo-traffic")
         await self._ready.wait()
         if self.error:
-            await self.stop()
+            await self.shutdown()
             raise ValueError("Demo traffic could not emit its first frame: " + self.error)
         return self.status()
 
-    async def stop(self):
+    async def _halt(self):
         self._stop_requested.set()
         self._wake.set()
         # Await the worker frame too: after this returns no late event can leak.
@@ -307,16 +328,45 @@ class DemoRunner:
             await self._task
             self._task = None
         self.running = False
+
+    async def stop(self):
+        """Pause a complete measured frame without ending the scenario or shift."""
+        await self._halt()
+        if self.scenario is not None and self.error is None:
+            self.paused = True
+            self.paused_at = self.paused_at or stamp(self.service.clock())
+            self.service.pause_demo_monitoring("factory-" + self._run_id + "-")
+        return self.status()
+
+    async def resume(self):
+        if not self.paused or self.scenario is None or self.error:
+            raise ValueError("Нет приостановленного сценария для продолжения")
+        elapsed = self.last_elapsed
+        self.paused = False
+        self.paused_at = None
+        self.service.demo_segment_start_event_id = self.service.demo_run_prefix + f"{self._sequence + 1:09d}"
+        result = await self._launch(elapsed)
+        self.service.resume_demo_monitoring()
+        return result
+
+    async def shutdown(self):
+        """Finish only for an explicit new start, source failure or server shutdown."""
+        await self._halt()
+        self.paused = False
+        self.paused_at = None
+        self.service.resume_demo_monitoring()
         self.operations.finish_shift(self._shift_id, self.error)
         return self.status()
 
-    async def _run(self):
+    async def _run(self, offset=0.0):
         epoch = self.monotonic()
         next_frame = epoch
+        first_frame = True
         try:
             while not self._stop_requested.is_set():
-                elapsed = max(0.0, self.monotonic() - epoch)
+                elapsed = offset if first_frame else offset + max(0.0, self.monotonic() - epoch)
                 await asyncio.to_thread(self.emit_frame, elapsed)
+                first_frame = False
                 self._ready.set()
                 next_frame += self.interval
                 delay = max(0.0, next_frame - self.monotonic())
@@ -337,8 +387,7 @@ class DemoRunner:
             self._ready.set()
 
     def _emit(self, sensor_id, kind, payload):
-        if self._stop_requested.is_set():
-            return
+        # Pause awaits the whole in-flight frame; no partial or late frame leaks.
         self._sequence += 1
         event = {"event_id": f"factory-{self._run_id}-{self._sequence:09d}",
                  "event_time": stamp(self.service.clock()), "sensor_id": sensor_id,
@@ -347,8 +396,53 @@ class DemoRunner:
         self.event_count += 1
         return response
 
+    def _normal_service_departure_safe(self, elapsed):
+        """Plan only built-in NORMAL traffic; safety still checks actual Events.
+
+        V3 waits at its off-road-loop service approach before a circuit. A small
+        conservative clearance covers interpolation between the 1 Hz samples.
+        """
+        from src.core.vehicle_safety import swept_distance
+        journey = self._journeys["V3"]
+        future = 0.0
+        while future < journey.period:
+            finish = min(future + 0.5, journey.period)
+            start, end = journey.position(future), journey.position(finish)
+            for asset_id in ("V1", "V2"):
+                peer = self._journeys.get(asset_id)
+                if not peer:
+                    continue
+                peer_start, peer_end = peer.position(elapsed + future), peer.position(elapsed + finish)
+                if min(math.dist(start, peer_start), math.dist(end, peer_end)) <= 3.0:
+                    return False
+                separation = swept_distance((*start, 0.0), (*end, finish - future),
+                                            (*peer_start, 0.0), (*peer_end, finish - future))
+                if separation is not None and separation <= 3.0:
+                    return False
+            future = finish
+        return True
+
+    def _normal_service_position(self, elapsed):
+        journey = self._journeys["V3"]
+        delta = max(0.0, elapsed - self._normal_v3_last_frame)
+        self._normal_v3_last_frame = elapsed
+        if self._normal_v3_departed:
+            self._normal_v3_elapsed += delta
+            if self._normal_v3_elapsed >= journey.period:
+                self._normal_v3_elapsed = 0.0
+                self._normal_v3_departed = False
+        if not self._normal_v3_departed:
+            if not self._normal_service_departure_safe(elapsed):
+                return journey.position(0.0), "yielding"
+            self._normal_v3_departed = True
+        return journey.position(self._normal_v3_elapsed), journey.state(self._normal_v3_elapsed)
+
     def _position(self, asset_id, elapsed):
         journey = self._journeys[asset_id]
+        if self.scenario == "normal" and asset_id == "V3":
+            return self._normal_service_position(elapsed)
+        if self.scenario == "service" and asset_id != "V3":
+            return {"V1": (3, 16), "V2": (96, 60)}.get(asset_id, journey.position(0)), "parked"
         path = self._safety_paths.get(asset_id)
         if path and elapsed >= path[0][0]:
             if elapsed >= path[-1][0]:
@@ -372,6 +466,8 @@ class DemoRunner:
 
     def emit_frame(self, elapsed):
         """Emit one measured frame; demonstration faults occur once per explicit start."""
+        if self._stop_requested.is_set() or self.paused:
+            return
         self.last_elapsed = max(0.0, elapsed)
         if self.scenario == "shift":
             for index, employee in enumerate(self._shift_employees):
