@@ -21,21 +21,23 @@ test("failed stale job describes changed input without presenting an outdated re
 function harness(handler=async()=>({})){ 
   const nodes=new Map();
   class Element{
-    constructor(id){this.id=id;this.value="";this.checked=false;this.hidden=false;this.disabled=false;this.dataset={};this.style={};this.textContent="";this.options=[];this.writes=0;this._html="";}
+    constructor(id){this.id=id;this.value="";this.checked=false;this.hidden=false;this.disabled=false;this.dataset={};this.style={};this.textContent="";this.options=[];this.writes=0;this._html="";this.scrollTop=0;this.open=true;this.attributes={};this.classes=new Set();this.classList={toggle:(name,on)=>on?this.classes.add(name):this.classes.delete(name)};}
     get innerHTML(){return this._html;}
     set innerHTML(value){
       this._html=value;this.writes++;
       for(const match of value.matchAll(/id="([^"]+)"/g))nodes.set(match[1],new Element(match[1]));
       if(this.id==="recipient")this.options=[...value.matchAll(/<option value="([^"]+)">([^<]*)<\/option>/g)].map(m=>({value:m[1],textContent:m[2],disabled:false}));
     }
-    querySelectorAll(){return [];}
+    querySelectorAll(selector){return selector==="option"?this.options:[];}
+    setAttribute(name,value){this.attributes[name]=value;}
   }
-  const document={getElementById(id){if(!nodes.has(id))nodes.set(id,new Element(id));return nodes.get(id);}};
+  const document={getElementById(id){if(!nodes.has(id))nodes.set(id,new Element(id));return nodes.get(id);},querySelector(selector){return this.getElementById(selector);},body:new Element("body")};
   let fetchHandler=handler;
   const calls=[];
   const context=vm.createContext({document,crypto:webcrypto,Date,URLSearchParams,URL,AbortController,setTimeout:()=>1,clearTimeout:()=>{},setInterval:()=>1,fetch:async(url,options)=>{calls.push({url,options,body:options.body?JSON.parse(options.body):undefined});const value=await fetchHandler(url,options);return value?.__response?value:{ok:true,status:200,json:async()=>value};}});
-  vm.runInContext(source+"\nglobalThis.ui={S,api,command,applyDetails,renderDetails,renderJob,startAnalysis,notifications,sendPresence,switchOperator,recoveryAllowed,renderIncidents,renderSummary,compareIncidents,showAsset,initialOperator,focusSector,selectIncident,showSelectedOnMap,entityName,placeName,clearIncidentLog,analyseTrends,saveNote};",context);
-  context.ui.S.site={dispatch_config:{position_stale_seconds:5},site_areas:[]};
+  vm.runInContext(source+"\nglobalThis.ui={S,api,command,applyDetails,renderDetails,renderJob,startAnalysis,notifications,sendPresence,switchOperator,renderIncidents,updatePeopleTab,switchIncidentTab,refresh,configureWorkspace,compareIncidents,showAsset,initialOperator,focusSector,selectIncident,showSelectedOnMap,entityName,placeName,clearIncidents,hideSelected,saveNote};",context);
+  for(const id of ["filter-state","filter-type"])document.getElementById(id).value="all";document.getElementById("incident-sort").value="priority";
+  context.ui.S.site={dispatch_config:{position_stale_seconds:5},site_areas:[],assets:[],sensors:[],buildings:[]};
   context.ui.S.map={fitBounds(){}};
   context.ui.S.profiles=[{operator_id:"dispatcher-1",name:"Склады",sector_id:"logistics",operator_ready:true},{operator_id:"dispatcher-2",name:"Цех",sector_id:"production",operator_ready:true},{operator_id:"dispatcher-3",name:"Координатор",sector_id:"coordination",operator_ready:true}];
   return {setConfirm(fn){context.confirm=fn;},ui:context.ui,$:document.getElementById,calls,setFetch(fn){fetchHandler=fn;}};
@@ -54,15 +56,13 @@ function readableJob(extra={}){
       model_answer:{recommendations:["Непроверенное требование объявить пожар."]}}},...extra};
 }
 
-test("readable analysis hides raw facts and model prose inside closed technical disclosure",async()=>{
+test("readable analysis omits raw facts and unverified model prose from dispatcher UI",async()=>{
   const h=harness(async()=>readableJob());h.ui.S.selected="I1";h.ui.S.job="J1";
   await h.ui.renderJob();const html=h.$("analysis").innerHTML,[main,technical]=html.split("<details");
   assert.match(main,/Погрузчик 1/);assert.match(main,/Закрытая погрузочная зона/);
   assert.match(main,/Состояние на момент анализа/);assert.match(main,/Актуальность результата/);
   assert.match(main,/Уточните допуск/);assert.doesNotMatch(main,/long-event-id|payload.y|пожар/);
-  assert.match(technical,/Технические данные/);assert.match(technical,/long-event-id-123/);
-  assert.match(technical,/payload.y/);assert.match(technical,/27/);assert.match(technical,/пожар/);
-  assert.doesNotMatch(technical.split(">")[0],/\bopen\b/);
+  assert.equal(technical,undefined);assert.doesNotMatch(html,/Технические данные|payload.y|long-event-id-123|Непроверенное требование/);
 });
 
 test("stale analysis keeps captured state and names even when current card disagrees",async()=>{
@@ -91,7 +91,7 @@ test("empty observations do not create a filler section",async()=>{
   assert.doesNotMatch(h.$("analysis").innerHTML.split("<details")[0],/Наблюдения|привязку/);
 });
 
-test("MLP evaluations stay in technical data and main card answers dispatcher questions",async()=>{
+test("MLP evaluations remain server-side and main card answers dispatcher questions",async()=>{
   const job=readableJob();job.result.presentation.title="Обнаружено необычное движение";
   job.result.presentation.established="По проверенным данным обнаружено необычное движение объекта.";
   job.result.presentation.unknown="Причина движения неизвестна. Наличие аварии не установлено.";
@@ -102,7 +102,7 @@ test("MLP evaluations stay in technical data and main card answers dispatcher qu
   for(const question of ["Что установила система","Почему нужно обратить внимание","Что ещё неизвестно","Что сделать диспетчеру"])assert.ok(main.includes(question));
   const withoutTime=main.replace(/<p class="muted">Данные на:[\s\S]*?<\/p>/g,"");
   assert.doesNotMatch(withoutTime,/\d+[.,]\d+|≈|%|payload|MLP|Qwen|JSON|порог|оценк|модельный|скор/i);
-  assert.match(technical,/0.9998759021886874/);assert.match(technical,/0.15122588236235446/);
+  assert.equal(technical,undefined);assert.doesNotMatch(h.$("analysis").innerHTML,/0.9998759021886874|0.15122588236235446/);
 });
 
 test("old numeric presentation is not displayed as a current plain conclusion",async()=>{
@@ -110,7 +110,7 @@ test("old numeric presentation is not displayed as a current plain conclusion",a
   const h=harness(async()=>job);h.ui.S.selected="I1";h.ui.S.job="J1";await h.ui.renderJob();
   const [main,technical]=h.$("analysis").innerHTML.split("<details");
   assert.match(main,/Запросите новый анализ/);assert.doesNotMatch(main,/MLP|score|threshold|0.99/);
-  assert.match(technical,/threshold/);
+  assert.equal(technical,undefined);assert.doesNotMatch(h.$("analysis").innerHTML,/threshold|0.99/);
 });
 
 test("missing presentation and missing snapshot time have safe explicit fallbacks",async()=>{
@@ -131,7 +131,7 @@ test("MLP display separates suspicion from cause and escapes all output",async()
   const h=harness(async()=>job);h.ui.S.selected="I1";h.ui.S.job="J1";await h.ui.renderJob();
   const html=h.$("analysis").innerHTML;
   assert.match(html,/Необычное движение/);assert.match(html,/Причина движения не подтверждена/);
-  assert.doesNotMatch(html,/<script>|<img /);assert.match(html,/&lt;script&gt;/);assert.match(html,/&lt;img/);
+  assert.doesNotMatch(html,/<script>|<img /);assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/&lt;img/);
 });
 
 test("PATCH uses the visible revision and never fetches a newer revision before acting",async()=>{
@@ -154,7 +154,7 @@ test("polling changes facts without replacing the reason or recipient elements",
   const reason=h.$("reason"),recipient=h.$("recipient"),shell=h.$("details").writes;
   reason.value="Не терять ввод";recipient.value="dispatcher-2";
   h.ui.applyDetails(incident({assigned_operator_id:"dispatcher-1",dispatch_revision:8,as_of:"new timestamp",evidence_event_ids:["EV2"]}));
-  assert.equal(h.$("reason"),reason);assert.equal(h.$("recipient"),recipient);assert.equal(reason.value,"Не терять ввод");assert.equal(recipient.value,"dispatcher-2");assert.equal(h.$("details").writes,shell);assert.match(h.$("detail-technical").innerHTML,/ревизия 8/);
+  assert.equal(h.$("reason"),reason);assert.equal(h.$("recipient"),recipient);assert.equal(reason.value,"Не терять ввод");assert.equal(recipient.value,"dispatcher-2");assert.equal(h.$("details").writes,shell);assert.equal(h.ui.S.detail.dispatch_revision,8);assert.deepEqual(Array.from(h.ui.S.detail.evidence_event_ids),["EV2"]);assert.doesNotMatch(h.$("details").innerHTML,/detail-technical|detail-history|response-plan/);
 });
 
 test("late incident requests cannot replace the newly selected card",async()=>{
@@ -198,7 +198,7 @@ test("all initial notification pages are drained quietly before live notificatio
   await h.ui.notifications(true);
   assert.equal(h.calls.length,3);assert.equal(h.ui.S.cursor,250);assert.equal(sounds,0);assert.equal(h.$("notifications").textContent,"");
   h.setFetch(async()=>({notifications:[{seq:251,kind:"transfer_requested",incident_id:"I2"}],next_seq:251}));await h.ui.notifications();
-  assert.equal(sounds,1);assert.match(h.$("notifications").textContent,/I2/);
+  assert.equal(sounds,0);assert.equal(h.ui.S.noticeRows.at(-1).incident_id,"I2");assert.equal(h.ui.S.cursor,251);
 });
 
 test("old profile notification replies cannot advance the new profile cursor",async()=>{
@@ -207,36 +207,42 @@ test("old profile notification replies cannot advance the new profile cursor",as
   assert.equal(h.ui.S.cursor,0);
 });
 
-test("working incidents sort by severity, escalation, unclaimed, then oldest",()=>{
+test("working incidents sort by severity, unclaimed then oldest regardless of legacy escalation",()=>{
   const h=harness(),rows=[incident({incident_id:"closed",status:"closed"}),incident({incident_id:"warning",severity:"warning",escalation_level:5}),incident({incident_id:"critical-new",detected_at:"2026-10-07T10:00:00Z"}),incident({incident_id:"critical-old"}),incident({incident_id:"escalated",escalation_level:1})];
-  rows.sort(h.ui.compareIncidents);assert.deepEqual(rows.map(i=>i.incident_id),["escalated","critical-old","critical-new","warning","closed"]);
+  rows.sort(h.ui.compareIncidents);assert.deepEqual(rows.map(i=>i.incident_id),["critical-old","escalated","critical-new","warning","closed"]);
 });
 
-test("dismissed signals remain inspectable in history and show the rejection reason",()=>{
-  const h=harness(),dismissed=incident({type:"model_anomaly",disposition:"rejected_model_signal",disposition_reason:"Штатная операция",reviewed_at:"2026-10-07T10:00:00Z"});
-  h.ui.S.incidents=[dismissed];h.ui.renderIncidents();assert.doesNotMatch(h.$("incidents").innerHTML,/data-id=/);
-  h.$("history-toggle").checked=true;h.ui.renderIncidents();assert.match(h.$("incidents").innerHTML,/Подозрение отклонено/);
-  h.ui.S.selected="I1";h.ui.applyDetails(dismissed);assert.match(h.$("detail-history").innerHTML,/Штатная операция/);assert.match(h.$("response-plan").innerHTML,/Служба безопасности/);assert.match(h.$("response-plan").innerHTML,/Проверить источник/);
+test("dismissed and closed incidents are absent from the workspace and selection closes",()=>{
+  const h=harness(),dismissed=incident({type:"model_anomaly",disposition:"rejected_model_signal",disposition_reason:"Штатная операция"});
+  h.ui.S.incidents=[dismissed,incident({incident_id:"I2",status:"closed"}),incident({incident_id:"I3"})];h.ui.renderIncidents();
+  assert.doesNotMatch(h.$("incidents").innerHTML,/data-id="I[12]"/);assert.match(h.$("incidents").innerHTML,/data-id="I3"/);
+  h.ui.S.selected="I1";h.ui.applyDetails(dismissed);assert.equal(h.ui.S.selected,null);assert.equal(h.$("selected-panel").hidden,true);
+  assert.equal(dismissed.disposition_reason,"Штатная операция");
 });
 
-test("summary displays escalation and unknown place counts",()=>{
-  const h=harness();h.ui.S.summary={sectors:[{sector_id:"logistics",active_count:2,unclaimed_count:1,escalated_count:3,operator_ready:false,operator_online:true}],unknown_count:4};h.ui.renderSummary();
-  assert.match(h.$("summary").innerHTML,/3 эскалировано/);assert.match(h.$("summary").innerHTML,/не определено: <strong>4/);assert.match(h.$("summary").innerHTML,/оператор отсутствует/);
+
+test("admin workspace has no dispatcher controls and no duplicate response plan or summary",()=>{
+  const h=harness();h.ui.S.role="admin";h.ui.S.operator=null;h.ui.configureWorkspace();h.ui.S.selected="I1";h.ui.applyDetails(incident());
+  assert.equal(h.$(".operator").hidden,true);assert.equal(h.$(".activity-bar").hidden,true);assert.equal(h.$("my-sector").hidden,true);
+  assert.equal(h.$("response-controls").hidden,true);assert.equal(h.$("recipient-wrap").hidden,true);assert.equal(h.$("analysis").hidden,true);
+  assert.match(h.$("detail-actions").innerHTML,/show-on-map/);assert.doesNotMatch(h.$("detail-actions").innerHTML,/id="(?:claim|close|transfer|analyse|inspect)"/);
+  const index=fs.readFileSync(path.join(__dirname,"../src/interface/web/index.html"),"utf8");assert.doesNotMatch(index,/id="summary"|id="response-plan"|id="sound"|history-toggle/);
 });
+
 
 test("unconnected agent is shown honestly and cannot submit analysis",async()=>{
   const h=harness();h.ui.S.agentAvailable=false;h.ui.S.selected="I1";h.ui.applyDetails(incident());
-  assert.match(h.$("detail-actions").innerHTML,/ИИ ещё не подключён/);assert.match(h.$("analysis").innerHTML,/пока не подключён/);
+  assert.match(h.$("detail-actions").innerHTML,/ИИ ещё не подключён/);assert.match(h.$("analysis").innerHTML,/пока недоступен/);
   await h.ui.startAnalysis();assert.equal(h.calls.length,0);
 });
 
-test("only first ready reserve can request recovery of an unavailable owner",()=>{
+test("unavailable owner never enables removed reserve reassignment or escalation",async()=>{
   const h=harness(),i=incident({assigned_operator_id:"dispatcher-1"});h.ui.S.profiles[0].operator_ready=false;
-  h.ui.S.operator="dispatcher-2";assert.equal(h.ui.recoveryAllowed(i),false);
-  h.ui.S.operator="dispatcher-3";assert.equal(h.ui.recoveryAllowed(i),true);
-  h.ui.S.selected="I1";h.ui.applyDetails(i);assert.match(h.$("detail-actions").innerHTML,/id="reassign"/);
-  h.ui.S.profiles[0].operator_ready=true;assert.equal(h.ui.recoveryAllowed(i),false);
+  h.ui.S.operator="dispatcher-3";h.ui.S.selected="I1";h.ui.applyDetails(i);
+  assert.doesNotMatch(h.$("detail-actions").innerHTML,/id="(?:reassign|claim|transfer|contact|inspect|close)"/);
+  assert.match(h.$("detail-actions").innerHTML,/id="show-on-map"/);assert.equal(h.calls.length,0);
 });
+
 
 test("asset click reads current coordinates and current freshness",()=>{
   const h=harness();h.ui.S.assets=[{asset_id:"V1",x:1,y:2,last_seen:new Date().toISOString()}];h.ui.showAsset("V1");assert.doesNotMatch(h.$("asset-info").textContent,/не подтверждено/);
@@ -279,22 +285,24 @@ test("journal combines type, owner and text filters using shared human asset nam
 });
 
 
-test("empty log refuses repeat analysis without any request",async()=>{
- const h=harness();await assert.rejects(h.ui.analyseTrends(),/В журнале нет происшествий/);assert.equal(h.calls.length,0);
+test("no selected incident cannot submit analysis",async()=>{
+ const h=harness();await h.ui.startAnalysis();assert.equal(h.calls.length,0);
 });
-test("cancelled clear preserves active log and never sends deletion",async()=>{
- const h=harness(async()=>({count:2,token:"snapshot",warning:"Данные будут потеряны. ИИ больше не сможет анализировать эти случаи."}));
- h.ui.S.auth={user:{role:"admin"}};h.ui.S.incidents=[incident()];let warning;
- h.setConfirm(text=>{warning=text;return false;});await h.ui.clearIncidentLog();
- assert.match(warning,/включая активные/);assert.match(warning,/ИИ больше не сможет/);assert.equal(h.calls.length,1);assert.equal(h.ui.S.incidents.length,1);
+
+
+test("archive failure preserves active log and selection",async()=>{
+ const h=harness(async()=>errorResponse(409,{code:"conflict",message:"Не удалось очистить"}));h.ui.S.incidents=[incident()];h.ui.S.selected="I1";
+ await h.ui.clearIncidents();assert.equal(h.ui.S.incidents.length,1);assert.equal(h.ui.S.selected,"I1");assert.equal(h.calls.length,1);
+ assert.match(h.$("error").textContent,/Не удалось очистить/);assert.equal(h.$("clear-incidents").disabled,false);
 });
-test("clear requires admin and confirmation; conflict preserves incident",async()=>{
- const h=harness();await assert.rejects(h.ui.clearIncidentLog(),/администратор/);assert.equal(h.calls.length,0);
- h.ui.S.auth={user:{role:"admin"}};h.ui.S.incidents=[incident()];
- h.setFetch(async(url)=>url.endsWith("preview")?{count:1,token:"token",warning:"?включая активные??"}:errorResponse(409,{code:"log_changed",message:"Журнал изменился"}));
- h.setConfirm(()=>true);await assert.rejects(h.ui.clearIncidentLog(),/Журнал изменился/);
- assert.equal(h.ui.S.incidents.length,1);assert.deepEqual(h.calls[1].body,{confirmation:"DELETE_INCIDENT_LOG",token:"token"});
+
+
+test("admin is a read-only incident observer even if a command is called directly",async()=>{
+ const h=harness();h.ui.S.role="admin";h.ui.S.selected="I1";h.ui.applyDetails(incident());
+ await assert.rejects(h.ui.command("claim"),/Администратор наблюдает/);await h.ui.startAnalysis();assert.equal(h.calls.length,0);
 });
+
+
 test("empty note is not sent; notes and history are escaped in summary",async()=>{
  const h=harness();await assert.rejects(h.ui.saveNote(),/Введите заметку/);assert.equal(h.calls.length,0);
  const j=readableJob();j.result.presentation.history_summary="Похожие случаи найдены";
@@ -303,10 +311,31 @@ test("empty note is not sent; notes and history are escaped in summary",async()=
  const main=h.$("analysis").innerHTML.split("<details")[0];assert.match(main,/Похожие случаи/);assert.match(main,/Журнал изменился?/);assert.doesNotMatch(main,/<script>/);assert.match(main,/&lt;script&gt;/);
 });
 
-test("confirmed deletion clears visible results and invalidates old polling replies",async()=>{
- const h=harness(async url=>url.endsWith("preview")?{count:1,token:"current",warning:"Будут удалены активные происшествия и анализы ИИ."}:{deleted:1});
- h.ui.S.auth={user:{role:"admin"}};h.ui.S.busy=true;h.ui.S.selected="I1";h.ui.S.job="J1";h.ui.S.incidents=[incident()];
- h.setConfirm(()=>true);const context=h.ui.S.context;await h.ui.clearIncidentLog();
- assert.equal(h.ui.S.incidents.length,0);assert.equal(h.ui.S.job,null);assert.equal(h.ui.S.selected,null);assert.equal(h.ui.S.context,context+1);
- assert.equal(h.calls[1].options.method,"POST");
+test("archiving clears visible results and invalidates polling without deleting raw logs",async()=>{
+ const h=harness(async()=>({archived:1}));h.ui.S.busy=true;h.ui.S.selected="I1";h.ui.S.job="J1";h.ui.S.jobStatus="running";h.ui.S.incidents=[incident()];
+ const context=h.ui.S.context;await h.ui.clearIncidents();assert.equal(h.ui.S.incidents.length,0);assert.equal(h.ui.S.job,null);assert.equal(h.ui.S.jobStatus,null);assert.equal(h.ui.S.selected,null);
+ assert.equal(h.ui.S.context,context+1);assert.equal(h.calls.length,1);assert.equal(h.calls[0].url,"/api/incidents/clear");assert.equal(h.calls[0].options.method,"POST");assert.deepEqual(h.calls[0].body,{});
+ assert.doesNotMatch(h.calls[0].url,/incident-log|delete/);
+});
+
+
+// Regression checks for the v8 audit fixes; pending a run after coordinator approval.
+test("refresh switches away from a disappearing people tab and preserves both filter sets",async()=>{
+  let objects=[incident()];const h=harness(async url=>url.includes("/assets")?{assets:[]}:url.includes("/sensors")?{sensors:[]}:url.includes("/incidents?")?{incidents:objects}:url.includes("/operator-profiles")?{operator_profiles:[]}:url.includes("/health")?{agent:"ready",ml:"ready"}:url.includes("/dispatch-notifications")?{notifications:[],next_seq:0}:{});
+  h.ui.S.incidents=[...objects,incident({incident_id:"P1",employee_id:"U1",type:"unauthorized_access"})];
+  h.$("search-incidents").value="V1";h.$("incident-sort").value="newest";h.ui.switchIncidentTab("people");
+  h.$("search-incidents").value="U1";h.$("incident-sort").value="oldest";h.$("incidents").scrollTop=42;h.ui.S.selected="P1";
+  await h.ui.refresh();assert.equal(h.ui.S.tab,"objects");assert.equal(h.$("people-tab").hidden,true);assert.equal(h.ui.S.selected,null);
+  assert.equal(h.$("search-incidents").value,"V1");assert.equal(h.$("incident-sort").value,"newest");assert.match(h.$("incidents").innerHTML,/data-id="I1"/);
+  assert.equal(h.ui.S.tabFilters.people.query,"U1");assert.equal(h.ui.S.tabFilters.people.sort,"oldest");assert.equal(h.ui.S.tabFilters.people.scroll,42);
+});
+test("queued and running analysis show actual elapsed time without a made-up percentage",async()=>{
+  const now=Date.now();let job={job_id:"J1",incident_id:"I1",status:"queued",queued_at:new Date(now-30000).toISOString()};
+  const h=harness(async()=>job);h.ui.S.selected="I1";h.ui.applyDetails(incident());h.ui.S.job="J1";
+  await h.ui.renderJob();assert.match(h.$("analysis").innerHTML,/Запрос в очереди/);assert.match(h.$("analysis").innerHTML,/Ожидание: 30 сек/);
+  assert.equal(h.$("analysis").attributes["aria-busy"],"true");assert.match(h.$("detail-actions").innerHTML,/id="analyse" disabled/);
+  const count=h.calls.length;await h.ui.startAnalysis();assert.equal(h.calls.length,count);
+  job={...job,status:"running",started_at:new Date(now-12000).toISOString()};await h.ui.renderJob();
+  assert.match(h.$("analysis").innerHTML,/Анализ выполняется: 12 сек/);assert.match(h.$("analysis").innerHTML,/Время завершения пока неизвестно/);assert.doesNotMatch(h.$("analysis").innerHTML,/\d+%|progress/);
+  job=readableJob();await h.ui.renderJob();assert.equal(h.$("analysis").attributes["aria-busy"],"false");assert.doesNotMatch(h.$("analysis").innerHTML,/analysis-wait-spinner/);
 });

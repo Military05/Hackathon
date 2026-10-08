@@ -212,7 +212,7 @@ test("route deviation is warned on the affected vehicle and HH:MM signals avoid 
   const h=harness(),incident={type:"route_deviation",asset_id:"V1",status:"open",condition_active:true};
   h.instance.update({assets:[freshAsset],incidents:[incident]});
   const vehicle=h.layers.find(l=>l.options.icon?.className?.includes("vehicle-marker"));assert.match(vehicle.options.icon.html,/enterprise-route-warning/);
-  const route=h.layers.find(l=>l.options.pane==="enterpriseRoutes");assert.equal(route.options.color,"#ff9696");
+  const route=h.layers.find(l=>l.options.pane==="enterpriseRoutes");assert.equal(route.options.color,"#79baff");assert.match(vehicle.options.icon.className,/alarm.*route-deviation/);
   assert.match(api.signalTime("2026-10-07T10:12:13Z"),/^\d{2}:\d{2}$/);
   assert.doesNotMatch(vehicle.tooltip,/сек\. назад/);assert.match(vehicle.tooltip,/только что/);
 });

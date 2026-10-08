@@ -26,7 +26,7 @@ from src.agent.loop import run_analysis
 from src.agent.providers import FrozenSnapshot
 from src.agent.result import FactClaim, validate_result
 from src.agent.tools import ToolSession
-from src.core.main import create_app
+from tests.runtime.isolated_app import create_app
 from src.core.service import Service, stamp
 from src.ml.dataset import episode_windows, read_episodes
 from src.ml.movement import MovementModel

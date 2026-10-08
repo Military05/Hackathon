@@ -1,11 +1,12 @@
-"""Adapter for the v5 scheduler; inference uses the original movement-v1 Pipeline."""
+"""Bounded movement-v2 history adapter; one trained CPU Pipeline at startup."""
 import json
 import hashlib
 import os
 import threading
 from pathlib import Path
 
-from .features import iso, parse_time
+from datetime import timedelta
+from .features import FEATURE_VERSION, WINDOW_SECONDS, iso, parse_time
 from .inference import MovementModel as PipelineModel
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -28,7 +29,7 @@ class MovementModel(PipelineModel):
 
     def health(self):
         return {"status": self.state, "model_version": self.metadata.get("model_version"),
-                "feature_version": "movement-v1", "error": self.error}
+                "feature_version": FEATURE_VERSION, "error": self.error}
 
     def evaluate(self, asset_id, events, window_end):
         end = parse_time(window_end)
@@ -46,4 +47,8 @@ class MovementModel(PipelineModel):
                         previous = json.loads(row[0])
                         if parse_time(previous["window_end"]) >= end:
                             return previous
+            if self.service and self.state == "ready":
+                # Scheduler's public API still supplies 10s; read bounded measured
+                # context through the existing store API, without changing Events.
+                events = self.service.event_history(asset_id, iso(end - timedelta(seconds=WINDOW_SECONDS)), iso(end), 100)
             return self.observe(events, asset_id, iso(end))

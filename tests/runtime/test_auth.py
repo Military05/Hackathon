@@ -9,7 +9,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from src.core.auth import COOKIE_NAME, AuthManager, PASSWORD_ITERATIONS, password_hash, password_matches
-from src.core.main import create_app
+from tests.runtime.isolated_app import ADMIN_PASSWORD, create_app
 from src.core.service import stamp
 from src.core.service import ApiError
 
@@ -21,7 +21,11 @@ class AuthAcceptance(unittest.TestCase):
         self.env.start()
         self.app = create_app(db_path=Path(self.temp.name) / "dispatch.db", enable_scheduler=False)
         self.auth = self.app.state.auth
-        self.admin = self.auth.create_user("admin", "Администратор", "Admin-password-2026", role="admin", status="active")
+        admins = [user for user in self.auth.users() if user["role"] == "admin"]
+        self.assertEqual(len(admins), 1)
+        self.admin = admins[0]
+        self.assertEqual(self.admin["username"], "admin")
+        self.assertIsNone(self.admin["operator_id"])
         self.dispatcher = self.auth.create_user("dispatcher.one", "Диспетчер 1", "Dispatcher-password-2026", operator_id="dispatcher-1", status="active")
         self.client = self.new_client()
         self.client.__enter__()
@@ -39,7 +43,7 @@ class AuthAcceptance(unittest.TestCase):
     def login(self, client=None, admin=False):
         client = client or self.client
         response = client.post("/api/auth/login", json={"username": "admin" if admin else "dispatcher.one",
-                               "password": "Admin-password-2026" if admin else "Dispatcher-password-2026"})
+                               "password": ADMIN_PASSWORD if admin else "Dispatcher-password-2026"})
         self.assertEqual(response.status_code, 200, response.text)
         return {"X-CSRF-Token": response.json()["csrf_token"]}, response
 
@@ -94,6 +98,7 @@ class AuthAcceptance(unittest.TestCase):
     def test_duplicate_username_and_registration_cannot_request_admin(self):
         response = self.client.post("/api/auth/register", json={"username": "ADMIN", "name": "Новый", "password": "New-password-2026"})
         self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["code"], "single_administrator")
         response = self.client.post("/api/auth/register", json={"username": "privileged", "name": "Новый", "password": "New-password-2026", "role": "admin"})
         self.assertEqual(response.status_code, 422)
 
@@ -143,9 +148,9 @@ class AuthAcceptance(unittest.TestCase):
         self.assertEqual(self.client.get("/api/auth/me").json()["user"]["id"], self.admin["id"])
         matching = {**headers, "X-Expected-User": self.admin["id"]}
         self.assertEqual(self.client.get("/api/assets", headers=matching).status_code, 200)
-        accepted = self.client.post("/api/operator-presence", json=body, headers=matching)
-        self.assertEqual(accepted.status_code, 200, accepted.text)
-        self.assertEqual(accepted.json()["operator_id"], "dispatcher-3")
+        forbidden = self.client.post("/api/operator-presence", json=body, headers=matching)
+        self.assertEqual(forbidden.status_code, 403, forbidden.text)
+        self.assertIsNone(self.client.get("/api/auth/me").json()["user"]["operator_id"])
         switch = self.client.post("/api/auth/login", json={"username": "dispatcher.one", "password": "Dispatcher-password-2026"},
                                   headers={"X-Expected-User": self.admin["id"]})
         self.assertEqual(switch.status_code, 200, switch.text)
@@ -168,7 +173,7 @@ class AuthAcceptance(unittest.TestCase):
         self.assertEqual(self.client.post("/api/operator-presence", json=body, headers={**headers, "Origin": "https://evil.example"}).status_code, 403)
         self.assertEqual(self.client.post("/api/operator-presence", json=body, headers={**headers, "Origin": "http://127.0.0.1:8000"}).status_code, 200)
         with self.new_client() as other:
-            response = other.post("/api/auth/login", json={"username": "admin", "password": "Admin-password-2026"}, headers={"Origin": "https://evil.example"})
+            response = other.post("/api/auth/login", json={"username": "admin", "password": ADMIN_PASSWORD}, headers={"Origin": "https://evil.example"})
             self.assertEqual(response.status_code, 403)
 
     def test_failed_login_and_signup_limits_are_enforced(self):
@@ -223,7 +228,7 @@ class AuthAcceptance(unittest.TestCase):
     def test_remote_plaintext_rejected_and_https_sets_secure_cookie(self):
         with self.new_client(remote=True) as remote:
             self.assertEqual(remote.get("/api/auth/status").status_code, 200)
-            response = remote.post("/api/auth/login", json={"username": "admin", "password": "Admin-password-2026"},
+            response = remote.post("/api/auth/login", json={"username": "admin", "password": ADMIN_PASSWORD},
                                    headers={"X-Forwarded-Proto": "https", "X-Forwarded-For": "127.0.0.1"})
             self.assertEqual(response.status_code, 403)
             self.assertEqual(response.json()["code"], "encrypted_transport_required")
@@ -240,12 +245,12 @@ class AuthAcceptance(unittest.TestCase):
         audit = self.client.get("/api/admin/audit")
         self.assertEqual(audit.status_code, 200)
         for text in (response.text, audit.text):
-            for secret in ("password_hash", "Admin-password-2026", self.client.cookies.get(COOKIE_NAME), login.json()["csrf_token"]):
+            for secret in ("password_hash", ADMIN_PASSWORD, self.client.cookies.get(COOKIE_NAME), login.json()["csrf_token"]):
                 self.assertNotIn(secret, text)
         actions = {item["action"] for item in audit.json()["items"]}
         self.assertIn("login_success", actions)
         self.assertIn("account_created", actions)
-        self.assertEqual(self.client.patch("/api/admin/users/" + self.admin["id"], json={"status": "blocked"}, headers=headers).status_code, 409)
+        self.assertEqual(self.client.patch("/api/admin/users/" + self.admin["id"], json={"status": "blocked"}, headers=headers).status_code, 403)
 
     def test_security_headers_and_explicit_test_mode(self):
         response = self.client.get("/")

@@ -30,7 +30,7 @@ def route_catalog(site):
 
 
 def make_episode(rng, site, route_id, definition, asset, split, index, label):
-    episode_id = f"factory-v6-{split}-{asset['id']}-{index:05d}-{label}"
+    episode_id = f"factory-v7-{split}-{asset['id']}-{index:05d}-{label}"
     route = ArcRoute(definition["points"])
     normal_kind = ("transit", "loading", "waiting", "turns")[(index // 2) % 4]
     interval = float(rng.uniform(.65, 1.35) if split == "test" else rng.uniform(.8, 1.1))
@@ -43,7 +43,21 @@ def make_episode(rng, site, route_id, definition, asset, split, index, label):
                   if sensor["type"] == "position" and sensor.get("asset_id") == asset["id"])
     onset = 30. if label else None
     start = datetime(2026, 10, 8, 9, tzinfo=timezone.utc) + timedelta(minutes=index * 3)
-    pattern = ("bursts", "stop_start", "oscillation")[index % 3] if label else normal_kind
+    pattern = ("bursts", "stop_start", "oscillation", "slow_oscillation", "wall_push")[index % 5] if label else normal_kind
+    long_segments = [(np.array(a, dtype=float), np.array(b, dtype=float))
+                     for road in site["roads"] for a, b in zip(road["points"], road["points"][1:])
+                     if np.linalg.norm(np.array(a) - b) > 20]
+    segment_start, segment_end = long_segments[int(rng.integers(len(long_segments)))]
+    axis = (segment_end - segment_start) / np.linalg.norm(segment_end - segment_start)
+    oscillation_center = segment_start + (segment_end - segment_start) * float(rng.uniform(.35, .65))
+    oscillation_period, oscillation_amplitude = float(rng.uniform(10, 17)), float(rng.uniform(3.5, 6.5))
+    building = site["buildings"][int(rng.integers(len(site["buildings"]))) ]
+    entrance = building["entrance"]
+    bounds = building["rectangle"]
+    wall_anchor = np.array([entrance["x"], entrance["y"]], dtype=float)
+    outward = wall_anchor - np.array([bounds["x"] + bounds["width"] / 2, bounds["y"] + bounds["height"] / 2])
+    outward = outward / np.linalg.norm(outward)
+    push_period, push_amplitude = float(rng.uniform(7, 11)), float(rng.uniform(.4, .9))
     events, elapsed, motion_time = [], 0., 0.
     point = np.array(journey.position(0))
     anomaly_anchor = None
@@ -59,7 +73,16 @@ def make_episode(rng, site, route_id, definition, asset, split, index, label):
         else:
             if anomaly_anchor is None:
                 anomaly_anchor = point.copy()
-            if pattern == "oscillation":
+            if pattern == "slow_oscillation":
+                phase = ((elapsed - onset) / oscillation_period) % 1
+                point = oscillation_center + axis * oscillation_amplitude * (1 - 4 * abs(phase - .5))
+            elif pattern == "wall_push":
+                phase = ((elapsed - onset) / push_period) % 1
+                # Repeated small approaches/retreats separated by pauses, not a
+                # stationary loading point. Model sees measured positions only.
+                excursion = max(0., 1 - abs(phase - .65) / .25)
+                point = wall_anchor + outward * (.2 + push_amplitude * excursion)
+            elif pattern == "oscillation":
                 point = anomaly_anchor + np.array([5 * np.sin(elapsed * 2.3), 4 * np.cos(elapsed * 1.9)])
             else:
                 moving = rng.random() > (.35 if pattern == "stop_start" else .1)
@@ -84,8 +107,8 @@ def make_episode(rng, site, route_id, definition, asset, split, index, label):
             "events": events}
 
 
-def generate_factory(output, site_path=ROOT / "data/demo/site.json", seed=20261008,
-                     validation_seed=20261009, test_seed=20261010, repeats=(3, 1, 1)):
+def generate_factory(output, site_path=ROOT / "data/demo/site.json", seed=20261018,
+                     validation_seed=20261019, test_seed=20261020, repeats=(3, 1, 1)):
     seeds = dict(zip(("train", "validation", "test"), (seed, validation_seed, test_seed)))
     if len(set(seeds.values())) != 3 or len(repeats) != 3 or min(repeats) < 1:
         raise ValueError("Три разных seed и положительное число повторов обязательны")
@@ -110,7 +133,10 @@ def generate_factory(output, site_path=ROOT / "data/demo/site.json", seed=202610
     # Explicit UTF-8/newlines make byte hashes independent of Windows text defaults.
     serialized = "".join(content).encode("utf-8")
     (output / "episodes.jsonl").write_bytes(serialized)
-    manifest = {"schema": "movement-episodes-v1", "generator": "factory-map-v6",
+    manifest = {"schema": "movement-episodes-v1", "generator": "factory-map-v7",
+                "feature_context": {"road_endpoints": sorted({tuple(point) for road in site["roads"]
+                    for point in (road["points"][0], road["points"][-1])})},
+                "anomaly_cases": ["bursts", "stop_start", "oscillation", "slow_oscillation", "wall_push"],
                 "seeds": seeds, "repeats": list(repeats), "episode_counts": counts,
                 "dataset_sha256": hashlib.sha256(serialized).hexdigest(),
                 "site_sha256": hashlib.sha256(site_path.read_bytes()).hexdigest(),

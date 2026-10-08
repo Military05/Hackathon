@@ -1,5 +1,6 @@
 """Detector timing and atomic dispatch regression checks with real SQLite."""
 from concurrent.futures import ThreadPoolExecutor
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import tempfile
@@ -56,6 +57,18 @@ class BackendRegressionTests(unittest.TestCase):
                                    {"action": action, "expected_revision": incident["dispatch_revision"],
                                     "request_id": f"request-{self.counter}", **extra})
 
+    def absence(self, operator="dispatcher-1"):
+        with self.service.store.read() as db:
+            return json.loads(db.execute("SELECT value FROM metadata WHERE key=?", ("absence:" + operator,)).fetchone()[0])
+
+    def reject_reserve_assignment(self, incident, recipient="dispatcher-3"):
+        before = self.service.get_incident(incident["incident_id"])
+        with self.assertRaises(ApiError) as error:
+            self.action(incident, "reassign_unavailable", operator="dispatcher-3",
+                        to_operator_id=recipient, reason="Владелец недоступен")
+        self.assertEqual((error.exception.status, error.exception.code), (422, "invalid_action"))
+        self.assertEqual(self.service.get_incident(incident["incident_id"]), before)
+
     def test_stale_threshold_point_never_triggers_zone(self):
         self.position(source_age=5)
         self.assertEqual(self.service.list_incidents(), [])
@@ -96,38 +109,43 @@ class BackendRegressionTests(unittest.TestCase):
         self.position(39, 58)
         self.assertFalse(self.service.get_incident(item["incident_id"])["condition_active"])
 
-    def test_away_transition_starts_absence_without_waiting_for_timer(self):
+    def test_away_transition_records_absence_without_assigning_reserve(self):
         self.ready("dispatcher-1")
         claimed = self.action(self.incident(), "claim")
         self.ready("dispatcher-1", "away")
+        since = stamp(self.clock())
         self.clock.advance(15)
         self.ready("dispatcher-3")
-        recovered = self.action(claimed, "reassign_unavailable", operator="dispatcher-3",
-                                to_operator_id="dispatcher-3", reason="Владелец недоступен")
-        self.assertEqual(recovered["assigned_operator_id"], "dispatcher-3")
-
-    def test_away_heartbeat_preserves_expired_ready_lease_absence(self):
+        self.assertEqual(self.absence()["since"], since)
+        self.reject_reserve_assignment(claimed)
+        self.assertFalse(next(p for p in self.service.operator_profiles() if p["operator_id"] == "dispatcher-1")["operator_ready"])
+    def test_away_heartbeat_preserves_expired_lease_without_reserve(self):
         self.ready("dispatcher-1")
         claimed = self.action(self.incident(), "claim")
+        deadline = stamp(self.clock() + timedelta(seconds=self.service.config["presence_timeout_seconds"]))
         self.clock.advance(30)
         self.ready("dispatcher-1", "away")
-        self.ready("dispatcher-3")
-        recovered = self.action(claimed, "reassign_unavailable", operator="dispatcher-3",
-                                to_operator_id="dispatcher-3", reason="Владелец не готов")
-        self.assertEqual(recovered["assigned_operator_id"], "dispatcher-3")
-
-    def test_restart_preserves_missed_expired_lease_absence(self):
+        episode = self.absence()
+        self.assertEqual(episode["since"], deadline)
+        self.clock.advance(5)
+        self.ready("dispatcher-1", "away")
+        self.assertEqual(self.absence(), episode)
+        self.reject_reserve_assignment(claimed)
+    def test_restart_preserves_expired_absence_and_requires_renewed_presence(self):
         self.ready("dispatcher-1")
         claimed = self.action(self.incident(), "claim")
+        deadline = stamp(self.clock() + timedelta(seconds=self.service.config["presence_timeout_seconds"]))
         self.clock.advance(31)
         self.service = self.restart()
+        episode = self.absence()
+        self.assertEqual(episode["since"], deadline)
         self.clock.advance(5)
-        self.ready("dispatcher-3")
-        recovered = self.action(claimed, "reassign_unavailable", operator="dispatcher-3",
-                                to_operator_id="dispatcher-3", reason="Сессия владельца истекла")
-        self.assertEqual(recovered["assigned_operator_id"], "dispatcher-3")
-
-    def test_ready_tab_prevents_false_recovery_after_other_tab_goes_away(self):
+        self.service = self.restart()
+        self.assertEqual(self.absence(), episode)
+        self.reject_reserve_assignment(claimed)
+        self.assertTrue(self.ready("dispatcher-1")["operator_ready"])
+        self.assertIsNone(self.absence())
+    def test_ready_tab_keeps_operator_ready_when_another_tab_goes_away(self):
         self.ready("dispatcher-1", session="a")
         self.ready("dispatcher-1", session="b")
         claimed = self.action(self.incident(), "claim")
@@ -136,12 +154,10 @@ class BackendRegressionTests(unittest.TestCase):
         self.ready("dispatcher-1", session="b")
         self.clock.advance(1)
         self.ready("dispatcher-3")
-        with self.assertRaises(ApiError) as error:
-            self.action(claimed, "reassign_unavailable", operator="dispatcher-3",
-                        to_operator_id="dispatcher-3", reason="Проверка доступности")
-        self.assertEqual(error.exception.code, "operator_available")
-        self.assertEqual(self.service.get_incident(claimed["incident_id"])["assigned_operator_id"], "dispatcher-1")
-
+        profile = next(p for p in self.service.operator_profiles() if p["operator_id"] == "dispatcher-1")
+        self.assertTrue(profile["operator_ready"])
+        self.assertIsNone(self.absence())
+        self.reject_reserve_assignment(claimed)
     def test_failure_after_claim_rolls_back_owner_history_and_idempotency(self):
         item = self.incident()
         request = {"action": "claim", "expected_revision": 0, "request_id": "retryable-claim"}
@@ -162,38 +178,38 @@ class BackendRegressionTests(unittest.TestCase):
         second = self.restart()
 
         def claim(pair):
-            service, operator = pair
+            service, request_id = pair
             try:
-                service.action(item["incident_id"], operator,
-                               {"action": "claim", "expected_revision": 0, "request_id": operator})
+                service.action(item["incident_id"], "dispatcher-1",
+                               {"action": "claim", "expected_revision": 0, "request_id": request_id})
                 return 200
             except ApiError as error:
                 return error.status
 
         with ThreadPoolExecutor(max_workers=2) as pool:
-            result = list(pool.map(claim, [(self.service, "dispatcher-1"), (second, "dispatcher-3")]))
+            result = list(pool.map(claim, [(self.service, "claim-a"), (second, "claim-b")]))
         self.assertEqual(sorted(result), [200, 409])
         current = self.service.get_incident(item["incident_id"])
         self.assertEqual(sum(h["action"] == "claim" for h in current["history"]), 1)
 
-    def test_recovery_cancels_pending_transfer_in_same_operation(self):
+    def test_rejected_reserve_action_keeps_addressed_transfer_acceptance_atomic(self):
         self.ready("dispatcher-1")
         self.ready("dispatcher-2")
         claimed = self.action(self.incident(), "claim")
         pending = self.action(claimed, "request_transfer", to_operator_id="dispatcher-2", reason="Передача участка")
         transfer_id = pending["pending_transfer"]["transfer_id"]
         self.ready("dispatcher-1", "away")
-        self.clock.advance(15)
-        self.ready("dispatcher-2")
-        self.ready("dispatcher-3")
-        recovered = self.action(pending, "reassign_unavailable", operator="dispatcher-3",
-                                to_operator_id="dispatcher-2", reason="Резерв восстанавливает ответственность")
-        self.assertIsNone(recovered["pending_transfer"])
-        self.assertEqual(recovered["assigned_operator_id"], "dispatcher-2")
+        self.clock.advance(5)
+        self.reject_reserve_assignment(pending, "dispatcher-2")
+        current = self.service.get_incident(pending["incident_id"])
+        self.assertEqual(current["pending_transfer"]["transfer_id"], transfer_id)
+        accepted = self.action(current, "accept_transfer", operator="dispatcher-2", transfer_id=transfer_id)
+        self.assertIsNone(accepted["pending_transfer"])
+        self.assertEqual(accepted["assigned_operator_id"], "dispatcher-2")
+        self.assertEqual(sum(h["action"] == "accept_transfer" for h in accepted["history"]), 1)
         with self.assertRaises(ApiError) as error:
-            self.action(recovered, "accept_transfer", operator="dispatcher-2", transfer_id=transfer_id)
+            self.action(accepted, "accept_transfer", operator="dispatcher-2", transfer_id=transfer_id)
         self.assertEqual(error.exception.code, "transfer_conflict")
-
     def test_cursor_validation_and_pagination_never_skip_records(self):
         for number in range(5):
             self.service.ingest_event({"event_id": f"access-{number}", "event_time": stamp(self.clock()),

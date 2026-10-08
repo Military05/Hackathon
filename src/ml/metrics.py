@@ -49,4 +49,4 @@ def report(y, scores, threshold, rows):
             "false_incidents": false_incidents, "missed_anomaly_episodes": sum(g["anomaly"] and not g["detected"] for g in groups.values()),
             "latency_seconds_median": float(np.median(latencies)) if latencies else None,
             "latency_seconds_max": float(max(latencies)) if latencies else None,
-            "latency_scope": "event-time onset to first positive homogeneous window; includes 10s window accumulation"}
+            "latency_scope": "event-time onset to first positive homogeneous window; includes 30s context accumulation"}
