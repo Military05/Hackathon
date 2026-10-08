@@ -110,11 +110,6 @@ function configureWorkspace(){
   const people=admin||S.operator==="dispatcher-3"||S.incidents.some(belongsToPeople);$("people-tab").hidden=!people;if(!people&&S.tab==="people")S.tab="objects";
   if(typeof OperationsView!=="undefined")OperationsView.configure({role:S.role,operator:S.operator,tab:S.tab});switchIncidentTab(S.tab);
 }
-function renderSummary(){
-  const rows=(S.summary.sectors||[]).filter(row=>S.role==="admin"||row.sector_id===mySector());
-  $("summary").classList.toggle("single-sector",S.role!=="admin");
-  setMarkup("summary",rows.map(r=>`<article><div><strong>${esc(sectorNames[r.sector_id]||r.sector_id)}</strong><small>${r.operator_ready?"Оператор на смене":r.operator_online||r.client_online?"Рабочее место на связи":"Нет связи с рабочим местом"}</small></div><div><b>${r.active_count||0}</b><small>активных · ${r.unclaimed_count||0} не принято</small></div></article>`).join(""));
-}
 
 function renderIncidents(){
   const type=$("filter-type").value,state=$("filter-state").value,query=$("search-incidents").value.trim().toLocaleLowerCase("ru-RU"),sort=$("incident-sort").value;
@@ -169,7 +164,7 @@ function recipientOptions(i){
 function updateActions(i){
   if(S.detailId!==i.incident_id)return;
   if(S.role==="admin"){
-    $("recipient-wrap").hidden=true;$("response-controls").hidden=true;$("response-plan").hidden=true;$("analysis").hidden=true;
+    $("recipient-wrap").hidden=true;$("response-controls").hidden=true;$("analysis").hidden=true;
     setMarkup("detail-actions",'<button id="show-on-map">Показать на карте</button>');$("show-on-map").onclick=showSelectedOnMap;return;
   }
   const own=i.assigned_operator_id===S.operator,working=workable(i),pending=i.pending_transfer?.status==="pending";
@@ -198,13 +193,12 @@ function applyDetails(i){
   if(i.incident_id!==S.selected)return;if(S.detail?.incident_id===i.incident_id&&S.detail.dispatch_revision>i.dispatch_revision)return;
   if(!workable(i)){hideSelected();return;}
   if(S.detailId!==i.incident_id){
-    $("details").innerHTML='<div id="detail-facts" class="facts"></div><div id="response-plan" class="response-plan"></div><div id="response-controls" class="response"><label for="reason">Заметка / реакция диспетчера</label><input id="reason" placeholder="Причина / выполненное действие" maxlength="500"></div><div id="recipient-wrap" class="recipient-wrap"><label for="recipient">Получатель передачи</label><select id="recipient"></select></div><div id="detail-actions" class="actions"></div><div id="analysis" class="analysis"></div>';S.detailId=i.incident_id;
+    $("details").innerHTML='<div id="detail-facts" class="facts"></div><div id="response-controls" class="response"><label for="reason">Заметка / реакция диспетчера</label><input id="reason" placeholder="Причина / выполненное действие" maxlength="500"></div><div id="recipient-wrap" class="recipient-wrap"><label for="recipient">Получатель передачи</label><select id="recipient"></select></div><div id="detail-actions" class="actions"></div><div id="analysis" class="analysis"></div>';S.detailId=i.incident_id;
   }
   S.detail=i;$("selected-id").textContent=i.incident_id;
   setMarkup("detail-facts",`<div><label>Причина</label>${esc(titles[i.type]||i.type)}</div><div><label>Место и объект</label>${esc(placeName(i))} · ${esc(entityName(i))}</div><div><label>Условие / обработка</label>${esc(labels[i.condition_state]||i.condition_state)} / ${esc(labels[i.status]||i.status)}</div><div><label>${S.role==="admin"?"Направлено диспетчеру":"Ответственный / получатель"}</label>${esc(recipientName(i))}</div><div><label>Обнаружено</label>${esc(clock(i.detected_at))} · ${esc(age(i.detected_at))}</div>`);
   S.mapRenderer?.highlight(i,{recenter:false});
-  const plan=i.response_plan||{},steps=Array.isArray(plan.steps)?plan.steps:[plan.steps||i.response_instruction||i.details?.response_instruction||"Принять случай, проверить свежие наблюдения и записать реакцию."];
-  setMarkup("response-plan",`<strong>Связаться: ${esc(plan.contact||"Ответственная роль участка")}</strong><ol>${steps.map(step=>`<li>${esc(step)}</li>`).join("")}</ol>`);updateActions(i);
+  updateActions(i);
   if(S.role!=="admin"&&!S.job)setMarkup("analysis",S.agentAvailable?"":"<p class='muted'>ИИ пока недоступен.</p>");
 }
 
@@ -304,7 +298,7 @@ async function refresh(){
     const mlStatus=typeof health.ml==="object"?health.ml.status:health.ml;
     $("ml-status").textContent=mlStatus==="unavailable"||mlStatus==="not_connected"?"Модель движения пока не подключена":`Модель движения: ${mlStatus==="ready"?"готова":mlStatus}`;
     renderDemo(demo);
-    drawAssets();renderSummary();renderIncidents();renderSensors();renderNotifications();await notifications();
+    drawAssets();renderIncidents();renderSensors();renderNotifications();await notifications();
     if(typeof OperationsView!=="undefined")await OperationsView.update(api);
     if(context!==S.context)return;
     if(S.selected)await renderDetails();
