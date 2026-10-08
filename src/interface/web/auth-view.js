@@ -37,7 +37,7 @@
     if(!status.enabled){$("auth-screen").hidden=true;$("product-shell").hidden=false;return {enabled:false};}
     try{session=await request("/auth/me");}catch(error){if(error.status!==401)throw error;showLogin();if(!status.configured)message("Первый администратор ещё не создан. Запустите scripts/manage_users.py на сервере.");return {enabled:true,user:null};}
     $("auth-screen").hidden=true;$("product-shell").hidden=false;$("user-controls").hidden=false;
-    $("current-user").textContent=`${session.user.name} · ${session.user.role==="admin"?"Администратор":session.user.operator_id}`;
+    $("current-user").textContent=session.user.role==="admin"?session.user.username:session.user.name;
     $("admin-open").hidden=session.user.role!=="admin";
     $("logout").onclick=async()=>{try{if(options.beforeLogout)await options.beforeLogout().catch(()=>{});await request("/auth/logout","POST",{});window.location.reload();}catch(error){if(options.onError)options.onError(error);else message(error.message,true);}};
     return {enabled:true,...session};
