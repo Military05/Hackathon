@@ -28,7 +28,6 @@
 <div class="app-layout">
   <div class="dashboard">
     <section class="page-heading"><div><span class="eyebrow">Оперативный мониторинг</span><h1>Автомобильный завод</h1></div><div class="page-actions"><button id="activity-export" title="До 1000 последних действий">Скачать журнал действий</button></div></section>
-    <section id="summary" class="summary" aria-label="Сводка секторов"></section>
     <section class="activity-bar" aria-label="Мои действия"><strong>Моя работа</strong><div id="activity-summary"><span>Загрузка сводки…</span></div><span id="export-status" hidden role="status"></span></section>
     <main class="workspace">
       <div class="map-column">
@@ -56,6 +55,6 @@
 </div>
 </div>
 <dialog id="admin-dialog" class="admin-dialog"><div class="section-head"><h2>Администрирование</h2><div><button id="admin-refresh">Обновить</button><button id="admin-close" aria-label="Закрыть админ-панель">✕</button></div></div><p id="admin-message" class="gate-note" role="status"></p><div id="admin-users"></div><details><summary>Журнал входов и административных действий</summary><div id="admin-audit"></div></details></dialog>
-<script src="vendor/leaflet/leaflet.js"></script><script src="map-view.js?v=factory-map-v7"></script><script src="sensors-panel.js?v=dispatcher-v7-final"></script><script src="auth-view.js?v=dispatcher-v7-final"></script><script src="operations-view.js?v=dispatcher-v7-final"></script><script src="progress-view.js?v=dispatcher-v7-final"></script><script src="app.js?v=dispatcher-v7-final"></script>
+<script src="vendor/leaflet/leaflet.js"></script><script src="map-view.js?v=factory-map-v7"></script><script src="sensors-panel.js?v=dispatcher-v7-final"></script><script src="auth-view.js?v=dispatcher-v7-final"></script><script src="operations-view.js?v=dispatcher-v7-final"></script><script src="progress-view.js?v=dispatcher-v7-final"></script><script src="app.js?v=dispatcher-v7-cleanup"></script>
 </body>
 </html>
