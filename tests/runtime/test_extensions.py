@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-from src.core.main import create_app
+from tests.runtime.isolated_app import create_app
 
 
 class ExtensionBoundaryTests(unittest.TestCase):

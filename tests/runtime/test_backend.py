@@ -8,7 +8,7 @@ import unittest
 from fastapi.testclient import TestClient
 
 from src.core.geometry import contains_point
-from src.core.main import create_app
+from tests.runtime.isolated_app import create_app
 from src.core.service import stamp
 
 
@@ -107,7 +107,7 @@ class BackendAcceptance(unittest.TestCase):
         self.assertEqual(self.client.get("/api/events?since=bad").status_code, 422)
         self.assertEqual(self.client.get("/api/events?limit=501").status_code, 422)
 
-    def test_zone_boundary_hysteresis_and_new_episode(self):
+    def test_zone_boundary_hysteresis_reuses_unfinished_card_and_closed_episode_is_new(self):
         incident = self.zone()
         self.position(x=12, y=43)  # Included boundary.
         self.assertEqual(sum(item["type"] == "forbidden_zone" for item in self.service.list_incidents()), 1)
@@ -118,8 +118,26 @@ class BackendAcceptance(unittest.TestCase):
         self.position(x=39, y=59)
         self.assertFalse(self.service.get_incident(incident["incident_id"])["condition_active"])
         self.clock.advance(0.5)
+        repeated_event = self.position()
+        repeated = self.service.get_incident(incident["incident_id"])
+        self.assertEqual(sum(item["type"] == "forbidden_zone" for item in self.service.list_incidents()), 1)
+        self.assertTrue(repeated["condition_active"])
+        self.assertIn(repeated_event["event_id"], repeated["evidence_event_ids"])
+        self.assertEqual(sum(h["action"] == "condition_repeated" for h in repeated["history"]), 1)
+        claimed_response = self.patch(repeated, "claim")
+        self.assertEqual(claimed_response.status_code, 200, claimed_response.text)
+        for _ in range(2):
+            self.clock.advance(0.5)
+            self.position(x=39, y=59)
+        restored = self.service.get_incident(incident["incident_id"])
+        closed = self.patch(restored, "close", reason="Повторный эпизод проверен")
+        self.assertEqual(closed.status_code, 200, closed.text)
+        self.clock.advance(0.5)
         self.position()
-        self.assertEqual(sum(item["type"] == "forbidden_zone" for item in self.service.list_incidents()), 2)
+        all_cards = self.service.list_incidents(include_closed=True)
+        self.assertEqual(sum(item["type"] == "forbidden_zone" for item in all_cards), 2)
+        fresh = next(item for item in all_cards if item["status"] != "closed")
+        self.assertNotEqual(fresh["incident_id"], incident["incident_id"])
 
     def test_old_measurement_preserved_without_rolling_back_position(self):
         event = self.position(x=39, y=85)
@@ -152,11 +170,11 @@ class BackendAcceptance(unittest.TestCase):
 
     def test_concurrent_claim_exactly_one_winner_and_persistent_owner(self):
         incident = self.zone()
-        def claim(operator):
-            return self.client.patch("/api/incidents/" + incident["incident_id"], headers={"X-Demo-Operator": operator},
-                json={"action": "claim", "expected_revision": 0, "request_id": "concurrent-" + operator})
+        def claim(request_id):
+            return self.client.patch("/api/incidents/" + incident["incident_id"], headers={"X-Demo-Operator": "dispatcher-1"},
+                json={"action": "claim", "expected_revision": 0, "request_id": request_id})
         with ThreadPoolExecutor(max_workers=2) as pool:
-            responses = list(pool.map(claim, ["dispatcher-1", "dispatcher-3"]))
+            responses = list(pool.map(claim, ["concurrent-a", "concurrent-b"]))
         self.assertEqual(sorted(r.status_code for r in responses), [200, 409])
         winner = next(r.json() for r in responses if r.status_code == 200)
         restarted = create_app(enable_auth=False, db_path=self.db_path, enable_scheduler=False, clock=self.clock)
@@ -219,7 +237,7 @@ class BackendAcceptance(unittest.TestCase):
         self.assertEqual(self.client.post("/api/events", json=body).status_code, 201)
         self.assertEqual(self.service.get_incident(incident["incident_id"])["condition_state"], "restored")
 
-    def test_presence_multiple_tabs_and_recovery_reserve(self):
+    def test_presence_multiple_tabs_do_not_enable_reserve_assignment(self):
         self.ready("dispatcher-1", "a")
         self.ready("dispatcher-1", "b")
         response = self.ready("dispatcher-1", "a", "away")
@@ -233,10 +251,14 @@ class BackendAcceptance(unittest.TestCase):
         self.ready("dispatcher-2")
         current = self.service.get_incident(incident["incident_id"])
         denied = self.patch(current, "reassign_unavailable", operator="dispatcher-2", to_operator_id="dispatcher-2", reason="Восстановление")
-        self.assertEqual(denied.status_code, 409)
-        recovered = self.patch(current, "reassign_unavailable", operator="dispatcher-3", to_operator_id="dispatcher-2", reason="Восстановление")
-        self.assertEqual(recovered.status_code, 200, recovered.text)
-        self.assertEqual(recovered.json()["assigned_operator_id"], "dispatcher-2")
+        self.assertEqual(denied.status_code, 422, denied.text)
+        self.assertEqual(denied.json()["code"], "invalid_action")
+        rejected = self.patch(current, "reassign_unavailable", operator="dispatcher-3", to_operator_id="dispatcher-2", reason="Восстановление")
+        self.assertEqual(rejected.status_code, 422, rejected.text)
+        self.assertEqual(self.service.get_incident(incident["incident_id"]), current)
+        self.assertFalse(next(p for p in self.service.operator_profiles() if p["operator_id"] == "dispatcher-1")["operator_ready"])
+        self.assertTrue(self.ready("dispatcher-1", "b").json()["operator_ready"])
+        self.assertEqual(self.service.get_incident(incident["incident_id"])["assigned_operator_id"], "dispatcher-1")
 
     def test_notifications_cursor_does_not_skip_pages_and_survives_restart(self):
         for _ in range(4):
@@ -270,19 +292,28 @@ class BackendAcceptance(unittest.TestCase):
                     "evidence_event_ids": [event["event_id"]], "demo": True}
         self.service.register_model_observation(observation(1, "anomaly"))
         incident = self.service.list_incidents()[0]
-        claimed = self.patch(incident, "claim", operator="dispatcher-3").json()
-        dismissed = self.patch(claimed, "dismiss_model", operator="dispatcher-3", reason="Проверено").json()
+        foreign = self.patch(incident, "claim", operator="dispatcher-3")
+        self.assertEqual(foreign.status_code, 409, foreign.text)
+        self.assertEqual(foreign.json()["code"], "operator_conflict")
+        claimed_response = self.patch(incident, "claim", operator=incident["responsible_operator_id"])
+        self.assertEqual(claimed_response.status_code, 200, claimed_response.text)
+        dismissed_response = self.patch(claimed_response.json(), "dismiss_model", operator=incident["responsible_operator_id"], reason="Проверено")
+        self.assertEqual(dismissed_response.status_code, 200, dismissed_response.text)
+        dismissed = dismissed_response.json()
         self.assertTrue(dismissed["condition_active"])
         self.assertEqual(dismissed["disposition"], "rejected_model_signal")
         self.service.register_model_observation(observation(2, "anomaly"))
-        self.assertEqual(len(self.service.list_incidents()), 1)
+        self.assertEqual(self.service.list_incidents(), [])
+        self.assertEqual(len(self.service.list_incidents(include_closed=True)), 1)
         self.assertEqual(sum(i["active_count"] for i in self.service.summary()["sectors"]), 0)
         self.service.register_model_observation(observation(3, "normal"))
         self.assertTrue(self.service.get_incident(incident["incident_id"])["condition_active"])
         self.service.register_model_observation(observation(4, "normal"))
         self.assertFalse(self.service.get_incident(incident["incident_id"])["condition_active"])
         self.service.register_model_observation(observation(5, "anomaly"))
-        self.assertEqual(len(self.service.list_incidents()), 2)
+        self.assertEqual(len(self.service.list_incidents()), 1)
+        self.assertEqual(len(self.service.list_incidents(include_closed=True)), 2)
+        self.assertNotEqual(self.service.list_incidents()[0]["incident_id"], incident["incident_id"])
         self.assertEqual(len(self.service.model_observations()), 5)
 
     def test_workspace_authorization_and_unknown_position_routing(self):
