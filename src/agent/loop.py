@@ -7,7 +7,7 @@ from .errors import AgentError
 from .result import ModelAnswer, validate_result
 from .tools import ToolSession, schemas
 
-PROMPT_VERSION = "dispatcher-v8-verifiable-claim-selection"
+PROMPT_VERSION = "dispatcher-v9-mlp-measured-references"
 
 
 def verified_claim_choices(session, visible_events=None):
@@ -175,6 +175,21 @@ async def run_analysis(client, snapshot, config):
                         final_schema['properties']['facts']['enum'] = [
                             final_schema['$defs']['FactClaim']['enum']]
                         instruction += " Ровно три факта о связанной MLP: status, score, threshold. Не перечисляй координаты."
+                        # JSON Schema treats 1 and 1.0 as equal; local grammars can
+                        # emit integral floats as ints. Select verified references
+                        # instead of asking the LLM to copy measured numbers.
+                        references = [{key: value for key, value in row.items() if key != 'value'}
+                                      for row in final_schema['$defs']['FactClaim']['enum']]
+                        reference_claim = final_schema['$defs']['FactClaim']
+                        reference_claim['properties'].pop('value')
+                        reference_claim['required'].remove('value')
+                        reference_claim['enum'] = references
+                        reference_facts = final_schema['properties'].pop('facts')
+                        reference_facts['enum'] = [references]
+                        final_schema['properties']['reference_facts'] = reference_facts
+                        final_schema['required'] = ['reference_facts' if field == 'facts' else field
+                                                    for field in final_schema['required']]
+                        instruction += " В этом ответе вместо facts верни reference_facts: source, id, field БЕЗ value. Не копируй числа: точные значения берутся из проверенных полей. Остальные поля hypotheses и recommendations сохрани."
                     if snapshot.data["incident"].get("type") == "sensor_offline":
                         claim = final_schema["$defs"]["FactClaim"]["properties"]
                         claim["source"]["enum"] = ["sensor_health"]

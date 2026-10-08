@@ -25,7 +25,8 @@ def movement_snapshot():
 
 def reply(facts):
     return {'role': 'assistant', 'content': json.dumps({
-        'facts': facts, 'hypotheses': [], 'recommendations': ['Проверьте объект на карте.']})}
+        ('reference_facts' if facts and all('value' not in row for row in facts) else 'facts'): facts,
+        'hypotheses': [], 'recommendations': ['Проверьте объект на карте.']})}
 
 
 def test_model_prompt_selection_is_explicit_bounded_and_does_not_change_tool_data():
@@ -76,7 +77,7 @@ def test_mlp_requires_complete_tuple_and_retries_without_repairing_claims(recove
             if self.calls == 1:
                 return {'role': 'assistant', 'content': '', 'tool_calls': [tool_call()]}
             claims = response_schema['$defs']['FactClaim']['enum']
-            assert response_schema['properties']['facts']['enum'] == [claims]
+            assert response_schema['properties']['reference_facts']['enum'] == [claims]
             assert [row['field'] for row in claims] == ['status', 'score', 'threshold']
             # Simulate a local provider ignoring the schema: incomplete evidence
             # must never be published or filled in by the program.

@@ -498,11 +498,11 @@ def test_model_anomaly_requires_linked_mlp_schema_immediately_after_incident_too
             assert claim["source"]["enum"] == ["model_observation"]
             assert claim["id"]["enum"] == [observation["observation_id"]]
             assert claim["field"]["enum"] == ["status", "score", "threshold"]
-            assert claim["value"]["enum"] == [observation[field] for field in ("status", "score", "threshold")]
+            assert 'value' not in claim
             assert response_schema['$defs']['FactClaim']['enum'] == [
-                {'source':'model_observation','id':observation['observation_id'],'field':field,'value':observation[field]}
+                {'source':'model_observation','id':observation['observation_id'],'field':field}
                 for field in ('status','score','threshold')]
-            assert response_schema["properties"]["facts"]["minItems"] == response_schema["properties"]["facts"]["maxItems"] == 3
+            assert response_schema["properties"]["reference_facts"]["minItems"] == response_schema["properties"]["reference_facts"]["maxItems"] == 3
             return {"role": "assistant", "content": answer([
                 {"source": "model_observation", "id": observation["observation_id"],
                  "field": field, "value": observation[field]} for field in ("status", "score", "threshold")])}

@@ -33,6 +33,20 @@ class ModelAnswer(BaseModel):
     recommendations: list[str] = Field(min_length=1, max_length=8)
 
 
+class ModelFactReference(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    source: Literal['model_observation']
+    id: Identifier
+    field: Literal['status', 'score', 'threshold']
+
+
+class ModelReferenceAnswer(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    reference_facts: list[ModelFactReference] = Field(min_length=3, max_length=3)
+    hypotheses: list[Hypothesis] = Field(max_length=5)
+    recommendations: list[str] = Field(min_length=1, max_length=8)
+
+
 def field_value(row, field):
     value = row
     for part in field.split("."):
@@ -45,12 +59,36 @@ def field_value(row, field):
 def validate_result(content, session: ToolSession, model_name):
     if not session.incident_read:
         raise AgentError("invalid_evidence", "get_incident was not executed.")
+    model_references = None
     try:
         # Accept a single JSON code block, but no prose outside it.
         stripped = content.strip()
         if stripped.startswith("```json\n") and stripped.endswith("```"):
             stripped = stripped[8:-3].strip()
-        answer = ModelAnswer.model_validate(json.loads(stripped))
+        parsed = json.loads(stripped)
+        if isinstance(parsed, dict) and 'reference_facts' in parsed:
+            reference_answer = ModelReferenceAnswer.model_validate(parsed)
+            incident = session.snapshot.data['incident']
+            linked_id = incident.get('details', {}).get('observation_id')
+            refs = reference_answer.reference_facts
+            if (incident.get('type') != 'model_anomaly' or not linked_id or
+                    any(ref.id != linked_id for ref in refs) or
+                    {ref.field for ref in refs} != {'status', 'score', 'threshold'}):
+                raise AgentError('invalid_evidence', 'Ссылки должны содержать status, score и threshold связанной оценки MLP.')
+            measured = []
+            for ref in refs:
+                row = session.records[ref.source].get(ref.id)
+                if row is None:
+                    raise AgentError('invalid_evidence', 'Ссылка на оценку не прочитана инструментами.')
+                measured.append({**ref.model_dump(), 'value': field_value(row, ref.field)})
+            # No model-authored number is repaired or trusted. These references
+            # select authoritative fields; the normal proof validator checks them.
+            model_references = [ref.model_dump() for ref in refs]
+            answer = ModelAnswer.model_validate({'facts': measured,
+                'hypotheses': reference_answer.hypotheses,
+                'recommendations': reference_answer.recommendations})
+        else:
+            answer = ModelAnswer.model_validate(parsed)
     except ValidationError as exc:
         issues = [{"field": ".".join(map(str, error["loc"])), "code": error["type"]}
                   for error in exc.errors(include_url=False, include_input=False)[:5]]
@@ -114,6 +152,7 @@ def validate_result(content, session: ToolSession, model_name):
                    "Предлагаемое действие оператору: " + answer.recommendations[0])
     return {"summary": presentation['title'] + '. ' + presentation['description'], 'presentation': presentation,
             'technical': {'snapshot': session.snapshot.export(), 'verified_facts': facts,
+                          'model_references': model_references,
                           'model_answer': answer.model_dump(), 'tool_trace': list(session.trace),
                           'legacy_summary': summary,
                           'semantic_check': review_model_text(answer, presentation)},
