@@ -23,6 +23,7 @@ async function api(path,method="GET",body,operator=S.operator){
     try{v=await r.json();}catch{throw Error("Сервер вернул некорректный ответ");}
     if(!r.ok){
       const messages={revision_conflict:"Карточка изменилась у другого оператора. Посмотрите обновлённые данные и повторите действие осознанно.",operator_available:"Отсутствие ответственного ещё не подтверждено. Подождите установленный срок и проверьте сводку.",startup_grace:"Система восстанавливает рабочие места после запуска. Повторите позже.",operator_conflict:"Действие доступно диспетчеру ответственного сектора или получателю передачи.",unavailable:"Локальная модель недоступна. Мониторинг и ручная обработка продолжаются."};
+      Object.assign(messages,{incident_sector_required:"Происшествие теперь относится к другому диспетчеру. Выберите случай из списка своего рабочего места.",unknown_incident:"Происшествие больше не найдено в журнале. Обновите список и выберите доступный случай.",unknown_asset:"Объект не найден в справочнике предприятия. Обновите данные; его положение не подтверждено."});
       const e=Error(messages[v.code]||v.message||v.detail?.message||`HTTP ${r.status}`);
       Object.assign(e,{status:r.status,code:v.code,details:v.details});
       throw e;
@@ -72,7 +73,11 @@ function objectInfo(text,kind,id,sensorIds=[]){
 function showAsset(id){
   S.mapRenderer?.selectAsset?.(id);
   const a=S.assets.find(x=>x.asset_id===id);
-  if(!a){$("asset-info").textContent="Объект отсутствует в текущих данных.";return;}
+  if(!a){
+    const registered=(S.site.assets||[]).find(x=>(x.id||x.asset_id)===id);
+    objectInfo(registered?`${registered.name||registered.short_name||"Транспорт"}. Объект зарегистрирован, но сигнал о его положении ещё не получен. Текущее место неизвестно; связанные происшествия можно открыть ниже.`:"Объект не найден в справочнике предприятия. Обновите данные; его положение не подтверждено.","asset",id);
+    return;
+  }
   const coordinates=Number.isFinite(a.x)&&Number.isFinite(a.y)?`(${a.x.toFixed(1)}, ${a.y.toFixed(1)})`:"не получена";
   const policy=(S.site.permissions||[]).find(p=>p.asset_id===id),allowed=(policy?.allowed_zone_ids||[]).map(zone=>named(S.site.zones,zone));
   const vehicleType=a.vehicle_type||(S.site.assets||[]).find(x=>x.id===id)?.vehicle_type||a.type;
@@ -85,6 +90,19 @@ function drawAssets(){
   S.mapRenderer?.update({assets:S.assets,sensors:S.sensors,incidents:S.incidents,serverOffset:S.serverOffset});
 }
 function mySector(){return S.profiles.find(p=>(p.operator_id||p.id)===S.operator)?.sector_id;}
+function incidentInWorkspace(i){
+  if(!i)return false;
+  if(S.role==="admin")return true;
+  if(i.assigned_operator_id===S.operator||i.pending_transfer?.to_operator_id===S.operator)return true;
+  return !i.assigned_operator_id&&i.responsible_sector_id===mySector();
+}
+function renderAnalysisPicker(){
+  const picker=$("analysis-incident"),rows=S.incidents.filter(i=>workable(i)&&incidentInWorkspace(i)&&belongsToPeople(i)===(S.tab==="people")).sort(compareIncidents);
+  $("analysis-picker").hidden=S.role==="admin";
+  $("analysis-scope").textContent=`${operatorName(S.operator)} · ${sectorNames[mySector()]||"Сектор не определён"}. Только ваши происшествия и адресованные вам передачи.`;
+  setMarkup("analysis-incident",'<option value="">Выберите происшествие для анализа</option>'+rows.map(i=>`<option value="${esc(i.incident_id)}">${esc(titles[i.type]||"Происшествие")} · ${esc(entityName(i))} · ${esc(placeName(i))}</option>`).join(""));
+  picker.value=rows.some(i=>i.incident_id===S.selected)?S.selected:"";picker.disabled=!rows.length;
+}
 function recipientName(i){const profile=S.profiles.find(p=>p.sector_id===i.responsible_sector_id)||S.site?.operator_profiles?.find(p=>p.sector_id===i.responsible_sector_id);const id=i.pending_transfer?.status==="pending"?i.pending_transfer.to_operator_id:i.assigned_operator_id||profile?.operator_id||profile?.id;return operatorName(id);}
 function belongsToPeople(i){return Boolean(i.employee_id||i.type==="unauthorized_access");}
 function ownSensor(sensor){
@@ -117,9 +135,10 @@ function configureWorkspace(){
 }
 
 function renderIncidents(){
+  renderAnalysisPicker();
   const type=$("filter-type").value,state=$("filter-state").value,query=$("search-incidents").value.trim().toLocaleLowerCase("ru-RU"),sort=$("incident-sort").value;
   const rows=S.incidents.filter(i=>{
-    if(!workable(i)||belongsToPeople(i)!==(S.tab==="people"))return false;
+    if(!workable(i)||!incidentInWorkspace(i)||belongsToPeople(i)!==(S.tab==="people"))return false;
     if(type!=="all"&&i.type!==type)return false;
     if(state!=="all"&&(state==="unclaimed"?Boolean(i.assigned_operator_id):state==="mine"?i.assigned_operator_id!==S.operator:state==="pending"?i.pending_transfer?.status!=="pending":i.condition_state!==state&&i.status!==state))return false;
     return !query||[titles[i.type],entityName(i),placeName(i),recipientName(i),i.incident_id,i.asset_id,i.other_asset_id,i.sensor_id,i.building_id,i.zone_id].join(" ").toLocaleLowerCase("ru-RU").includes(query);
@@ -180,7 +199,7 @@ function updateActions(i){
   const analysisLabel=S.analysisSubmitting?"Отправка запроса…":analysisPending?S.jobStatus==="running"?"ИИ выполняет анализ…":"ИИ ожидает очереди…":S.agentAvailable?"Проанализировать ИИ":"ИИ ещё не подключён";
   const disabled=S.commandBusy?" disabled":"";
   const button=(id,text,primary=false,extraDisabled=false)=>`<button id="${id}"${primary?' class="primary"':""}${disabled||extraDisabled?" disabled":""}>${text}</button>`;
-  setMarkup("detail-actions",`${button("show-on-map","Показать на карте")}${!i.assigned_operator_id&&working&&i.can_claim!==false?button("claim","Принять ответственность",true):""}${own&&working?button("contact","Записать: связался")+button("inspect","Записать: запросил проверку")+button("save-note","Сохранить заметку"):""}${own&&i.condition_active===false&&i.condition_state!=="unknown"&&!pending&&working?button("close","Завершить обработку"):""}${own&&i.type==="model_anomaly"&&working?button("dismiss","Отклонить модельное подозрение"):""}${own&&!pending&&working?button("transfer","Предложить передачу",false,!readyRecipient):""}${pending?`<span class="pill">Передача → ${esc(operatorName(i.pending_transfer.to_operator_id))}</span><small class="transfer-clock">${esc(transferClock(i))}</small>${i.pending_transfer.to_operator_id===S.operator?button("accept","Принять передачу",true):""}${own?button("cancel","Отменить передачу"):""}`:""}${button("analyse",analysisLabel,false,!S.agentAvailable||S.analysisSubmitting||analysisPending)}`);
+  setMarkup("detail-actions",`${button("show-on-map","Показать на карте")}${!i.assigned_operator_id&&working&&i.can_claim!==false?button("claim","Принять ответственность",true):""}${own&&working?button("contact","Записать: связался")+button("inspect","Записать: запросил проверку")+button("save-note","Сохранить заметку"):""}${own&&i.condition_active===false&&i.condition_state!=="unknown"&&!pending&&working?button("close","Завершить обработку"):""}${own&&i.type==="model_anomaly"&&working?button("dismiss","Отклонить модельное подозрение"):""}${own&&!pending&&working?button("transfer","Предложить передачу",false,!readyRecipient):""}${pending?`<span class="pill">Передача → ${esc(operatorName(i.pending_transfer.to_operator_id))}</span><small class="transfer-clock">${esc(transferClock(i))}</small>${i.pending_transfer.to_operator_id===S.operator?button("accept","Принять передачу",true):""}${own?button("cancel","Отменить передачу"):""}`:""}${button("analyse",analysisLabel,false,!incidentInWorkspace(i)||!S.agentAvailable||S.analysisSubmitting||analysisPending)}`);
 
   const bind=(id,fn)=>{if($(id))$(id).onclick=async()=>{try{await fn();}catch(e){showError(e);}};};
   bind("claim",()=>command("claim"));
@@ -223,6 +242,11 @@ async function saveNote(){
 async function startAnalysis(){
   const id=S.selected,context=S.context,operator=S.operator;
   if(S.role==="admin"||!id||S.analysisSubmitting||!S.agentAvailable||["pending","queued","running"].includes(S.jobStatus))return;
+  const current=S.incidents.find(i=>i.incident_id===id)||S.detail;
+  if(!current||current.incident_id!==id||!incidentInWorkspace(current)){
+    S.analysisError="Анализ не начался: выберите происшествие своего рабочего места. Ответственность могла измениться.";
+    setMarkup("analysis",`<p role="alert">${esc(S.analysisError)}</p>`);return;
+  }
   S.analysisSubmitting=true;if(S.detail)updateActions(S.detail);setMarkup("analysis",'<p class="analysis-wait" role="status">Отправка запроса на анализ…</p>');
   try{
     const j=await api(`/incidents/${encodeURIComponent(id)}/analysis`,"POST",{},operator);
@@ -367,6 +391,7 @@ async function boot(){
   }catch(e){showError(e);}
 }
 function bindControls(){
+  $("analysis-incident").onchange=()=>{const id=$("analysis-incident").value;if(!id){hideSelected();return;}const item=S.incidents.find(i=>i.incident_id===id);if(incidentInWorkspace(item))selectIncident(id).catch(showError);else{hideSelected();showError(Error("Происшествие больше не относится к вашему рабочему месту."));}};
   $("operator").onchange=()=>switchOperator($("operator").value).catch(showError);$("ready").onchange=presence;
   $("fit").onclick=()=>S.mapRenderer?S.mapRenderer.fitAll():S.map.fitBounds([[0,0],[100,100]]);
   $("my-sector").onclick=()=>focusSector(true);$("show-routes").onchange=()=>S.mapRenderer?.setRoutesVisible?.($("show-routes").checked);
