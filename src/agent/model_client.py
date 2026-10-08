@@ -75,15 +75,16 @@ class LocalModelClient:
                 wire_messages.append(item)
             body = {"model": self.config.model, "messages": wire_messages,
                     "tools": tools, "stream": False, "think": False,
-                    "options": {"temperature": 0, "num_predict": 450}}
+                    "options": {"temperature": 0, "num_predict": 1024 if response_schema else 450}}
             if response_schema is not None:
                 body["format"] = response_schema
             data = await self._json("POST", "api/chat", remaining, json=body)
             message = data.get("message") if isinstance(data, dict) else None
+            truncated = isinstance(data, dict) and data.get('done_reason') == 'length'
         else:
             body = {"model": self.config.model, "messages": messages,
                     "tools": tools, "stream": False, "temperature": 0,
-                    "max_tokens": 450}
+                    "max_tokens": 1024 if response_schema else 450}
             if len(tools) == 1:
                 # Bionic accepts required/auto/none, not named object choices.
                 # One advertised tool plus required enforces the same first step.
@@ -94,10 +95,14 @@ class LocalModelClient:
             data = await self._json("POST", "chat/completions", remaining, json=body)
             try:
                 message = data["choices"][0]["message"]
+                truncated = data['choices'][0].get('finish_reason') == 'length'
             except (KeyError, TypeError, IndexError):
                 message = None
+                truncated = False
         if not isinstance(message, dict):
             raise AgentError("model_reply_invalid", "Model did not return an assistant message.")
+        if truncated:
+            raise AgentError('model_reply_truncated', 'Ответ локальной модели оборван по лимиту токенов; неполные данные не опубликованы.')
         calls = []
         raw_calls = message.get("tool_calls") or []
         if not isinstance(raw_calls, list):

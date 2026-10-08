@@ -53,10 +53,10 @@ def validate_result(content, session: ToolSession, model_name):
     except ValidationError as exc:
         issues = [{"field": ".".join(map(str, error["loc"])), "code": error["type"]}
                   for error in exc.errors(include_url=False, include_input=False)[:5]]
-        raise AgentError("model_reply_invalid", "Final answer does not match the verified-facts schema.",
+        raise AgentError("model_reply_invalid", "Ответ модели не соответствует схеме проверяемых фактов.",
                          details={"issues": issues}) from exc
     except (ValueError, TypeError) as exc:
-        raise AgentError("model_reply_invalid", "Final answer does not match the verified-facts schema.",
+        raise AgentError("model_reply_invalid", "Ответ модели не содержит полного корректного JSON проверяемых фактов.",
                          details={"reason": "invalid_json"}) from exc
     facts, refs, event_ids = [], {}, set()
     for claim in answer.facts:

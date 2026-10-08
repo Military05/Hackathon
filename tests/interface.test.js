@@ -7,6 +7,17 @@ const vm=require("node:vm");
 const {webcrypto}=require("node:crypto");
 const source=fs.readFileSync(path.join(__dirname,"../src/interface/web/app.js"),"utf8");
 
+test("failed stale job describes changed input without presenting an outdated result",async()=>{
+  const h=harness(async()=>({job_id:"J1",incident_id:"I1",status:"failed",stale:true,error:{message:"JSON incomplete"}}));
+  h.ui.S.selected="I1";h.ui.S.job="J1";
+  await h.ui.renderJob();
+  assert.match(h.$("analysis").innerHTML,/Данные изменились после начала запроса/);
+  assert.doesNotMatch(h.$("analysis").innerHTML,/УСТАРЕЛ/);
+  h.setFetch(async()=>({job_id:"J1",incident_id:"I1",status:"completed",stale:true,result:{summary:"verified"}}));
+  await h.ui.renderJob();
+  assert.match(h.$("analysis").innerHTML,/УСТАРЕЛ/);
+});
+
 function harness(handler=async()=>({})){ 
   const nodes=new Map();
   class Element{

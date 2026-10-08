@@ -224,7 +224,7 @@ class AIIntegrationTests(unittest.TestCase):
                 return httpx.Response(200, json={"data": [{"id": "explicit-model-test-double"}]})
             body = json.loads(request.content)
             calls.append(body)
-            self.assertEqual(body["max_tokens"], 450)
+            self.assertEqual(body["max_tokens"], 1024 if body.get('response_format') else 450)
             if len(calls) == 1:
                 message = {"role": "assistant", "content": "", "tool_calls": [{"id": "real-python-tool",
                     "type": "function", "function": {"name": "get_incident",
@@ -266,7 +266,8 @@ class AIIntegrationTests(unittest.TestCase):
                 cached = client.post(url, headers=headers).json()
                 self.assertTrue(cached["cached"])
                 self.assertEqual(cached["job_id"], job_id)
-                self.assertEqual(len(calls), 2)
+                self.assertEqual(len(calls), 3)
+                self.assertIn('response_format', calls[-1])
                 with self.service.store.read() as db:
                     self.assertEqual(db.execute("SELECT COUNT(*) FROM b1_agent_jobs").fetchone()[0], 1)
                 self.assertEqual(client.get(f"/api/agent-jobs/{job_id}", headers={"X-Expected-User": "old-tab"}).status_code, 409)
