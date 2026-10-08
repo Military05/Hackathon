@@ -31,10 +31,14 @@
 #map .enterprise-sensor-glyph svg{width:100%;height:100%;padding:2px;box-sizing:border-box;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 #map .enterprise-sensor-marker.mounted .enterprise-sensor-glyph svg{padding:0;stroke-width:1.8}
 #map .enterprise-selected .enterprise-vehicle-symbol,#map .enterprise-selected .enterprise-sensor-glyph{outline:2px solid #ffd079;outline-offset:3px;animation:enterprise-slow-pulse 2.4s ease-in-out infinite}
+#map .enterprise-object-selected .enterprise-vehicle-symbol{outline:2px solid #ffd079;outline-offset:3px}
+#map path.enterprise-sector-focus{stroke-width:3;animation:enterprise-sector-emphasis 3s ease-out}
+#map .enterprise-label-marker.enterprise-sector-focus .enterprise-building-label{animation:enterprise-sector-emphasis 3s ease-out}
 #map .enterprise-incident-halo{animation:enterprise-zone-pulse 2.4s ease-in-out infinite;stroke-linejoin:round}
 @keyframes enterprise-slow-pulse{0%,100%{box-shadow:0 0 0 1px #ffd07955}50%{box-shadow:0 0 0 7px #ffd07922}}
 @keyframes enterprise-zone-pulse{0%,100%{stroke-opacity:1}50%{stroke-opacity:.35}}
-@media(prefers-reduced-motion:reduce){#map .enterprise-selected .enterprise-vehicle-symbol,#map .enterprise-selected .enterprise-sensor-glyph,#map .enterprise-incident-halo{animation:none}}
+@keyframes enterprise-sector-emphasis{0%,35%{filter:brightness(1.45) drop-shadow(0 0 3px currentColor)}100%{filter:none}}
+@media(prefers-reduced-motion:reduce){#map .enterprise-selected .enterprise-vehicle-symbol,#map .enterprise-selected .enterprise-sensor-glyph,#map .enterprise-incident-halo,#map .enterprise-sector-focus,#map .enterprise-label-marker.enterprise-sector-focus .enterprise-building-label{animation:none}}
 #map .enterprise-vehicle-marker.foreign .enterprise-vehicle-symbol,#map .enterprise-sensor-marker.foreign .enterprise-sensor-glyph{opacity:.65}
 #map .enterprise-vehicle-marker.alarm .enterprise-vehicle-symbol{border-color:#ff8585;border-style:double;border-width:3px;filter:drop-shadow(0 0 3px #ff8585)}
 #map .enterprise-sensor-marker.offline .enterprise-sensor-glyph{border-color:#ff8585;border-style:double;border-width:3px;filter:drop-shadow(0 0 3px #ff8585)}
