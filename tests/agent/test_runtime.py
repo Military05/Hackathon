@@ -477,7 +477,7 @@ def test_truncated_answer_uses_bounded_structured_retry_and_never_partial_succes
 
 def test_model_anomaly_requires_linked_mlp_schema_immediately_after_incident_tool():
     data = snapshot().export()
-    observation = {"observation_id": "observation-test", "status": "anomaly", "score": .91,
+    observation = {"observation_id": "observation-test", "asset_id": "V1", "status": "anomaly", "score": .91,
                    "threshold": .8, "evidence_event_ids": ["demo-position-0010"]}
     data["incident"]["type"] = "model_anomaly"
     data["incident"]["details"] = {"observation_id": observation["observation_id"]}
@@ -499,6 +499,9 @@ def test_model_anomaly_requires_linked_mlp_schema_immediately_after_incident_too
             assert claim["id"]["enum"] == [observation["observation_id"]]
             assert claim["field"]["enum"] == ["status", "score", "threshold"]
             assert claim["value"]["enum"] == [observation[field] for field in ("status", "score", "threshold")]
+            assert response_schema['$defs']['FactClaim']['enum'] == [
+                {'source':'model_observation','id':observation['observation_id'],'field':field,'value':observation[field]}
+                for field in ('status','score','threshold')]
             assert response_schema["properties"]["facts"]["minItems"] == response_schema["properties"]["facts"]["maxItems"] == 3
             return {"role": "assistant", "content": answer([
                 {"source": "model_observation", "id": observation["observation_id"],

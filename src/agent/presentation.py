@@ -104,6 +104,11 @@ def present(session, facts):
         elif fact['source'] == 'sensor_health' and fact['field'] == 'last_received_at' and fact['value'] is None:
             observations.append('Время последнего сигнала датчика неизвестно.')
     observations = list(dict.fromkeys(observations))
+    if snapshot.data.get('history_bounds', {}).get('evidence_selection', {}).get('partial'):
+        observations.append('Для анализа использована часть сохранённой истории. Полная история на сервере сохранена; вывод не описывает все прошлые события.')
+        selection = snapshot.data['history_bounds']['evidence_selection']
+        if not selection.get('fresh_measurements_included'):
+            unknown += ' Свежие измерения не вошли в анализ; положение объекта нужно проверить отдельно.'
     contact = (incident.get('response_plan') or {}).get('contact')
     contact = contact if isinstance(contact, str) and contact.strip() else None
     recommendations = ['Проверьте свежие показания объекта на карте.']

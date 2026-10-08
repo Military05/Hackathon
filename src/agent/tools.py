@@ -78,7 +78,12 @@ class ToolSession:
         if name == "get_incident":
             if args.incident_id != self.snapshot.incident_id:
                 raise AgentError("not_found", "Incident is outside the captured scope.", 404)
-            evidence = [self.snapshot.events[i] for i in data["incident"].get("evidence_event_ids", [])]
+            ids = list(data['incident'].get('evidence_event_ids', []))
+            for observation in self.snapshot.observations.values():
+                ids.extend(observation['evidence_event_ids'])
+            if data.get('history_bounds', {}).get('evidence_selection', {}).get('partial'):
+                ids.extend(self.snapshot.events)
+            evidence = [self.snapshot.events[i] for i in dict.fromkeys(ids)]
             observations = list(self.snapshot.observations.values())
             self.records["event"].update({e["event_id"]: e for e in evidence})
             self.records["model_observation"].update(self.snapshot.observations)
@@ -88,7 +93,7 @@ class ToolSession:
             self.records['incident_history'].update({row['incident_id']: row for row in context.get('related_incidents', [])})
             self.records['dispatcher_note'].update({row['note_id']: row for row in context.get('dispatcher_notes', [])})
             result = {"incident": data["incident"], "evidence": evidence, "observations": observations,
-                      'incident_context': context}
+                      'incident_context': context, 'history_bounds': data.get('history_bounds')}
         elif name == "get_event_history":
             if args.asset_id not in self.snapshot.policies:
                 raise AgentError("not_found", "Asset is outside the captured scope.", 404)
@@ -101,7 +106,8 @@ class ToolSession:
             selected = events[:args.limit]
             self.records["event"].update({e["event_id"]: e for e in selected})
             returned = [e["event_id"] for e in selected]
-            result = {"events": selected, "truncated": len(events) > args.limit,
+            result = {"events": selected, "truncated": len(events) > args.limit or
+                      bool(data.get('history_bounds', {}).get('evidence_selection', {}).get('partial')),
                       "history_bounds": data.get("history_bounds"), "snapshot_bounded": True}
         elif name == "get_asset_policy":
             if args.asset_id not in self.snapshot.policies:
