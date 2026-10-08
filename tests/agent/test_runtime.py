@@ -16,8 +16,97 @@ from src.agent.errors import AgentError
 from src.agent.loop import run_analysis
 from src.agent.model_client import LocalModelClient
 from src.agent.providers import CaptureProvider, FrozenSnapshot
+from src.agent.runtime import AgentManager
 from src.agent.service import AgentService
 from tests.agent.test_tools_and_result import answer, snapshot
+
+
+def test_attached_provider_recovers_and_stops_without_a_user_request(tmp_path):
+    class Client:
+        available = False
+        closed = False
+        calls = 0
+
+        async def ensure_available(self):
+            assert not self.closed
+            self.calls += 1
+            if not self.available:
+                raise AgentError("unavailable", "Explicit offline provider fixture.", 503)
+
+        async def close(self):
+            self.closed = True
+
+    async def run():
+        client = Client()
+        manager = AgentManager(None, str(tmp_path / "jobs.sqlite"), client=client,
+                               config=AgentConfig(model="test-double"))
+        manager.availability_interval_seconds = .01
+
+        async def wait_status(status):
+            async def changed():
+                while manager.health()["status"] != status:
+                    await asyncio.sleep(.001)
+            await asyncio.wait_for(changed(), timeout=1)
+
+        await manager.start()
+        try:
+            assert manager.health()["status"] == "unavailable"
+            assert manager.health()["worker_running"]
+            monitor = manager.availability_monitor
+            await manager.start()
+            assert manager.availability_monitor is monitor and client.calls == 1
+            client.available = True
+            await wait_status("ready")
+            client.available = False
+            await wait_status("unavailable")
+            client.available = True
+            await wait_status("ready")
+            manager.worker.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await manager.worker
+            assert manager.health()["status"] == "unavailable"
+        finally:
+            await manager.stop()
+        assert monitor.done() and manager.availability_monitor is None
+        assert manager.worker is None and client.closed
+        assert manager.health()["status"] == "unavailable"
+
+    asyncio.run(run())
+
+
+def test_attached_provider_probe_is_cancelled_before_client_close(tmp_path):
+    class Client:
+        def __init__(self):
+            self.calls = 0
+            self.probing = asyncio.Event()
+            self.cancelled = False
+
+        async def ensure_available(self):
+            self.calls += 1
+            if self.calls == 1:
+                return
+            self.probing.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                self.cancelled = True
+
+        async def close(self):
+            assert self.cancelled
+
+    async def run():
+        client = Client()
+        manager = AgentManager(None, str(tmp_path / "jobs.sqlite"), client=client,
+                               config=AgentConfig(model="test-double"))
+        manager.availability_interval_seconds = .001
+        await manager.start()
+        try:
+            await asyncio.wait_for(client.probing.wait(), timeout=1)
+        finally:
+            await manager.stop()
+        assert client.cancelled and manager.availability_monitor is None
+
+    asyncio.run(run())
 
 
 def tool_call(name="get_incident", arguments=None, native=False):
