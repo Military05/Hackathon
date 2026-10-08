@@ -194,7 +194,7 @@
       const owner=assetOperator(asset.asset_id||asset.id),ownerColor=ownershipColor(owner),foreign=!visibleOwner(owner);
       const color=stale?"stale":alarm?"alarm":"normal",id=asset.asset_id||asset.id;
       const symbol=asset.vehicle_type==="forklift"?"П":"С",name=symbol==="П"?"Погрузчик":"Служебный транспорт";
-      return Leaflet.divIcon({className:`enterprise-vehicle-marker ${color}${deviation?" route-deviation":""}${foreign?" foreign":""}`,html:`<span class="enterprise-vehicle-glyph" style="--marker-color:${ownerColor}"><span class="enterprise-vehicle-symbol" title="${name}">${symbol}</span><b>${escape(id)}</b><time class="enterprise-signal-time" title="Последняя позиция: ${escape(asset.last_seen||"нет сигнала")}">${escape(signalTime(asset.last_seen))}</time>${stale?'<small class="enterprise-stale-badge" title="Последняя известная позиция">?</small>':deviation?'<small class="enterprise-route-warning" title="Отклонение от личного маршрута">!</small>':""}</span>`,iconSize:[36,50],iconAnchor:[18,20]});
+      return Leaflet.divIcon({className:`enterprise-vehicle-marker ${color}${deviation?" route-deviation":""}${foreign?" foreign":""}`,html:`<span class="enterprise-vehicle-glyph" style="--marker-color:${ownerColor}"><span class="enterprise-vehicle-symbol" title="${name}">${symbol}</span><b>${escape(id)}</b><time class="enterprise-signal-time" title="Последняя позиция: ${escape(asset.last_seen||"нет сигнала")}">${escape(signalTime(asset.last_seen))}</time>${stale?'<small class="enterprise-stale-badge" title="Последняя известная позиция">?</small>':alarm?`<small class="${deviation?"enterprise-route-warning":"enterprise-alarm-badge"}" title="${deviation?"Отклонение от личного маршрута":"Активное происшествие"}">!</small>`:""}</span>`,iconSize:[36,50],iconAnchor:[18,20]});
     }
     function sensorIcon(sensor,status,mounted){
       const owner=sensorOperator(sensor),ownerColor=ownershipColor(owner),foreign=!visibleOwner(owner);
@@ -324,8 +324,8 @@
     function showIncident(incident){
       highlight(incident);
       const identifiers=[...incidentAssets(incident),sensorDefinitions.get(incident?.sensor_id)?.asset_id].filter(Boolean);
-      const target=state.assets.find(a=>identifiers.includes(a.asset_id||a.id)&&validPoint(a));
-      const primary=target&&(target.asset_id||target.id),points=target?[xy(target.x,target.y)]:selectionPoints(incident||{});
+      const targets=identifiers.map(id=>state.assets.find(a=>(a.asset_id||a.id)===id&&validPoint(a))).filter(Boolean),target=targets[0];
+      const primary=target&&(target.asset_id||target.id),points=incident?.type==="collision"&&targets.length?targets.map(a=>xy(a.x,a.y)):target?[xy(target.x,target.y)]:selectionPoints(incident||{});
       if(!points.length)return false;
       viewMode="incident";focusedSectorId=null;settingView=true;try{map.stop?.();map.fitBounds(points,{padding:[48,48],maxZoom:3.75,animate:false});}finally{settingView=false;}followedAsset=primary||null;return true;
     }
