@@ -74,9 +74,22 @@ class Service:
                          "last_measurement_at": None, "last_event_id": None,
                          "first_expected_at": stamp(self.started_at), "status": "unknown"}
                 db.execute("INSERT OR IGNORE INTO sensor_state VALUES (?,?)", (sid, canonical(state)))
+            self._migrate_road_responsibility(db)
             # Persist absence episodes across restarts; browser leases are intentionally invalidated.
             for operator in self.profiles:
                 self._sync_absence(db, operator)
+
+    def _migrate_road_responsibility(self, db):
+        for item in self._incidents(db):
+            if not self._working(item) or item["assigned_operator_id"] or item["site_area_id"] not in {"common-roads", "unknown"}:
+                continue
+            responsibility = self._responsibility(area_id=item["site_area_id"], asset_id=item.get("asset_id"))
+            if item["responsible_sector_id"] != responsibility["responsible_sector_id"]:
+                item.update(responsibility)
+                item["dispatch_revision"] += 1
+                self._history(db, item, "responsibility_updated", to_operator=responsibility["responsible_operator_id"])
+                self._notify(db, item, responsibility["responsible_operator_id"], "new_incident", "responsibility_updated")
+                self._save_incident(db, item)
 
     def _require(self, identifier, mapping, kind):
         if not isinstance(identifier, str) or not identifier:
@@ -159,25 +172,38 @@ class Service:
     def _sector_operator(self, sector):
         return next(p for p in self.profiles if self._profile_sector(p) == sector)
 
-    def _reserves(self, owner):
-        return {"dispatcher-1": ["dispatcher-3", "dispatcher-2"],
-                "dispatcher-2": ["dispatcher-3", "dispatcher-1"],
-                "dispatcher-3": ["dispatcher-1", "dispatcher-2"]}[owner]
-
-    def _escalate(self, db, item, kind, cause, instance="initial"):
-        primary = item["assigned_operator_id"] or self._sector_operator(item["responsible_sector_id"])
-        recipients = ["dispatcher-3"] if primary != "dispatcher-3" else ["dispatcher-1", "dispatcher-2", "dispatcher-3"]
-        changed = False
-        for recipient in recipients:
-            changed |= self._notify(db, item, recipient, kind, cause, instance)
-        if changed:
-            item["escalation_level"] += 1
-            item["dispatch_revision"] += 1
-            self._history(db, item, "escalation", reason=cause)
-            self._save_incident(db, item)
+    def _responsibility(self, *, area_id=None, asset_id=None, building_id=None):
+        area = self.areas.get(area_id)
+        if not area or area_id in {"common-roads", "unknown"}:
+            asset = self.assets_by_id.get(asset_id, {})
+            building = self.buildings.get(building_id or asset.get("destination"), {})
+            area = self.areas.get(building.get("site_area_id"), area)
+        sector = area["responsible_sector_id"] if area else "coordination"
+        return {"responsible_sector_id": sector, "responsible_operator_id": self._sector_operator(sector)}
 
     def _new_incident(self, db, kind, key, area_id, evidence, active=True, **fields):
         area = self._require(area_id, self.areas, "site_area")
+        responsibility = self._responsibility(area_id=area_id, asset_id=fields.get("asset_id"), building_id=fields.get("building_id"))
+        # Repeated detector episodes update one unfinished card. Cleared/processed
+        # cards remain archived; their next independent episode gets a fresh card.
+        for row in db.execute("SELECT body FROM incidents WHERE condition_key=? ORDER BY rowid DESC", (key,)):
+            existing = json.loads(row[0])
+            archived = db.execute("SELECT 1 FROM incident_archives WHERE incident_id=? LIMIT 1", (existing["incident_id"],)).fetchone()
+            if not self._working(existing) or archived:
+                continue
+            existing.update(fields)
+            if existing["assigned_operator_id"] is None:
+                existing.update(responsibility, site_area_id=area_id)
+            existing.update(condition_active=active, condition_state="active" if active else "restored",
+                            last_detected_at=stamp(self.clock()))
+            if active:
+                existing.pop("restored_at", None)
+            for event_id in evidence:
+                self._evidence(existing, event_id)
+            existing["dispatch_revision"] += 1
+            self._history(db, existing, "condition_repeated")
+            self._save_incident(db, existing)
+            return existing
         contact = {"forbidden_zone": "Диспетчер участка и служба безопасности",
                    "unauthorized_access": "Служба безопасности",
                    "sensor_offline": "Ответственный за датчики",
@@ -189,7 +215,7 @@ class Service:
                 "detected_at": stamp(self.clock()), "status": "open", "condition_active": active,
                 "condition_state": "active" if active else "restored", "rule_version": self.rule_version,
                 "evidence_event_ids": list(evidence), "details": {}, "demo": True,
-                "site_area_id": area_id, "responsible_sector_id": area["responsible_sector_id"],
+                "site_area_id": area_id, **responsibility,
                 "assigned_operator_id": None, "acknowledged_at": None, "dispatch_revision": 0,
                 "pending_transfer": None, "escalation_level": 0, "response_history": [],
                 "response_plan": {"contact": contact,
@@ -372,6 +398,7 @@ class Service:
                 state["age_seconds"] = age
                 state["position_state"] = "fresh" if age is not None and age < self.config["position_stale_seconds"] else "unknown"
                 state["stale"] = state["position_state"] == "unknown"
+                state.update(self._responsibility(asset_id=asset["id"]))
                 result.append(state)
             return result
 
@@ -395,7 +422,7 @@ class Service:
             status = "unknown" if (now - parse_time(state["first_expected_at"])).total_seconds() < self.config["startup_sensor_grace_seconds"] else "offline"
         else:
             status = "online" if age < self.config["sensor_offline_seconds"] else "offline"
-        return {**sensor, **state, "status": status, "age_seconds": age, "as_of": stamp(now),
+        return {**sensor, **state, **self._responsibility(area_id=sensor.get("site_area_id"), asset_id=sensor.get("asset_id"), building_id=sensor.get("building_id")), "status": status, "age_seconds": age, "as_of": stamp(now),
                 "threshold_seconds": self.config["sensor_offline_seconds"],
                 "startup_sensor_grace_seconds": self.config["startup_sensor_grace_seconds"]}
 
@@ -503,7 +530,7 @@ class Service:
                                "category": "people" if item.get("employee_id") or item["type"] == "unauthorized_access" else "objects",
                                **({"can_claim": self.can_claim(db, item, operator)} if operator else {})})
             priority = {"critical": 0, "warning": 1, "info": 2}
-            result.sort(key=lambda i: i["detected_at"], reverse=True)
+            result.sort(key=lambda i: i.get("last_detected_at", i["detected_at"]), reverse=True)
             result.sort(key=lambda i: (priority[i["severity"]], bool(i["assigned_operator_id"])))
             return result[offset:offset + limit]
 
@@ -541,18 +568,40 @@ class Service:
             self._sync_absence(db, operator)
             return {**value, **result, "online": result["client_online"]}
 
+    def _active_accounts(self, db, operator):
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='auth_users'").fetchone():
+            return None
+        return db.execute("SELECT COUNT(*) FROM auth_users WHERE role='dispatcher' AND status='active' AND operator_id=?", (operator,)).fetchone()[0]
+
     def operator_profiles(self):
         with self.store.read() as db:
-            return [{"operator_id": operator, "name": p["name"], "sector_id": p["sector_id"], **self._presence(db, operator)} for operator, p in self.profiles.items()]
+            result = []
+            for operator, profile in self.profiles.items():
+                count = self._active_accounts(db, operator)
+                result.append({"operator_id": operator, "name": profile["name"], "sector_id": profile["sector_id"],
+                               "active_account_count": count, "can_receive_transfer": count is None or count > 0,
+                               **self._presence(db, operator)})
+            return result
 
     def notifications(self, operator, after_seq=0, limit=50):
-        self.validate_operator(operator)
+        self.validate_reader(operator)
         if isinstance(after_seq, bool) or not isinstance(after_seq, int) or after_seq < 0 or isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
             raise ApiError(422, "invalid_cursor", "after_seq>=0 and limit 1..100 required")
+        if operator == "admin":
+            return {"notifications": [], "next_seq": after_seq}
         with self.store.read() as db:
             rows = db.execute("SELECT seq,body FROM notifications WHERE recipient_operator_id=? AND seq>? ORDER BY seq LIMIT ?", (operator, after_seq, limit)).fetchall()
-            values = [{**json.loads(r["body"]), "seq": r["seq"]} for r in rows]
-            return {"notifications": values, "next_seq": values[-1]["seq"] if values else after_seq}
+            values = []
+            for row in rows:
+                notification = json.loads(row["body"])
+                if notification["kind"] in {"escalation", "operator_unavailable", "active_review", "reminder"}:
+                    continue
+                incident = self._load(db, "incidents", "incident_id", notification["incident_id"])
+                hidden = db.execute("SELECT 1 FROM incident_archives WHERE incident_id=? AND operator_id IN ('*',?)", (notification["incident_id"], operator)).fetchone()
+                if hidden or not incident or not self._working(incident) or not self._visible_to(incident, operator):
+                    continue
+                values.append({**notification, "seq": row["seq"]})
+            return {"notifications": values, "next_seq": rows[-1]["seq"] if rows else after_seq}
 
     def summary(self, by_area=False, operator=None):
         if operator:
@@ -567,7 +616,8 @@ class Service:
                 if operator and operator != "admin" and sector != self._profile_sector(operator):
                     continue
                 key = "site_area_id" if by_area else "responsible_sector_id"
-                items = [i for i in incidents if i[key] == group["id"] and i.get("disposition") != "rejected_model_signal"]
+                items = (incidents if operator and operator != "admin" and not by_area else
+                         [i for i in incidents if i[key] == group["id"] and i.get("disposition") != "rejected_model_signal"])
                 entry = {"site_area_id" if by_area else "sector_id": group["id"],
                          "active_count": sum(bool(i["condition_active"]) for i in items),
                          "unclaimed_count": sum(self._working(i) and not i["assigned_operator_id"] for i in items),
@@ -608,8 +658,7 @@ class Service:
             raise ApiError(422, "action_required", "Use typed v2 action, expected_revision and request_id")
         extra = {"claim": set(), "close": {"reason"}, "record_response": {"reason", "response_code"},
                  "dismiss_model": {"reason"}, "request_transfer": {"to_operator_id", "reason"},
-                 "accept_transfer": {"transfer_id"}, "cancel_transfer": {"transfer_id", "reason"},
-                 "reassign_unavailable": {"to_operator_id", "reason"}}
+                 "accept_transfer": {"transfer_id"}, "cancel_transfer": {"transfer_id", "reason"}}
         action = body["action"]
         if not isinstance(action, str) or action not in extra:
             raise ApiError(422, "invalid_action", "Unknown coordination action")
@@ -678,26 +727,6 @@ class Service:
                 item["pending_transfer"] = None
                 db.execute("UPDATE transfers SET body=? WHERE transfer_id=?", (canonical(transfer), transfer["transfer_id"]))
                 self._notify(db, item, original_owner, "transfer_accepted", "transfer_accepted", transfer["transfer_id"])
-            elif action == "reassign_unavailable":
-                if not original_owner:
-                    raise ApiError(409, "operator_conflict", "Recovery reassignment needs an existing owner")
-                if (self.clock() - self.started_at).total_seconds() < self.config["startup_operator_grace_seconds"]:
-                    raise ApiError(409, "startup_grace", "Browser leases are being restored after startup")
-                absence = self._sync_absence(db, original_owner)
-                if not absence or (self.clock() - parse_time(absence["since"])).total_seconds() < self.config["presence_timeout_seconds"]:
-                    raise ApiError(409, "operator_available", "Owner unavailability duration is not confirmed")
-                first = next((p for p in self._reserves(original_owner) if self._presence(db, p)["operator_ready"]), None)
-                if operator != first or not self._presence(db, to_operator)["operator_ready"]:
-                    raise ApiError(409, "operator_conflict", "Only first ready reserve may reassign to a ready recipient")
-                if item["pending_transfer"]:
-                    transfer = item["pending_transfer"]
-                    transfer["status"] = "cancelled"
-                    transfer["cancel_reason"] = "recovery"
-                    db.execute("UPDATE transfers SET body=? WHERE transfer_id=?", (canonical(transfer), transfer["transfer_id"]))
-                    item["pending_transfer"] = None
-                item["assigned_operator_id"] = to_operator
-                item["status"] = "acknowledged"
-                item["acknowledged_at"] = stamp(self.clock())
             else:
                 if original_owner != operator:
                     raise ApiError(409, "operator_conflict", "Only current owner may perform this action")
@@ -722,8 +751,8 @@ class Service:
                 elif action == "request_transfer":
                     if item["pending_transfer"]:
                         raise ApiError(409, "transfer_pending", "Only one pending transfer is allowed")
-                    if not self._presence(db, to_operator)["operator_ready"]:
-                        raise ApiError(409, "operator_unavailable", "Recipient must be online and ready")
+                    if self._active_accounts(db, to_operator) == 0:
+                        raise ApiError(409, "recipient_unassigned", "Получателю нужен подтверждённый активный аккаунт диспетчера")
                     transfer = {"transfer_id": uid("transfer"), "incident_id": incident_id,
                                 "from_operator_id": operator, "to_operator_id": to_operator,
                                 "requested_at": stamp(self.clock()), "expires_at": stamp(self.clock() + timedelta(seconds=self.config["transfer_timeout_seconds"])),
@@ -743,7 +772,7 @@ class Service:
                     item["pending_transfer"] = None
             item["dispatch_revision"] += 1
             self._history(db, item, action, actor=operator, reason=body.get("reason"), request_id=body["request_id"],
-                          from_operator=original_owner, to_operator=item["assigned_operator_id"] if action in {"claim", "accept_transfer", "reassign_unavailable"} else to_operator,
+                          from_operator=original_owner, to_operator=item["assigned_operator_id"] if action in {"claim", "accept_transfer"} else to_operator,
                           **({"response_code": body["response_code"]} if action == "record_response" else {}))
             self._save_incident(db, item)
             response = self._incident_view(db, item)
@@ -778,8 +807,6 @@ class Service:
                         item["condition_state"] = "unknown"
                         item["details"]["exit_samples"] = 0
                         self._save_incident(db, item)
-            grace_done = (now - self.started_at).total_seconds() >= self.config["startup_operator_grace_seconds"]
-            absences = {operator: self._sync_absence(db, operator) for operator in self.profiles}
             for item in self._incidents(db):
                 if not self._working(item):
                     continue
@@ -792,24 +819,7 @@ class Service:
                     item["dispatch_revision"] += 1
                     self._history(db, item, "transfer_expired", from_operator=transfer["from_operator_id"], to_operator=transfer["to_operator_id"])
                     self._notify(db, item, transfer["from_operator_id"], "transfer_expired", "transfer_expired", transfer["transfer_id"])
-                    self._escalate(db, item, "transfer_expired", "transfer_expired_coordination", transfer["transfer_id"])
                     self._save_incident(db, item)
-                owner = item["assigned_operator_id"]
-                if not owner:
-                    age = (now - parse_time(item["detected_at"])).total_seconds()
-                    primary = self._sector_operator(item["responsible_sector_id"])
-                    if age >= self.config["reminder_seconds"]:
-                        self._notify(db, item, primary, "reminder", "unclaimed_reminder")
-                    if age >= self.config["escalation_" + item["severity"] + "_seconds"]:
-                        self._escalate(db, item, "escalation", "unclaimed_escalation")
-                    if grace_done and absences[primary]:
-                        self._escalate(db, item, "operator_unavailable", "primary_unavailable", absences[primary]["episode_id"])
-                else:
-                    if grace_done and absences[owner]:
-                        self._escalate(db, item, "operator_unavailable", "owner_unavailable", absences[owner]["episode_id"])
-                    if item["condition_active"] and item["acknowledged_at"] and (now - parse_time(item["acknowledged_at"])).total_seconds() >= self.config["active_review_seconds"]:
-                        self._notify(db, item, owner, "active_review", "active_review_owner", item["acknowledged_at"])
-                        self._escalate(db, item, "active_review", "active_review_coordination", item["acknowledged_at"])
 
     def register_model_observation(self, observation):
         self._require(observation.get("asset_id"), self.assets_by_id, "asset")
