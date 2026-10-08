@@ -70,6 +70,8 @@ test("stale analysis keeps captured state and names even when current card disag
   h.ui.S.site.assets=[{id:"V1",name:"Новое имя объекта"}];
   await h.ui.renderJob();const main=h.$("analysis").innerHTML.split("<details")[0];
   assert.match(main,/УСТАРЕЛ/);assert.match(main,/Состояние объекта сейчас может отличаться/);
+  assert.match(main,/analysis-freshness-stale/);assert.match(main,/Анализ устарел — данные изменились/);
+  assert.doesNotMatch(main,/analysis-freshness-current/);
   assert.match(main,/Условие происшествия наблюдалось/);assert.match(main,/Погрузчик 1/);
   assert.doesNotMatch(main,/Новое имя|вышел|восстановлен/);
 });
@@ -78,6 +80,23 @@ test("fresh analysis explains that snapshot is not current position confirmation
   const h=harness(async()=>readableJob());h.ui.S.selected="I1";h.ui.S.job="J1";
   await h.ui.renderJob();assert.match(h.$("analysis").innerHTML,/не подтверждение текущего положения/);
   assert.match(h.$("analysis").innerHTML,/Время среза:/);
+  assert.match(h.$("analysis").innerHTML,/analysis-freshness-current/);
+  assert.doesNotMatch(h.$("analysis").innerHTML,/analysis-freshness-stale/);
+});
+
+test("empty observations do not create a filler section",async()=>{
+  const job=readableJob();job.result.presentation.observations=[];
+  const h=harness(async()=>job);h.ui.S.selected="I1";h.ui.S.job="J1";await h.ui.renderJob();
+  assert.doesNotMatch(h.$("analysis").innerHTML.split("<details")[0],/Наблюдения|привязку/);
+});
+
+test("MLP numbers stay readable without percentages or invented accident probability",async()=>{
+  const job=readableJob();job.result.presentation.title="Необычное движение";
+  job.result.presentation.observations=["Оценка необычности движения: ≈ 0,999876.","Порог срабатывания модели: ≈ 0,151226.","Это не вероятность аварии."];
+  const h=harness(async()=>job);h.ui.S.selected="I1";h.ui.S.job="J1";await h.ui.renderJob();
+  const main=h.$("analysis").innerHTML.split("<details")[0];
+  assert.match(main,/0,999876/);assert.match(main,/0,151226/);assert.match(main,/не вероятность аварии/);
+  assert.doesNotMatch(main,/%|payload/);
 });
 
 test("missing presentation and missing snapshot time have safe explicit fallbacks",async()=>{

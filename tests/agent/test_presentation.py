@@ -65,6 +65,39 @@ def test_exit_is_never_inferred_from_restored_state_alone(changes):
     assert 'Выход из зоны подтверждён' not in output['state']['text']
 
 
+def test_identity_and_unknown_fields_do_not_create_empty_observations():
+    tools = session(data())
+    facts = [{'source': 'event', 'id': 'demo-position-0010', 'field': field, 'value': value}
+             for field, value in [('payload.asset_id', 'V1'), ('type', 'position'),
+                                  ('event_time', '2026-10-07T09:00:10Z'), ('payload.unknown', 123)]]
+    assert present(tools, facts)['observations'] == []
+
+
+def test_mlp_numbers_are_readable_and_do_not_use_incident_details_as_evidence():
+    value = data()
+    value['incident'].update(type='model_anomaly', details={'observation_id': 'OBS-1', 'score': 999, 'threshold': 999})
+    tools = session(value)
+    facts = [{'source': 'model_observation', 'id': 'OBS-1', 'field': field, 'value': val}
+             for field, val in [('status', 'anomaly'), ('score', 0.9998759021886874), ('threshold', 0.15122588236235446)]]
+    text = ' '.join(present(tools, facts)['observations'])
+    assert '≈ 0,999876' in text and '≈ 0,151226' in text
+    assert 'не является вероятностью ДТП' in text and 'Числа округлены' in text
+    assert '999.' not in text
+    missing = present(tools, [])['observations']
+    assert not any(line.startswith('Оценка необычности движения:') for line in missing)
+
+
+def test_site_area_is_not_described_as_inside_a_building():
+    value = data()
+    value['incident'].update(type='model_anomaly', zone_id=None, site_area_id='canteen')
+    value['display_context']['site_areas'] = {'canteen': 'Столовая'}
+    output = present(session(value), [])
+    assert output['place_kind'] == 'site_area'
+    assert 'Участок карты: «Столовая» (по сохранённым данным)' in output['description']
+    assert 'внутри' not in output['description']
+    assert 'Выход из зоны подтверждён' not in output['state']['text']
+
+
 def test_missing_names_units_state_and_contact_are_explicit():
     value = data()
     value.pop('display_context')

@@ -21,6 +21,11 @@ def present(session, facts):
 
     entity = name('assets', incident.get('asset_id') or incident.get('employee_id'), 'Объект не определён')
     place = name('zones', incident.get('zone_id'), '') or name('buildings', incident.get('building_id'), '') or name('site_areas', incident.get('site_area_id'), 'Место не определено')
+    place_kind = ('zone' if name('zones', incident.get('zone_id'), '') else
+                  'building' if name('buildings', incident.get('building_id'), '') else
+                  'site_area' if name('site_areas', incident.get('site_area_id'), '') else 'unknown')
+    place_description = (f'Участок карты: «{place}» (по сохранённым данным).' if place_kind == 'site_area'
+                         else f'Место: {place}.')
     state = incident.get('condition_state')
     state_text = {'active': 'Условие происшествия наблюдалось.',
                   'restored': 'Система отметила условие как восстановленное.',
@@ -48,11 +53,20 @@ def present(session, facts):
     if kind == 'forbidden_zone':
         description = f'Система зарегистрировала нарушение правила доступа в зону. Объект: {entity}. Место: {place}. Требуется проверить обстоятельства въезда.'
     elif kind == 'model_anomaly':
-        description = f'Для объекта «{entity}» сохранено модельное подозрение на необычное движение. Место: {place}. Требуется проверить, соответствует ли движение текущей работе.'
+        description = f'Для объекта «{entity}» сохранено модельное подозрение на необычное движение. {place_description} Требуется проверить, соответствует ли движение текущей работе.'
         linked_id = details.get('observation_id')
         linked = {fact['field']: fact['value'] for fact in facts
                   if fact['source'] == 'model_observation' and fact['id'] == linked_id}
         score, threshold = linked.get('score'), linked.get('threshold')
+        numeric = lambda value: type(value) in (int, float) and math.isfinite(value)
+        def display(value):
+            return format(value, '.6g').replace('.', ',')
+        if numeric(score):
+            observations.append(f'Оценка необычности движения: ≈ {display(score)}.')
+        if numeric(threshold):
+            observations.append(f'Порог срабатывания модели: ≈ {display(threshold)}. При достижении порога модель отмечает движение как подозрительное.')
+        if numeric(score) or numeric(threshold):
+            observations.append('Числа округлены для отображения; точные значения сохранены в технических данных.')
         if (linked.get('status') == 'anomaly' and type(score) in (int, float)
                 and type(threshold) in (int, float) and math.isfinite(score)
                 and math.isfinite(threshold) and score >= threshold):
@@ -69,23 +83,21 @@ def present(session, facts):
         source, field = fact['source'], fact['field']
         if source == 'event' and field in ('payload.x', 'payload.y') and fact['value'] is None:
             text = 'Значение координаты отсутствует в исходном измерении; положение по нему не установлено.'
-        elif source == 'event' and field in ('payload.x', 'payload.y'):
-            axis = 'горизонтальную' if field == 'payload.x' else 'вертикальную'
-            text = f'Датчик передал {axis} координату положения объекта; точное значение сохранено в технических данных.'
-        elif source == 'event' and field == 'payload.asset_id':
-            text = 'Измерение содержит привязку к зарегистрированному объекту.'
-        elif source == 'event' and field == 'event_time':
-            text = 'Время исходного измерения сохранено.'
-        elif source == 'event' and field == 'type':
-            text = 'Тип исходного события проверен.'
-        elif source == 'policy':
-            text = 'Прочитаны сведения о допуске объекта из сохранённой политики.'
-        elif source == 'sensor_health':
-            text = 'Прочитаны сохранённые сведения о состоянии источника данных.'
-        elif source == 'model_observation' and kind == 'model_anomaly':
-            continue
+        elif (source == 'event' and field in ('payload.x', 'payload.y')
+              and type(fact['value']) in (int, float) and math.isfinite(fact['value'])):
+            axis = 'Горизонтальная' if field == 'payload.x' else 'Вертикальная'
+            value = str(fact['value']).replace('.', ',')
+            text = f'{axis} координата по сохранённому измерению: {value}.'
+        elif (source == 'policy' and field == 'allowed_zone_ids'
+              and fact['id'] == (incident.get('asset_id') or incident.get('employee_id'))
+              and isinstance(fact['value'], list) and incident.get('zone_id')):
+            text = ('В сохранённом допуске объекта эта зона отсутствует.'
+                    if incident['zone_id'] not in fact['value'] else
+                    'Эта зона указана в сохранённом допуске объекта; возможные дополнительные ограничения проверяются отдельно.')
+        elif source == 'sensor_health' and field == 'last_received_at' and fact['value'] is None:
+            text = 'В сохранённых данных нет времени последнего сигнала датчика.'
         else:
-            text = 'Дополнительное наблюдение проверено; его смысл не уточнён. Исходное поле сохранено в технических данных.'
+            continue
         if text not in observations:
             observations.append(text)
 
@@ -113,6 +125,6 @@ def present(session, facts):
         recommendations.append('Контакт для реакции не указан; уточните его в карточке происшествия.')
     recommendations.append('Запишите результат проверки в карточке. Завершайте обработку только при выполнении штатных условий.')
     return {'version': 1, 'title': TITLES.get(kind, 'Происшествие'), 'description': description,
-            'entity': entity, 'place': place, 'as_of': snapshot.as_of,
+            'entity': entity, 'place': place, 'place_kind': place_kind, 'as_of': snapshot.as_of,
             'state': {'code': state, 'text': state_text, 'confirmed_exit': confirmed_exit},
             'observations': observations, 'recommendations': recommendations}

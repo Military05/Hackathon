@@ -146,6 +146,21 @@ class AIIntegrationTests(unittest.TestCase):
         self.assertEqual(present(ToolSession(captured), [])['state']['code'], 'active')
         self.assertFalse(present(ToolSession(captured), [])['state']['confirmed_exit'])
 
+    def test_demo_canteen_location_matches_actual_map_area_not_building(self):
+        # Last recorded coordinate of the D4 demonstration, in plan units.
+        x, y = 50.83183, 49.302145
+        event = {'event_id': 'canteen-map-check', 'event_time': stamp(self.now),
+                 'sensor_id': 'POS-V1', 'type': 'position', 'demo': True,
+                 'payload': {'asset_id': 'V1', 'x': x, 'y': y}}
+        self.service.ingest_event(event)
+        state = next(row for row in self.service.list_assets() if row['id'] == 'V1')
+        self.assertEqual(state['site_area_id'], 'canteen')
+        area = next(row for row in self.service.site['site_areas'] if row['id'] == 'canteen')
+        self.assertEqual(area['name'], 'Столовая')
+        rect = area['rectangle']
+        self.assertTrue(rect['x'] <= x <= rect['x'] + rect['width'])
+        self.assertTrue(rect['y'] <= y <= rect['y'] + rect['height'])
+
     def test_retrained_version_does_not_reuse_previous_model_watermark(self):
         upgraded = MovementModel(self.service, self.artifact)
         upgraded.metadata = {**upgraded.metadata, "model_version": "retrained-test-version"}

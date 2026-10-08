@@ -38,7 +38,9 @@ def main():
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="hackathon-ai-live-") as temp:
         from src.core.main import create_app
-        app = create_app(db_path=Path(temp) / "dispatch.db", enable_scheduler=False)
+        clock_now = datetime.now(timezone.utc)
+        app = create_app(db_path=Path(temp) / "dispatch.db", enable_scheduler=False, clock=lambda: clock_now)
+        report['clock'] = 'controlled test timeline; advanced only for new measurements'
         replies = []
 
         class RecordingClient(LocalModelClient):
@@ -66,7 +68,7 @@ def main():
                 login.raise_for_status()
                 headers = {"X-CSRF-Token": login.json()["csrf_token"],
                            "X-Expected-User": login.json()["user"]["id"]}
-                end = datetime.now(timezone.utc)
+                end = clock_now
                 end = end.fromtimestamp(int(end.timestamp()) // 5 * 5, tz=timezone.utc) - timedelta(seconds=5)
                 if args.scenario == "d4":
                     episode = json.loads((ROOT / "artifacts/local/d4-episode.json").read_text(encoding="utf-8"))
@@ -74,7 +76,7 @@ def main():
                     shift = end - parse_time(original["window_end"])
                     events = [event for event in episode["events"] if parse_time(event["event_time"]) <= parse_time(original["window_end"])]
                 elif args.scenario == 'forbidden-zone':
-                    end = datetime.now(timezone.utc) - timedelta(milliseconds=100)
+                    end = clock_now - timedelta(milliseconds=100)
                     shift = timedelta(0)
                     zone = next(row for row in app.state.service.site['zones'] if row['id'] == 'Z1')
                     rect = zone['rectangle']
@@ -83,7 +85,7 @@ def main():
                                'payload': {'asset_id': 'V1', 'x': rect['x'] + rect['width'] / 2,
                                            'y': rect['y'] + rect['height'] / 2}}]
                 else:
-                    end = datetime.now(timezone.utc) - timedelta(milliseconds=100)
+                    end = clock_now - timedelta(milliseconds=100)
                     shift = timedelta(0)
                     events = [{"event_id": "live-pair-" + asset, "event_time": stamp(end),
                                "sensor_id": "POS-" + asset, "type": "position", "demo": True,
@@ -119,6 +121,8 @@ def main():
                               stored_events=len(events), auth_enabled=client.get("/api/health").json()["auth"]["enabled"])
                 if job["status"] != "completed":
                     raise RuntimeError("Анализ Qwen завершился ошибкой: " + json.dumps(job.get("error"), ensure_ascii=False))
+                if job['stale']:
+                    raise RuntimeError('Первый анализ уже устарел до тестового изменения данных')
                 presentation = job['result'].get('presentation', {})
                 readable = json.dumps(presentation, ensure_ascii=False)
                 if presentation.get('version') != 1 or presentation.get('entity') != 'Погрузчик 1':
@@ -135,6 +139,18 @@ def main():
                         raise RuntimeError("В отчёте нет обязательных фактов MLP")
                     if 'достигла или превысила' not in readable or 'Причина движения моделью не подтверждена' not in readable:
                         raise RuntimeError('Некорректное объяснение модельного подозрения')
+                    if 'Оценка необычности движения: ≈' not in readable or 'Порог срабатывания модели: ≈' not in readable:
+                        raise RuntimeError('Не отображены подтверждённые оценка и порог MLP')
+                    snapshot = job['result']['technical']['snapshot']
+                    position = max((row for row in snapshot['events'] if row['type'] == 'position'
+                                    and row['payload'].get('asset_id') == 'V1'), key=lambda row: row['event_time'])
+                    area = next(row for row in backend.site['site_areas'] if row['id'] == snapshot['incident']['site_area_id'])
+                    rect = area.get('rectangle')
+                    report['location_check'] = {'site_area_id': area['id'], 'name': area['name'],
+                        'position_event_id': position['event_id'], 'position': position['payload'],
+                        'area_rectangle': rect, 'inside_area_rectangle': bool(rect and backend._inside(
+                            position['payload']['x'], position['payload']['y'], rect)),
+                        'meaning': 'registered map area, not confirmation of being inside a building'}
                 elif args.scenario == 'collision' and not {event["event_id"] for event in events} <= set(job["result"]["evidence_event_ids"]):
                     raise RuntimeError("В отчёте нет доказательств обеих машин")
                 elif args.scenario == 'forbidden-zone':
@@ -142,6 +158,20 @@ def main():
                         raise RuntimeError('Некорректное название зоны или выдуманный выход из неё')
                     if not job['result']['evidence_event_ids']:
                         raise RuntimeError('Нет проверенных событий зоны')
+                    clock_now += timedelta(seconds=1)
+                    changed = {**events[0], 'event_id': 'live-zone-changed-position',
+                               'event_time': stamp(clock_now - timedelta(milliseconds=100)),
+                               'payload': {**events[0]['payload'], 'x': events[0]['payload']['x'] + 0.5}}
+                    response = client.post('/api/events', json=changed,
+                                           headers={'X-Source-Key': os.environ['DISPATCH_SOURCE_KEY']})
+                    response.raise_for_status()
+                    response = client.get(f'/api/agent-jobs/{job_id}', headers={'X-Expected-User': headers['X-Expected-User']})
+                    response.raise_for_status()
+                    stale_job = response.json()
+                    if not stale_job['stale'] or stale_job['result']['presentation'] != presentation:
+                        raise RuntimeError('Изменение данных не пометило прежний срез как устаревший')
+                    report.update(stale_job=stale_job, changed_event=changed,
+                                  stale_after_actual_change_checked=True)
                 report["status"] = "PASS"
         except Exception as error:
             report["error"] = str(error)

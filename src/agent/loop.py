@@ -6,7 +6,7 @@ from .errors import AgentError
 from .result import ModelAnswer, validate_result
 from .tools import ToolSession, schemas
 
-PROMPT_VERSION = "dispatcher-v6-readable-snapshot"
+PROMPT_VERSION = "dispatcher-v6-readable-observations-v2"
 
 
 def verified_claim_choices(session):
