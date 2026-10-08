@@ -97,6 +97,11 @@ h2{font-size:15px;margin-bottom:0}
 .history{max-height:150px;overflow:auto;font-size:11px;color:var(--muted)}
 .history p{margin:5px 0}
 .analysis{border-top:1px solid var(--line);margin-top:14px;padding-top:14px}
+.analysis-freshness{margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-left:3px solid var(--green);border-radius:7px;background:var(--panel-raised);font-size:12px}
+.analysis-freshness strong{color:var(--green)}
+.analysis-freshness p{margin:5px 0 0;color:var(--muted)}
+.analysis-freshness-stale{border-left-color:var(--amber)}
+.analysis-freshness-stale strong{color:var(--amber)}
 .analysis pre{white-space:pre-wrap;word-break:break-word;font:11px/1.6 Consolas,monospace;max-height:270px;overflow:auto}
 .response-plan{margin:12px 0;padding:10px 12px;border-left:3px solid var(--blue);background:#192b3a;font-size:11px}
 .response-plan ol{padding-left:18px;margin:6px 0 0}

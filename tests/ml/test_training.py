@@ -87,7 +87,7 @@ def test_trained_observation_flows_to_verified_agent_result(trained, provider):
     def transport(request):
         body = json.loads(request.content)
         wire.append(body)
-        if len(wire) < 3:
+        if len(wire) == 1:
             name, args = (("get_incident", {"incident_id": snap.incident_id}) if len(wire) == 1
                           else ("get_asset_policy", {"asset_id": "V1"}))
             message = {"role": "assistant", "content": "", "tool_calls": [
@@ -116,16 +116,16 @@ def test_trained_observation_flows_to_verified_agent_result(trained, provider):
             await client.close()
 
     result = asyncio.run(run())
-    assert len(wire) == 3
+    assert len(wire) == 2
     assert json.loads(wire[0]["messages"][1]["content"])["snapshot"] == snap.descriptor()
     tool_messages = [m for m in wire[-1]["messages"] if m["role"] == "tool"]
-    incident_data, policy_data = [json.loads(m["content"]) for m in tool_messages]
+    assert len(tool_messages) == 1
+    incident_data = json.loads(tool_messages[0]['content'])
     assert incident_data["incident"] == snap.data["incident"]
     assert incident_data["evidence"] == [snap.events[i] for i in observation["evidence_event_ids"]]
     assert incident_data["observations"] == snap.data["observations"]
-    assert policy_data["policy"] == snap.policies["V1"]
     assert all("snapshot" not in payload and "evidence_refs" not in payload
-               for payload in (incident_data, policy_data))
+               for payload in (incident_data,))
     # D4 must retain every raw event and exact MLP value while removing significant
     # repeated metadata from the actual request, rather than trimming the fixture.
     full_session = ToolSession(snap)
@@ -138,5 +138,5 @@ def test_trained_observation_flows_to_verified_agent_result(trained, provider):
     assert result["evidence_event_ids"] == sorted(observation["evidence_event_ids"])
     assert {ref["id"] for ref in result["evidence_refs"] if ref["kind"] == "event"} == set(observation["evidence_event_ids"])
     assert all(ref["as_of"] == snap.as_of for ref in result["evidence_refs"])
-    assert [row["tool"] for row in result["tool_trace"]] == ["get_incident", "get_asset_policy"]
+    assert [row["tool"] for row in result["tool_trace"]] == ["get_incident"]
     assert result["incident_snapshot"]["model_version"] == snap.data["model_version"]

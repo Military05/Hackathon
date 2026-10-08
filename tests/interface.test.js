@@ -7,6 +7,17 @@ const vm=require("node:vm");
 const {webcrypto}=require("node:crypto");
 const source=fs.readFileSync(path.join(__dirname,"../src/interface/web/app.js"),"utf8");
 
+test("failed stale job describes changed input without presenting an outdated result",async()=>{
+  const h=harness(async()=>({job_id:"J1",incident_id:"I1",status:"failed",stale:true,error:{message:"JSON incomplete"}}));
+  h.ui.S.selected="I1";h.ui.S.job="J1";
+  await h.ui.renderJob();
+  assert.match(h.$("analysis").innerHTML,/Данные изменились после начала запроса/);
+  assert.doesNotMatch(h.$("analysis").innerHTML,/УСТАРЕЛ/);
+  h.setFetch(async()=>({job_id:"J1",incident_id:"I1",status:"completed",stale:true,result:{summary:"verified"}}));
+  await h.ui.renderJob();
+  assert.match(h.$("analysis").innerHTML,/УСТАРЕЛ/);
+});
+
 function harness(handler=async()=>({})){ 
   const nodes=new Map();
   class Element{
@@ -23,15 +34,105 @@ function harness(handler=async()=>({})){
   let fetchHandler=handler;
   const calls=[];
   const context=vm.createContext({document,crypto:webcrypto,Date,URLSearchParams,URL,AbortController,setTimeout:()=>1,clearTimeout:()=>{},setInterval:()=>1,fetch:async(url,options)=>{calls.push({url,options,body:options.body?JSON.parse(options.body):undefined});const value=await fetchHandler(url,options);return value?.__response?value:{ok:true,status:200,json:async()=>value};}});
-  vm.runInContext(source+"\nglobalThis.ui={S,api,command,applyDetails,renderDetails,renderJob,startAnalysis,notifications,sendPresence,switchOperator,recoveryAllowed,renderIncidents,renderSummary,compareIncidents,showAsset,initialOperator,focusSector,selectIncident,showSelectedOnMap,entityName,placeName};",context);
+  vm.runInContext(source+"\nglobalThis.ui={S,api,command,applyDetails,renderDetails,renderJob,startAnalysis,notifications,sendPresence,switchOperator,recoveryAllowed,renderIncidents,renderSummary,compareIncidents,showAsset,initialOperator,focusSector,selectIncident,showSelectedOnMap,entityName,placeName,clearIncidentLog,analyseTrends,saveNote};",context);
   context.ui.S.site={dispatch_config:{position_stale_seconds:5},site_areas:[]};
   context.ui.S.map={fitBounds(){}};
   context.ui.S.profiles=[{operator_id:"dispatcher-1",name:"Склады",sector_id:"logistics",operator_ready:true},{operator_id:"dispatcher-2",name:"Цех",sector_id:"production",operator_ready:true},{operator_id:"dispatcher-3",name:"Координатор",sector_id:"coordination",operator_ready:true}];
-  return {ui:context.ui,$:document.getElementById,calls,setFetch(fn){fetchHandler=fn;}};
+  return {setConfirm(fn){context.confirm=fn;},ui:context.ui,$:document.getElementById,calls,setFetch(fn){fetchHandler=fn;}};
 }
 function incident(extra={}){return {incident_id:"I1",type:"forbidden_zone",severity:"critical",detected_at:"2026-10-07T09:00:00Z",status:"open",condition_active:true,condition_state:"active",dispatch_revision:7,assigned_operator_id:null,site_area_id:"warehouse-raw",asset_id:"V1",pending_transfer:null,escalation_level:0,evidence_event_ids:[],history:[],response_plan:{contact:"Служба безопасности",steps:["Принять случай","Проверить источник"]},...extra};}
 function deferred(){let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};}
 function errorResponse(status,body){return {__response:true,ok:false,status,json:async()=>body};}
+
+function readableJob(extra={}){
+  return {job_id:"J1",incident_id:"I1",status:"completed",stale:false,result:{
+    presentation:{version:2,title:"Нарушение зоны подтверждено",description:"Погрузчик 1. Закрытая погрузочная зона.",
+      as_of:"2026-10-07T09:00:00Z",state:{text:"Условие происшествия наблюдалось."},
+      established:"Зафиксирован въезд в нарушение ограничения доступа.",attention:"Нужно проверить соблюдение доступа.",
+      unknown:"Причина въезда неизвестна.",observations:[],recommendations:["Уточните допуск к зоне."]},
+    technical:{verified_facts:[{id:"long-event-id-123",field:"payload.y",value:27.0}],
+      model_answer:{recommendations:["Непроверенное требование объявить пожар."]}}},...extra};
+}
+
+test("readable analysis hides raw facts and model prose inside closed technical disclosure",async()=>{
+  const h=harness(async()=>readableJob());h.ui.S.selected="I1";h.ui.S.job="J1";
+  await h.ui.renderJob();const html=h.$("analysis").innerHTML,[main,technical]=html.split("<details");
+  assert.match(main,/Погрузчик 1/);assert.match(main,/Закрытая погрузочная зона/);
+  assert.match(main,/Состояние на момент анализа/);assert.match(main,/Актуальность результата/);
+  assert.match(main,/Уточните допуск/);assert.doesNotMatch(main,/long-event-id|payload.y|пожар/);
+  assert.match(technical,/Технические данные/);assert.match(technical,/long-event-id-123/);
+  assert.match(technical,/payload.y/);assert.match(technical,/27/);assert.match(technical,/пожар/);
+  assert.doesNotMatch(technical.split(">")[0],/\bopen\b/);
+});
+
+test("stale analysis keeps captured state and names even when current card disagrees",async()=>{
+  const h=harness(async()=>readableJob({stale:true}));h.ui.S.selected="I1";h.ui.S.job="J1";
+  h.ui.S.detail=incident({condition_state:"restored",condition_active:false});
+  h.ui.S.site.assets=[{id:"V1",name:"Новое имя объекта"}];
+  await h.ui.renderJob();const main=h.$("analysis").innerHTML.split("<details")[0];
+  assert.match(main,/УСТАРЕЛ/);assert.match(main,/Состояние объекта сейчас может отличаться/);
+  assert.match(main,/analysis-freshness-stale/);assert.match(main,/Анализ устарел — данные изменились/);
+  assert.doesNotMatch(main,/analysis-freshness-current/);
+  assert.match(main,/Условие происшествия наблюдалось/);assert.match(main,/Погрузчик 1/);
+  assert.doesNotMatch(main,/Новое имя|вышел|восстановлен/);
+});
+
+test("fresh analysis explains that snapshot is not current position confirmation",async()=>{
+  const h=harness(async()=>readableJob());h.ui.S.selected="I1";h.ui.S.job="J1";
+  await h.ui.renderJob();assert.match(h.$("analysis").innerHTML,/не подтверждение текущего положения/);
+  assert.match(h.$("analysis").innerHTML,/Данные на:/);
+  assert.match(h.$("analysis").innerHTML,/analysis-freshness-current/);
+  assert.doesNotMatch(h.$("analysis").innerHTML,/analysis-freshness-stale/);
+});
+
+test("empty observations do not create a filler section",async()=>{
+  const job=readableJob();job.result.presentation.observations=[];
+  const h=harness(async()=>job);h.ui.S.selected="I1";h.ui.S.job="J1";await h.ui.renderJob();
+  assert.doesNotMatch(h.$("analysis").innerHTML.split("<details")[0],/Наблюдения|привязку/);
+});
+
+test("MLP evaluations stay in technical data and main card answers dispatcher questions",async()=>{
+  const job=readableJob();job.result.presentation.title="Обнаружено необычное движение";
+  job.result.presentation.established="По проверенным данным обнаружено необычное движение объекта.";
+  job.result.presentation.unknown="Причина движения неизвестна. Наличие аварии не установлено.";
+  job.result.technical.evaluation={algorithm:"MLP",score:0.9998759021886874,threshold:0.15122588236235446};
+  const h=harness(async()=>job);h.ui.S.selected="I1";h.ui.S.job="J1";await h.ui.renderJob();
+  const [main,technical]=h.$("analysis").innerHTML.split("<details");
+  assert.match(main,/Обнаружено необычное движение/);assert.match(main,/Наличие аварии не установлено/);
+  for(const question of ["Что установила система","Почему нужно обратить внимание","Что ещё неизвестно","Что сделать диспетчеру"])assert.ok(main.includes(question));
+  const withoutTime=main.replace(/<p class="muted">Данные на:[\s\S]*?<\/p>/g,"");
+  assert.doesNotMatch(withoutTime,/\d+[.,]\d+|≈|%|payload|MLP|Qwen|JSON|порог|оценк|модельный|скор/i);
+  assert.match(technical,/0.9998759021886874/);assert.match(technical,/0.15122588236235446/);
+});
+
+test("old numeric presentation is not displayed as a current plain conclusion",async()=>{
+  const job=readableJob();job.result.presentation={version:1,title:"MLP",observations:["score=0.99, threshold=0.15"]};
+  const h=harness(async()=>job);h.ui.S.selected="I1";h.ui.S.job="J1";await h.ui.renderJob();
+  const [main,technical]=h.$("analysis").innerHTML.split("<details");
+  assert.match(main,/Запросите новый анализ/);assert.doesNotMatch(main,/MLP|score|threshold|0.99/);
+  assert.match(technical,/threshold/);
+});
+
+test("missing presentation and missing snapshot time have safe explicit fallbacks",async()=>{
+  const h=harness(async()=>readableJob({result:{summary:"payload.y long-event-id"}}));
+  h.ui.S.selected="I1";h.ui.S.job="J1";await h.ui.renderJob();
+  assert.match(h.$("analysis").innerHTML,/понятное описание недоступно/);
+  assert.doesNotMatch(h.$("analysis").innerHTML.split("<details")[0],/payload.y|long-event-id/);
+  const job=readableJob();delete job.result.presentation.as_of;delete job.result.presentation.state;
+  h.setFetch(async()=>job);await h.ui.renderJob();
+  assert.match(h.$("analysis").innerHTML,/Данные на: не указано/);
+  assert.match(h.$("analysis").innerHTML,/Состояние не указано/);
+});
+
+test("MLP display separates suspicion from cause and escapes all output",async()=>{
+  const job=readableJob();job.result.presentation={version:2,title:"Необычное движение",description:"Погрузчик 1",
+    state:{text:"Состояние объекта не подтверждено данными."},unknown:"Причина движения не подтверждена.",observations:[],
+    recommendations:["<script>alert(1)</script>"]};job.result.technical.raw="<img src=x onerror=alert(1)>";
+  const h=harness(async()=>job);h.ui.S.selected="I1";h.ui.S.job="J1";await h.ui.renderJob();
+  const html=h.$("analysis").innerHTML;
+  assert.match(html,/Необычное движение/);assert.match(html,/Причина движения не подтверждена/);
+  assert.doesNotMatch(html,/<script>|<img /);assert.match(html,/&lt;script&gt;/);assert.match(html,/&lt;img/);
+});
 
 test("PATCH uses the visible revision and never fetches a newer revision before acting",async()=>{
   const h=harness(async()=>incident({dispatch_revision:8,assigned_operator_id:"dispatcher-1"}));
@@ -175,4 +276,37 @@ test("journal combines type, owner and text filters using shared human asset nam
   h.ui.S.incidents=[incident({assigned_operator_id:"dispatcher-1"}),incident({incident_id:"I2",type:"sensor_offline",assigned_operator_id:"dispatcher-1"}),incident({incident_id:"I3",assigned_operator_id:"dispatcher-2"})];
   h.$("filter-type").value="forbidden_zone";h.$("filter-state").value="mine";h.$("search-incidents").value="сырья";h.ui.renderIncidents();
   assert.match(h.$("incidents").innerHTML,/data-id="I1"/);assert.doesNotMatch(h.$("incidents").innerHTML,/data-id="I[23]"/);assert.match(h.$("incidents").innerHTML,/Погрузчик сырья/);
+});
+
+
+test("empty log refuses repeat analysis without any request",async()=>{
+ const h=harness();await assert.rejects(h.ui.analyseTrends(),/В журнале нет происшествий/);assert.equal(h.calls.length,0);
+});
+test("cancelled clear preserves active log and never sends deletion",async()=>{
+ const h=harness(async()=>({count:2,token:"snapshot",warning:"Данные будут потеряны. ИИ больше не сможет анализировать эти случаи."}));
+ h.ui.S.auth={user:{role:"admin"}};h.ui.S.incidents=[incident()];let warning;
+ h.setConfirm(text=>{warning=text;return false;});await h.ui.clearIncidentLog();
+ assert.match(warning,/включая активные/);assert.match(warning,/ИИ больше не сможет/);assert.equal(h.calls.length,1);assert.equal(h.ui.S.incidents.length,1);
+});
+test("clear requires admin and confirmation; conflict preserves incident",async()=>{
+ const h=harness();await assert.rejects(h.ui.clearIncidentLog(),/администратор/);assert.equal(h.calls.length,0);
+ h.ui.S.auth={user:{role:"admin"}};h.ui.S.incidents=[incident()];
+ h.setFetch(async(url)=>url.endsWith("preview")?{count:1,token:"token",warning:"?включая активные??"}:errorResponse(409,{code:"log_changed",message:"Журнал изменился"}));
+ h.setConfirm(()=>true);await assert.rejects(h.ui.clearIncidentLog(),/Журнал изменился/);
+ assert.equal(h.ui.S.incidents.length,1);assert.deepEqual(h.calls[1].body,{confirmation:"DELETE_INCIDENT_LOG",token:"token"});
+});
+test("empty note is not sent; notes and history are escaped in summary",async()=>{
+ const h=harness();await assert.rejects(h.ui.saveNote(),/Введите заметку/);assert.equal(h.calls.length,0);
+ const j=readableJob();j.result.presentation.history_summary="Похожие случаи найдены";
+ j.result.presentation.dispatcher_notes=['Журнал изменился?: ?<script>alert(1)</script>?. ??? ??включая активные.'];
+ h.setFetch(async()=>j);h.ui.S.selected="I1";h.ui.S.job="J1";await h.ui.renderJob();
+ const main=h.$("analysis").innerHTML.split("<details")[0];assert.match(main,/Похожие случаи/);assert.match(main,/Журнал изменился?/);assert.doesNotMatch(main,/<script>/);assert.match(main,/&lt;script&gt;/);
+});
+
+test("confirmed deletion clears visible results and invalidates old polling replies",async()=>{
+ const h=harness(async url=>url.endsWith("preview")?{count:1,token:"current",warning:"Будут удалены активные происшествия и анализы ИИ."}:{deleted:1});
+ h.ui.S.auth={user:{role:"admin"}};h.ui.S.busy=true;h.ui.S.selected="I1";h.ui.S.job="J1";h.ui.S.incidents=[incident()];
+ h.setConfirm(()=>true);const context=h.ui.S.context;await h.ui.clearIncidentLog();
+ assert.equal(h.ui.S.incidents.length,0);assert.equal(h.ui.S.job,null);assert.equal(h.ui.S.selected,null);assert.equal(h.ui.S.context,context+1);
+ assert.equal(h.calls[1].options.method,"POST");
 });

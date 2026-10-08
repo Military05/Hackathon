@@ -108,6 +108,89 @@ def test_attached_provider_probe_is_cancelled_before_client_close(tmp_path):
 
     asyncio.run(run())
 
+def test_claim_choices_preserve_literals_and_skip_ambiguous_integral_floats():
+    from src.agent.loop import verified_claim_choices
+    from src.agent.tools import ToolSession
+    session = ToolSession(snapshot())
+    session.execute('get_incident', json.dumps({'incident_id': session.snapshot.incident_id}))
+    choices = verified_claim_choices(session)
+    assert choices
+    assert not any(isinstance(claim['value'], float) and claim['value'].is_integer() for claim in choices)
+    assert session.records['event']['demo-position-0010']['payload']['x'] == 20.0
+    for claim in choices:
+        value = session.records[claim['source']][claim['id']]
+        for part in claim['field'].split('.'):
+            value = value[part]
+        assert type(value) is type(claim['value']) and value == claim['value']
+
+
+@pytest.mark.parametrize('provider', ['openai_compatible', 'ollama'])
+def test_truncated_provider_reply_is_never_accepted_even_with_valid_json(provider):
+    def transport(request):
+        body = json.loads(request.content)
+        assert (body.get('max_tokens') or body['options']['num_predict']) == 1024
+        message = {'role': 'assistant', 'content': answer([{'source': 'event', 'id': 'demo-position-0010', 'field': 'payload.x', 'value': 20.0}])}
+        return httpx.Response(200, json={'message': message, 'done_reason': 'length'} if provider == 'ollama'
+                              else {'choices': [{'message': message, 'finish_reason': 'length'}]})
+    async def run():
+        client = LocalModelClient(AgentConfig(provider=provider, model='test-double'), httpx.MockTransport(transport))
+        try:
+            with pytest.raises(AgentError) as error:
+                await client.chat([], [], time.monotonic()+10, response_schema={'type': 'object'})
+            assert error.value.code == 'model_reply_truncated'
+        finally:
+            await client.close()
+    asyncio.run(run())
+
+
+def test_truncated_answer_retries_with_bounded_schema_without_repairing_evidence():
+    class Client:
+        calls = 0
+        async def chat(self, messages, tools, deadline, response_schema=None):
+            self.calls += 1
+            if self.calls == 1:
+                return {'role': 'assistant', 'content': '', 'tool_calls': [tool_call()]}
+            if self.calls == 2:
+                raise AgentError('model_reply_truncated', 'truncated')
+            assert response_schema['properties']['facts']['maxItems'] == 3
+            return {'role': 'assistant', 'content': answer([{'source': 'event', 'id': 'demo-position-0010', 'field': 'payload.x', 'value': 999}])}
+    with pytest.raises(AgentError) as error:
+        asyncio.run(run_analysis(Client(), snapshot(), AgentConfig(model='test-double')))
+    assert error.value.code == 'invalid_evidence'
+
+
+def test_required_incident_retry_discards_unread_model_answer():
+    class Client:
+        def __init__(self):
+            self.calls = 0
+        async def chat(self, messages, tools, deadline, response_schema=None):
+            self.calls += 1
+            if self.calls == 1:
+                return {"role": "assistant", "content": "Данные якобы уже прочитаны"}
+            if self.calls == 2:
+                return {"role": "assistant", "content": "", "tool_calls": [tool_call()]}
+            assert not any(message.get('content') == 'Данные якобы уже прочитаны' for message in messages)
+            return {"role": "assistant", "content": answer([{"source": "event", "id": "demo-position-0010",
+                    "field": "payload.x", "value": 20.0}])}
+    client = Client()
+    result = asyncio.run(run_analysis(client, snapshot(), AgentConfig(model='test-double')))
+    assert client.calls == 3
+    assert [step['tool'] for step in result['tool_trace']] == ['get_incident']
+
+
+def test_missing_incident_read_cannot_become_success_after_retry():
+    class Client:
+        calls = 0
+        async def chat(self, *args, **kwargs):
+            self.calls += 1
+            return {"role": "assistant", "content": answer([{"source": "event", "id": "demo-position-0010",
+                    "field": "payload.x", "value": 20.0}])}
+    client = Client()
+    with pytest.raises(AgentError) as error:
+        asyncio.run(run_analysis(client, snapshot(), AgentConfig(model='test-double')))
+    assert error.value.code == 'invalid_evidence'
+    assert client.calls == 2
+
 
 def tool_call(name="get_incident", arguments=None, native=False):
     arguments = arguments or {"incident_id": "INC-ZONE-1"}
@@ -249,7 +332,7 @@ def test_service_snapshot_cache_stale_and_nonblocking_worker(tmp_path):
             pass
         async def close(self):
             pass
-        async def chat(self, messages, tools, deadline):
+        async def chat(self, messages, tools, deadline, response_schema=None):
             active[0] += 1
             maximum[0] = max(maximum[0], active[0])
             await asyncio.sleep(.01)
@@ -313,12 +396,14 @@ def test_schema_final_after_tools_and_bounded_format_retry(provider, early_inval
                     tool_call("get_asset_policy", {"asset_id": "V1"}, native=provider == "ollama")]}
         else:
             assert len(wire) == 3 and not body["tools"]
-            assert schema["$defs"]["FactClaim"]["properties"]["source"]["enum"] == [
-                "event", "policy", "sensor_health", "model_observation"]
+            choices = schema['$defs']['FactClaim']['enum']
+            assert choices and all(set(claim) == {'source', 'id', 'field', 'value'} for claim in choices)
+            assert all(claim['source'] in {'event', 'policy', 'sensor_health', 'model_observation'} for claim in choices)
+            assert not any(claim['value'] == 999 for claim in choices)
             assert schema["$defs"]["Hypothesis"]["properties"]["limitations"]["minItems"] == 1
-            assert schema["properties"]["facts"]["maxItems"] == 4
+            assert schema["properties"]["facts"]["maxItems"] == 3
             assert schema["properties"]["hypotheses"]["maxItems"] == 1
-            assert schema["properties"]["recommendations"]["maxItems"] == 3
+            assert schema["properties"]["recommendations"]["maxItems"] == 2
             assert schema["additionalProperties"] is False
             if provider == "openai_compatible":
                 assert body["response_format"]["type"] == "json_schema"
@@ -363,7 +448,7 @@ def test_truncated_answer_uses_bounded_structured_retry_and_never_partial_succes
         if len(wire) == 3:
             assert not body["tools"]
             schema = body["format"] if provider == "ollama" else body["response_format"]["json_schema"]["schema"]
-            assert schema["properties"]["facts"]["maxItems"] == 4
+            assert schema["properties"]["facts"]["maxItems"] == 3
             assert (body["options"]["num_predict"] if provider == "ollama" else body["max_tokens"]) == 1024
         payload = ({"message": message, "done_reason": reason} if provider == "ollama" else
                    {"choices": [{"message": message, "finish_reason": reason}]})
@@ -377,7 +462,7 @@ def test_truncated_answer_uses_bounded_structured_retry_and_never_partial_succes
             if final_truncated:
                 with pytest.raises(AgentError) as error:
                     await run_analysis(client, snapshot(), config)
-                assert error.value.code == "model_reply_invalid"
+                assert error.value.code == "model_reply_truncated"
                 assert error.value.details == {"finish_reason": "length", "output_token_limit": 1024}
             else:
                 result = await run_analysis(client, snapshot(), config)
@@ -479,7 +564,7 @@ def test_ordinary_reply_is_not_forced_to_json_and_schema_is_not_combined_with_to
     asyncio.run(run())
 
 
-def test_early_false_evidence_is_rejected_without_format_retry():
+def test_false_evidence_is_rejected_in_structured_final():
     wire = []
 
     def transport(request):
@@ -495,7 +580,7 @@ def test_early_false_evidence_is_rejected_without_format_retry():
         try:
             with pytest.raises(AgentError) as exc:
                 await run_analysis(client, snapshot(), config)
-            assert exc.value.code == "invalid_evidence" and len(wire) == 2
+            assert exc.value.code == "invalid_evidence" and len(wire) == 3
         finally:
             await client.close()
     asyncio.run(run())

@@ -17,7 +17,7 @@ def test_analysis_202_polling_and_shared_completed_cache(tmp_path):
             pass
         async def close(self):
             pass
-        async def chat(self, messages, tools, deadline):
+        async def chat(self, messages, tools, deadline, response_schema=None):
             return model_message(messages)
 
     async def run():
