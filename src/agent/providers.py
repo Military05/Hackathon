@@ -42,6 +42,12 @@ class FrozenSnapshot:
             evidence = incident.get("evidence_event_ids", [])
             if not isinstance(evidence, list) or set(evidence) - self.events.keys():
                 raise ValueError("Incident evidence must exist in the captured events")
+            for observation in self.observations.values():
+                ids = observation.get('evidence_event_ids')
+                if not isinstance(ids, list) or len(ids) != len(set(ids)) or set(ids) - self.events.keys():
+                    raise ValueError('Observation evidence must exist in the captured events')
+                if any(self.events[identifier].get('payload', {}).get('asset_id') != observation.get('asset_id') for identifier in ids):
+                    raise ValueError('Observation evidence belongs to another asset')
             for event in self.events.values():
                 parse_time(event["event_time"])
                 if event.get("received_at") and parse_time(event["received_at"]) > parse_time(self.data["as_of"]):

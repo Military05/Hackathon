@@ -46,6 +46,21 @@ function incident(extra={}){return {incident_id:"I1",type:"forbidden_zone",sever
 function deferred(){let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};}
 function errorResponse(status,body){return {__response:true,ok:false,status,json:async()=>body};}
 
+test("snapshot rejection stays visible in analysis after polling without a fake completed job",async()=>{
+  const h=harness(async()=>errorResponse(422,{code:"snapshot_invalid",message:"Доказательства превышают предел 100 событий.",details:{payload:"internal"}}));
+  h.ui.S.selected="I1";h.ui.applyDetails(incident());
+  await assert.rejects(h.ui.startAnalysis(),{code:"snapshot_invalid"});
+  assert.equal(h.ui.S.job,null);assert.equal(h.ui.S.analysisSubmitting,false);
+  const first=h.$("analysis").innerHTML;
+  assert.match(first,/role="alert"/);assert.match(first,/Анализ не начался/);
+  assert.doesNotMatch(first,/snapshot_invalid|payload|100 событий|Готов/);
+  h.ui.applyDetails(incident({dispatch_revision:8}));
+  assert.equal(h.$("analysis").innerHTML,first);
+  h.setFetch(async url=>url.endsWith("analysis")?{job_id:"J1",status:"queued"}:readableJob());
+  await h.ui.startAnalysis();assert.equal(h.ui.S.analysisError,null);
+  assert.match(h.$("analysis").innerHTML,/Готов/);
+});
+
 function readableJob(extra={}){
   return {job_id:"J1",incident_id:"I1",status:"completed",stale:false,result:{
     presentation:{version:2,title:"Нарушение зоны подтверждено",description:"Погрузчик 1. Закрытая погрузочная зона.",

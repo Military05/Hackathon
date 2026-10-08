@@ -134,7 +134,7 @@ async function clearIncidents(){
   try{await api("/incidents/clear","POST",{});S.context++;S.incidents=[];S.noticeRows=[];$("notifications").textContent="";hideSelected();for(const filters of Object.values(S.tabFilters))filters.page=0;await refresh();}catch(error){showError(error);}finally{button.disabled=false;}
 }
 
-async function selectIncident(id){S.selected=id;S.detail=null;S.detailId=null;S.job=null;S.jobStatus=null;S.detailRequest++;$("selected-panel").hidden=false;$("selected-panel").open=true;S.mapRenderer?.clearHighlight();$("selected-id").textContent=id;$("details").textContent="Загрузка карточки…";renderIncidents();await renderDetails();}
+async function selectIncident(id){S.analysisError=null;S.selected=id;S.detail=null;S.detailId=null;S.job=null;S.jobStatus=null;S.detailRequest++;$("selected-panel").hidden=false;$("selected-panel").open=true;S.mapRenderer?.clearHighlight();$("selected-id").textContent=id;$("details").textContent="Загрузка карточки…";renderIncidents();await renderDetails();}
 function showSelectedOnMap(){if(!S.detail||S.detail.incident_id!==S.selected)return;const found=S.mapRenderer?.showIncident(S.detail);if(found===false){showError(Error("Для этого случая нет подтверждённых координат. Проверьте источник данных; точка на карте не выдумывается."));}else $("error").hidden=true;}
 async function command(action,extra={}){
   const shown=S.detail;
@@ -205,7 +205,7 @@ function applyDetails(i){
   setMarkup("detail-facts",`<div><label>Причина</label>${esc(titles[i.type]||i.type)}</div><div><label>Место и объект</label>${esc(placeName(i))} · ${esc(entityName(i))}</div><div><label>Условие / обработка</label>${esc(labels[i.condition_state]||i.condition_state)} / ${esc(labels[i.status]||i.status)}</div><div><label>${S.role==="admin"?"Направлено диспетчеру":"Ответственный / получатель"}</label>${esc(recipientName(i))}</div><div><label>Обнаружено</label>${esc(clock(i.detected_at))} · ${esc(age(i.detected_at))}</div>`);
   S.mapRenderer?.highlight(i,{recenter:false});
   updateActions(i);
-  if(S.role!=="admin"&&!S.job)setMarkup("analysis",S.agentAvailable?"":"<p class='muted'>ИИ пока недоступен.</p>");
+  if(S.role!=="admin"&&!S.job)setMarkup("analysis",S.analysisError?`<p role="alert">${esc(S.analysisError)}</p>`:S.agentAvailable?"":"<p class='muted'>ИИ пока недоступен.</p>");
 }
 
 async function renderDetails(){
@@ -228,7 +228,17 @@ async function startAnalysis(){
     const j=await api(`/incidents/${encodeURIComponent(id)}/analysis`,"POST",{},operator);
     if(!sameSelection(id,context))return;
     if(j.incident_id&&j.incident_id!==id)throw Error("Анализ относится к другой карточке.");
-    S.job=j.job_id;S.jobStatus=j.status||"queued";await renderJob();
+    S.analysisError=null;S.job=j.job_id;S.jobStatus=j.status||"queued";await renderJob();
+  }catch(e){
+    if(sameSelection(id,context)){
+      S.job=null;S.jobStatus=null;
+      const message=e.code==="snapshot_invalid"?"Не удалось подготовить проверенные данные происшествия. Анализ не начался. Сообщите об этом ответственному за систему.":"Не удалось начать или получить анализ. Повторите запрос; если ошибка сохраняется, сообщите ответственному за систему.";
+      S.analysisError=message;
+      e.message=message;
+      $("analysis").setAttribute("aria-busy","false");
+      setMarkup("analysis",`<p role="alert">${esc(message)}</p>`);
+    }
+    throw e;
   }finally{S.analysisSubmitting=false;if(S.detail)updateActions(S.detail);}
 }
 async function renderJob(){
