@@ -11,15 +11,39 @@ END = datetime(2026, 10, 7, 9, 0, 10, tzinfo=timezone.utc)
 
 
 def positions(coords):
-    return [{"event_id": f"p{i}", "event_time": iso(END - timedelta(seconds=10 - i * 2)),
+    return [{"event_id": f"p{i}", "event_time": iso(END - timedelta(seconds=30 - i * 6)),
              "type": "position", "payload": {"asset_id": "V1", "x": x, "y": y}, "demo": True}
             for i, (x, y) in enumerate(coords)]
 
 
 def test_features_hand_calculated():
-    window = extract_window(positions([(0, 0), (2, 0), (2, 0), (2, 2), (4, 2), (4, 2)]), "V1", iso(END))
-    assert len(FEATURE_NAMES) == 7
-    assert window.features == pytest.approx((.6, math.sqrt(.24), .4, 6, 2, 3, math.pi / 2))
+    events = [{"event_id": f"p{i}", "event_time": iso(END - timedelta(seconds=30 - i)),
+               "type": "position", "payload": {"asset_id": "V1", "x": i, "y": 0}}
+              for i in range(31)]
+    window = extract_window(events, "V1", iso(END), {"road_endpoints": [[0, 0], [30, 0]]})
+    assert len(FEATURE_NAMES) == 13
+    assert window.features == pytest.approx((1, 0, 0, 10, 1, 0, 0, 0, 0, 1, 30, 1, 5))
+
+
+def test_short_context_does_not_return_a_fabricated_normal_result():
+    events = positions([(i, 0) for i in range(6)])
+    assert extract_window(events, "V1", iso(END)).features is None
+
+
+def test_context_reversals_ignore_noise_and_do_not_use_scenario_labels():
+    coords = [(30, 30 + min(i % 12, 12 - i % 12)) for i in range(31)]
+    events = [{"event_id": f"c{i}", "event_time": iso(END - timedelta(seconds=30 - i)),
+               "type": "position", "payload": {"asset_id": "V1", "x": x, "y": y}}
+              for i, (x, y) in enumerate(coords)]
+    context = {"road_endpoints": [[30, 10], [30, 60]]}
+    features = extract_window(events, "V1", iso(END), context).features
+    assert features is not None and features[7] >= 4 and features[8] >= 4
+    renamed = [dict(event, scenario="normal", label=0) for event in events]
+    assert extract_window(renamed, "V1", iso(END), context).features == features
+    for event in events:
+        event["payload"].update(x=30, y=30)
+    parked = extract_window(events, "V1", iso(END), context).features
+    assert parked[7] == 0 and parked[8] == 0 and parked[11] == 0
 
 
 def test_timestamp_ties_and_event_order_are_deterministic():

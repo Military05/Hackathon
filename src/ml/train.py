@@ -14,7 +14,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from .dataset import matrix, read_episodes
-from .features import FEATURE_NAMES, FEATURE_VERSION
+from .features import FEATURE_NAMES, FEATURE_VERSION, WINDOW_SECONDS
 from .metrics import baseline_scores, choose_threshold, report
 
 
@@ -51,7 +51,7 @@ def train(input_directory, output_directory):
     output.mkdir(parents=True, exist_ok=True)
     artifact = output / "movement.joblib"
     joblib.dump(model, artifact)
-    metadata = {"model_version": f"movement-mlp-v1-{dataset_hash[:12]}", "feature_version": FEATURE_VERSION,
+    metadata = {"model_version": f"movement-mlp-v2-{dataset_hash[:12]}", "feature_version": FEATURE_VERSION,
                 "feature_names": list(FEATURE_NAMES), "classes": model.classes_.tolist(), "positive_class": 1,
                 "threshold": threshold, "baseline_threshold": baseline_threshold,
                 "artifact_sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
@@ -66,12 +66,12 @@ def train(input_directory, output_directory):
                              "threshold_fit_split": "validation", "test_used_for_training": False},
                 "validation": {"mlp": report(vy, scores, threshold, vrows),
                                "baseline": report(vy, baseline_scores(vx), baseline_threshold, vrows)},
-                "normal_recovery_windows": 2, "window_seconds": 10, "step_seconds": 5, "min_samples": 6,
+                "normal_recovery_windows": 2, "window_seconds": WINDOW_SECONDS, "step_seconds": 5, "min_samples": 6,
                 "scope": "demo synthetic unusual movement, not collision probability"}
     if manifest is not None:
         metadata["dataset_manifest_sha256"] = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
         metadata["dataset_generator"] = manifest.get("generator", "legacy-road-v1")
-        for name in ("site_sha256", "site_semantic_sha256", "layout_version", "policy_version", "coverage", "seeds"):
+        for name in ("site_sha256", "site_semantic_sha256", "layout_version", "policy_version", "coverage", "seeds", "feature_context"):
             if name in manifest:
                 metadata[name] = manifest[name]
     (output / "movement.metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
