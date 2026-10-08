@@ -44,6 +44,63 @@ function incident(extra={}){return {incident_id:"I1",type:"forbidden_zone",sever
 function deferred(){let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};}
 function errorResponse(status,body){return {__response:true,ok:false,status,json:async()=>body};}
 
+function readableJob(extra={}){
+  return {job_id:"J1",incident_id:"I1",status:"completed",stale:false,result:{
+    presentation:{version:1,title:"Въезд в зону с ограничением",description:"Погрузчик 1. Закрытая погрузочная зона.",
+      as_of:"2026-10-07T09:00:00Z",state:{text:"Условие происшествия наблюдалось."},
+      observations:["Координаты заданы в условных единицах плана."],recommendations:["Уточните допуск к зоне."]},
+    technical:{verified_facts:[{id:"long-event-id-123",field:"payload.y",value:27.0}],
+      model_answer:{recommendations:["Непроверенное требование объявить пожар."]}}},...extra};
+}
+
+test("readable analysis hides raw facts and model prose inside closed technical disclosure",async()=>{
+  const h=harness(async()=>readableJob());h.ui.S.selected="I1";h.ui.S.job="J1";
+  await h.ui.renderJob();const html=h.$("analysis").innerHTML,[main,technical]=html.split("<details");
+  assert.match(main,/Погрузчик 1/);assert.match(main,/Закрытая погрузочная зона/);
+  assert.match(main,/Состояние на момент анализа/);assert.match(main,/Актуальность результата/);
+  assert.match(main,/Уточните допуск/);assert.doesNotMatch(main,/long-event-id|payload.y|пожар/);
+  assert.match(technical,/Технические данные/);assert.match(technical,/long-event-id-123/);
+  assert.match(technical,/payload.y/);assert.match(technical,/27/);assert.match(technical,/пожар/);
+  assert.doesNotMatch(technical.split(">")[0],/\bopen\b/);
+});
+
+test("stale analysis keeps captured state and names even when current card disagrees",async()=>{
+  const h=harness(async()=>readableJob({stale:true}));h.ui.S.selected="I1";h.ui.S.job="J1";
+  h.ui.S.detail=incident({condition_state:"restored",condition_active:false});
+  h.ui.S.site.assets=[{id:"V1",name:"Новое имя объекта"}];
+  await h.ui.renderJob();const main=h.$("analysis").innerHTML.split("<details")[0];
+  assert.match(main,/УСТАРЕЛ/);assert.match(main,/Состояние объекта сейчас может отличаться/);
+  assert.match(main,/Условие происшествия наблюдалось/);assert.match(main,/Погрузчик 1/);
+  assert.doesNotMatch(main,/Новое имя|вышел|восстановлен/);
+});
+
+test("fresh analysis explains that snapshot is not current position confirmation",async()=>{
+  const h=harness(async()=>readableJob());h.ui.S.selected="I1";h.ui.S.job="J1";
+  await h.ui.renderJob();assert.match(h.$("analysis").innerHTML,/не подтверждение текущего положения/);
+  assert.match(h.$("analysis").innerHTML,/Время среза:/);
+});
+
+test("missing presentation and missing snapshot time have safe explicit fallbacks",async()=>{
+  const h=harness(async()=>readableJob({result:{summary:"payload.y long-event-id"}}));
+  h.ui.S.selected="I1";h.ui.S.job="J1";await h.ui.renderJob();
+  assert.match(h.$("analysis").innerHTML,/понятное описание недоступно/);
+  assert.doesNotMatch(h.$("analysis").innerHTML.split("<details")[0],/payload.y|long-event-id/);
+  const job=readableJob();delete job.result.presentation.as_of;delete job.result.presentation.state;
+  h.setFetch(async()=>job);await h.ui.renderJob();
+  assert.match(h.$("analysis").innerHTML,/Время среза: не указано/);
+  assert.match(h.$("analysis").innerHTML,/Состояние не указано/);
+});
+
+test("MLP display separates suspicion from cause and escapes all output",async()=>{
+  const job=readableJob();job.result.presentation={version:1,title:"Необычное движение",description:"Погрузчик 1",
+    state:{text:"Состояние объекта не подтверждено данными."},observations:["Порог модели превышен. Причина движения не подтверждена."],
+    recommendations:["<script>alert(1)</script>"]};job.result.technical.raw="<img src=x onerror=alert(1)>";
+  const h=harness(async()=>job);h.ui.S.selected="I1";h.ui.S.job="J1";await h.ui.renderJob();
+  const html=h.$("analysis").innerHTML;
+  assert.match(html,/Необычное движение/);assert.match(html,/Причина движения не подтверждена/);
+  assert.doesNotMatch(html,/<script>|<img /);assert.match(html,/&lt;script&gt;/);assert.match(html,/&lt;img/);
+});
+
 test("PATCH uses the visible revision and never fetches a newer revision before acting",async()=>{
   const h=harness(async()=>incident({dispatch_revision:8,assigned_operator_id:"dispatcher-1"}));
   h.ui.S.selected="I1";h.ui.applyDetails(incident());h.ui.S.busy=true;

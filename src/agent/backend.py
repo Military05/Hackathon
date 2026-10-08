@@ -61,7 +61,15 @@ def capture_snapshot(service, incident_id):
         bounds = {"since": rows[0]["event_time"] if rows else incident["detected_at"],
                   "until": rows[-1]["event_time"] if rows else incident["detected_at"],
                   "limit": 100, "bounded": True}
+        related = set(subjects + [incident.get('zone_id'), incident.get('building_id'), incident.get('site_area_id')])
+        display_context = {
+            group: {row['id']: row['name'] for row in service.site.get(group, [])
+                    if row.get('id') in related and isinstance(row.get('name'), str)}
+            for group in ('assets', 'zones', 'buildings', 'site_areas')}
+        display_context.update(coordinate_system=dict(service.site.get('coordinate_system', {})),
+                               zone_exit_confirm_samples=service.config.get('zone_exit_confirm_samples'))
         return {"as_of": as_of, "rule_version": service.rule_version,
                 "model_version": service.model_version, "incident": incident,
                 "events": rows, "observations": observations, "policies": policies,
-                "sensor_health": health, "history_bounds": bounds}
+                "sensor_health": health, "history_bounds": bounds,
+                "display_context": display_context}

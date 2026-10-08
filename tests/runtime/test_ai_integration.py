@@ -123,6 +123,29 @@ class AIIntegrationTests(unittest.TestCase):
         updated = FrozenSnapshot(capture_snapshot(self.service, self.incident["incident_id"]))
         self.assertNotEqual(before.snapshot_id, updated.snapshot_id)
 
+    def test_readable_zone_exit_follows_actual_rule_and_frozen_registry(self):
+        from src.agent.presentation import present
+        service = Service(Path(self.temp.name) / 'zone.db', ROOT / 'data/demo/site.json', clock=lambda: self.now)
+        def position(index, x, y):
+            service.ingest_event({'event_id': f'readable-zone-{index}', 'event_time': stamp(self.now),
+                                 'sensor_id': 'POS-V1', 'type': 'position', 'demo': True,
+                                 'payload': {'asset_id': 'V1', 'x': x, 'y': y}})
+        position(0, 25, 50)
+        incident = next(row for row in service.list_incidents() if row['type'] == 'forbidden_zone' and row['zone_id'] == 'Z1')
+        captured = FrozenSnapshot(capture_snapshot(service, incident['incident_id']))
+        self.now += timedelta(seconds=1)
+        position(1, 40, 40)
+        one_exit = ToolSession(FrozenSnapshot(capture_snapshot(service, incident['incident_id'])))
+        self.assertFalse(present(one_exit, [])['state']['confirmed_exit'])
+        self.now += timedelta(seconds=1)
+        position(2, 40, 40)
+        confirmed = present(ToolSession(FrozenSnapshot(capture_snapshot(service, incident['incident_id']))), [])
+        self.assertTrue(confirmed['state']['confirmed_exit'])
+        self.assertEqual(confirmed['place'], 'Закрытая погрузочная зона')
+        self.assertEqual(confirmed['entity'], 'Погрузчик 1')
+        self.assertEqual(present(ToolSession(captured), [])['state']['code'], 'active')
+        self.assertFalse(present(ToolSession(captured), [])['state']['confirmed_exit'])
+
     def test_retrained_version_does_not_reuse_previous_model_watermark(self):
         upgraded = MovementModel(self.service, self.artifact)
         upgraded.metadata = {**upgraded.metadata, "model_version": "retrained-test-version"}
@@ -148,7 +171,12 @@ class AIIntegrationTests(unittest.TestCase):
         answer["facts"] = [{"source": "model_observation", "id": self.observation["observation_id"],
                             "field": field, "value": self.observation[field]}
                            for field in ("status", "score", "threshold")]
-        self.assertEqual(len(validate_result(json.dumps(answer), session, "explicit-model-test-double")["facts"]), 3)
+        result = validate_result(json.dumps(answer), session, "explicit-model-test-double")
+        self.assertEqual(len(result["facts"]), 3)
+        self.assertEqual(result['presentation']['entity'], 'Погрузчик 1')
+        self.assertIn('достигла или превысила', ' '.join(result['presentation']['observations']))
+        self.assertIn('Причина движения моделью не подтверждена', ' '.join(result['presentation']['observations']))
+        self.assertEqual(result['technical']['snapshot']['observations'][0], self.observation)
 
     def test_http_timeout_is_execution_timeout(self):
         def timed_out(request):

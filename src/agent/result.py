@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .errors import AgentError
+from .presentation import present
 from .providers import canonical, utc_now
 from .tools import Identifier, ToolSession
 
@@ -101,6 +102,7 @@ def validate_result(content, session: ToolSession, model_name):
         if not 1 <= len(recommendation) <= 500:
             raise AgentError("model_reply_invalid", "Recommendation length is invalid.")
     descriptor = session.snapshot.descriptor()
+    presentation = present(session, facts)
     summary = f"Происшествие {session.snapshot.incident_id}. " + "; ".join(f["text"] for f in facts[:3])
     summary += ". Предлагаемое действие оператору: " + answer.recommendations[0]
     if incident.get("type") == "model_anomaly":
@@ -110,7 +112,10 @@ def validate_result(content, session: ToolSession, model_name):
                    f"score={canonical(linked['score'])}, threshold={canonical(linked['threshold'])}. "
                    "Это модельное подозрение, а не вероятность аварии. "
                    "Предлагаемое действие оператору: " + answer.recommendations[0])
-    return {"summary": summary,
+    return {"summary": presentation['description'], 'presentation': presentation,
+            'technical': {'snapshot': session.snapshot.export(), 'verified_facts': facts,
+                          'model_answer': answer.model_dump(), 'tool_trace': list(session.trace),
+                          'legacy_summary': summary},
             "facts": facts, "hypotheses": [h.model_dump() for h in answer.hypotheses],
             "recommendations": answer.recommendations, "evidence_event_ids": sorted(event_ids),
             "evidence_refs": list(refs.values()), "tool_trace": list(session.trace),

@@ -26,7 +26,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", default=str(ROOT / ".env"))
     parser.add_argument("--output", default=str(ROOT / "artifacts/local/qwen-backend-live.json"))
-    parser.add_argument("--scenario", choices=("d4", "collision"), default="d4")
+    parser.add_argument("--scenario", choices=("d4", "collision", "forbidden-zone"), default="d4")
     args = parser.parse_args()
     load_env_file(args.env_file)
     os.environ.update(DISPATCH_ENABLE_AUTH="1", DISPATCH_ENABLE_AGENT="1", DISPATCH_ENABLE_ML="1",
@@ -73,6 +73,15 @@ def main():
                     original = json.loads((ROOT / "artifacts/local/d4-agent-snapshot.json").read_text(encoding="utf-8"))["observations"][0]
                     shift = end - parse_time(original["window_end"])
                     events = [event for event in episode["events"] if parse_time(event["event_time"]) <= parse_time(original["window_end"])]
+                elif args.scenario == 'forbidden-zone':
+                    end = datetime.now(timezone.utc) - timedelta(milliseconds=100)
+                    shift = timedelta(0)
+                    zone = next(row for row in app.state.service.site['zones'] if row['id'] == 'Z1')
+                    rect = zone['rectangle']
+                    events = [{'event_id': 'live-zone-position', 'event_time': stamp(end),
+                               'sensor_id': 'POS-V1', 'type': 'position', 'demo': True,
+                               'payload': {'asset_id': 'V1', 'x': rect['x'] + rect['width'] / 2,
+                                           'y': rect['y'] + rect['height'] / 2}}]
                 else:
                     end = datetime.now(timezone.utc) - timedelta(milliseconds=100)
                     shift = timedelta(0)
@@ -93,7 +102,8 @@ def main():
                     if observation["status"] != "anomaly":
                         raise RuntimeError("Перенесённая MLP не подтвердила D4")
                 incident = next(item for item in backend.list_incidents()
-                                if item["type"] == ("model_anomaly" if args.scenario == "d4" else "collision"))
+                                if item['type'] == {'d4': 'model_anomaly', 'collision': 'collision',
+                                                    'forbidden-zone': 'forbidden_zone'}[args.scenario])
                 response = client.post(f"/api/incidents/{incident['incident_id']}/analysis", headers=headers)
                 response.raise_for_status()
                 job_id = response.json()["job_id"]
@@ -109,13 +119,29 @@ def main():
                               stored_events=len(events), auth_enabled=client.get("/api/health").json()["auth"]["enabled"])
                 if job["status"] != "completed":
                     raise RuntimeError("Анализ Qwen завершился ошибкой: " + json.dumps(job.get("error"), ensure_ascii=False))
+                presentation = job['result'].get('presentation', {})
+                readable = json.dumps(presentation, ensure_ascii=False)
+                if presentation.get('version') != 1 or presentation.get('entity') != 'Погрузчик 1':
+                    raise RuntimeError('Нет понятного описания с зарегистрированным названием объекта')
+                if 'payload.' in readable or any(fact['id'] in readable for fact in job['result']['facts']):
+                    raise RuntimeError('Технические поля попали в основной текст')
+                if job['result']['technical']['snapshot']['as_of'] != presentation.get('as_of'):
+                    raise RuntimeError('Время отображения не совпадает с сохранённым срезом')
+                report['readable_presentation_checked'] = True
                 if args.scenario == "d4":
                     verified = {fact["field"] for fact in job["result"]["facts"]
                                 if fact["source"] == "model_observation" and fact["id"] == observation["observation_id"]}
                     if not {"status", "score", "threshold"} <= verified:
                         raise RuntimeError("В отчёте нет обязательных фактов MLP")
-                elif not {event["event_id"] for event in events} <= set(job["result"]["evidence_event_ids"]):
+                    if 'достигла или превысила' not in readable or 'Причина движения моделью не подтверждена' not in readable:
+                        raise RuntimeError('Некорректное объяснение модельного подозрения')
+                elif args.scenario == 'collision' and not {event["event_id"] for event in events} <= set(job["result"]["evidence_event_ids"]):
                     raise RuntimeError("В отчёте нет доказательств обеих машин")
+                elif args.scenario == 'forbidden-zone':
+                    if presentation.get('place') != zone['name'] or presentation['state']['confirmed_exit']:
+                        raise RuntimeError('Некорректное название зоны или выдуманный выход из неё')
+                    if not job['result']['evidence_event_ids']:
+                        raise RuntimeError('Нет проверенных событий зоны')
                 report["status"] = "PASS"
         except Exception as error:
             report["error"] = str(error)
