@@ -24,11 +24,11 @@
     const now=options.serverTime||options.clock||Date.now;
     const staleSeconds=Number(options.positionStaleSeconds)||5;
     const schedule=options.setInterval||setInterval,cancel=options.clearInterval||clearInterval;
-    let sensors=[],history=[],selected=null,automatic=true,chime=false,pending=null,destroyed=false,lastInspection=null,lastError=null,seen=false;
+    let sensors=[],history=[],selected=null,automatic=true,pending=null,destroyed=false,lastInspection=null,lastError=null,seen=false;
     const stateSignatures=new Map();
-    const formatTime=value=>value?new Date(value).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit",second:"2-digit"}):"Ещё не получен";
+    const formatTime=value=>value?new Date(value).toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"}):"Ещё не получен";
     const ageText=value=>value===null?"Нет пакета":`${Math.round(value)} с назад`;
-    let list,summaryEl,inspectionEl,errorEl,checkButton,autoInput,chimeInput,dialog,dialogBody;
+    let list,summaryEl,inspectionEl,errorEl,checkButton,autoInput,dialog,dialogBody;
     function record(kind,message,sensorId=null){history.push({at:now(),kind,message,sensor_id:sensorId});if(history.length>20)history.shift();}
     function readSensors(value){const rows=Array.isArray(value)?value:value?.sensors;if(!Array.isArray(rows))throw Error("Сервер вернул некорректный список датчиков");return rows;}
     function render(){
@@ -51,8 +51,7 @@
       const sensor=sensors.find(s=>(s.sensor_id||s.id)===selected);
       if(!sensor){dialogBody.innerHTML="<p>Источник отсутствует в текущем наборе данных.</p>";return;}
       const h=classify(sensor,now(),staleSeconds);
-      const localHistory=history.filter(row=>!row.sensor_id||row.sensor_id===selected).slice(-8).reverse();
-      dialogBody.innerHTML=`<div class="diagnostic-heading"><span class="diagnostic-sensor-icon" aria-hidden="true"><span></span></span><div><h2>${esc(h.id)}</h2><p>${esc(typeNames[sensor.type]||sensor.type)} · ${esc(sensor.asset_id||sensor.building_id||"Предприятие")}</p></div><span class="sensor-state ${h.communication}">${statusNames[h.communication]}</span></div><p class="diagnostic-cause">${esc(h.cause)}</p><dl class="diagnostic-facts"><div><dt>Последний принятый пакет</dt><dd>${formatTime(sensor.last_received_at)} · ${ageText(h.age)}</dd></div><div><dt>Последний heartbeat</dt><dd>${formatTime(sensor.last_heartbeat_at)}</dd></div><div><dt>Последнее измерение</dt><dd>${formatTime(sensor.last_measurement_at)}${h.measurementAge!==null?` · ${ageText(h.measurementAge)}`:""}</dd></div><div><dt>Порог потери связи</dt><dd>${h.threshold} с</dd></div>${sensor.type==="position"?`<div><dt>Порог свежести позиции</dt><dd>${staleSeconds} с</dd></div>`:""}<div><dt>Начало ожидания сигнала</dt><dd>${formatTime(sensor.first_expected_at)}</dd></div></dl><p class="diagnostic-disclaimer">Проверяем связь и свежесть уже полученных данных. Это не физическая самодиагностика прибора. Heartbeat не подтверждает исправность измерений.${sensor.type==="access"?" Отсутствие проходов само по себе нормально.":""}</p><h3>Наблюдения в этой вкладке</h3><p class="diagnostic-history-note">Последние 20 записей за время открытия страницы; серверная история происшествия хранится отдельно.</p><ol class="diagnostic-history">${localHistory.length?localHistory.map(row=>`<li><time>${formatTime(row.at)}</time><span>${esc(row.message)}</span></li>`).join(""):"<li>Пока нет наблюдений.</li>"}</ol>`;
+      dialogBody.innerHTML=`<div class="diagnostic-heading"><span class="diagnostic-sensor-icon" aria-hidden="true"><span></span></span><div><h2>${esc(h.id)}</h2><p>${esc(typeNames[sensor.type]||sensor.type)} · ${esc(sensor.asset_id||sensor.building_id||"Предприятие")}</p></div><span class="sensor-state ${h.communication}">${statusNames[h.communication]}</span></div><p class="diagnostic-cause">${esc(h.cause)}</p><dl class="diagnostic-facts"><div><dt>Последний принятый пакет</dt><dd>${formatTime(sensor.last_received_at)} · ${ageText(h.age)}</dd></div><div><dt>Последний heartbeat</dt><dd>${formatTime(sensor.last_heartbeat_at)}</dd></div><div><dt>Последнее измерение</dt><dd>${formatTime(sensor.last_measurement_at)}${h.measurementAge!==null?` · ${ageText(h.measurementAge)}`:""}</dd></div><div><dt>Порог потери связи</dt><dd>${h.threshold} с</dd></div>${sensor.type==="position"?`<div><dt>Порог свежести позиции</dt><dd>${staleSeconds} с</dd></div>`:""}<div><dt>Начало ожидания сигнала</dt><dd>${formatTime(sensor.first_expected_at)}</dd></div></dl><p class="diagnostic-disclaimer">Проверяем связь и свежесть уже полученных данных. Это не физическая самодиагностика прибора. Heartbeat не подтверждает исправность измерений.${sensor.type==="access"?" Отсутствие проходов само по себе нормально.":""}</p>`;
     }
     function update(value){
       if(destroyed)return;
@@ -67,7 +66,6 @@
       if(!summary.total){render();return null;}
       lastInspection={at:now(),mode,summary};
       record(mode,`${mode==="manual"?"Ручная":"Автоматическая"} проверка: ${summary.online}/${summary.total} на связи; требуют внимания: ${summary.attention}`);
-      if(chime&&typeof options.onSound==="function")options.onSound(summary,mode);
       render();return summary;
     }
     function automaticCheck(){
@@ -93,9 +91,9 @@
       if(notify&&options.onSelectSensor)options.onSelectSensor(id);
     }
     if(host){
-      host.innerHTML=`<div class="diagnostic-toolbar"><div class="diagnostic-options"><label><input class="diagnostic-auto" type="checkbox" checked>Автопроверка · каждые 30 с</label><label><input class="diagnostic-chime" type="checkbox">Короткий звук проверки</label></div><button class="diagnostic-check">Проверить сейчас</button></div><p class="diagnostic-summary"></p><p class="diagnostic-inspection" role="status"></p><p class="diagnostic-error" role="alert" hidden></p><div class="diagnostic-list"></div><p class="diagnostic-footnote">Проверка связи и данных по последнему пакету. Автопроверка использует текущие данные; ручная перечитывает сервер. Звук работает при включённом общем звуке.</p><dialog class="diagnostic-dialog"><div class="diagnostic-dialog-header"><span>Диагностика источника</span><button class="diagnostic-close" aria-label="Закрыть диагностику">✕</button></div><div class="diagnostic-dialog-body"></div><div class="diagnostic-dialog-actions"><button class="diagnostic-dialog-check">Проверить сейчас</button><button class="diagnostic-map">Выбрать на карте</button></div></dialog>`;
-      list=host.querySelector(".diagnostic-list");summaryEl=host.querySelector(".diagnostic-summary");inspectionEl=host.querySelector(".diagnostic-inspection");errorEl=host.querySelector(".diagnostic-error");checkButton=host.querySelector(".diagnostic-check");autoInput=host.querySelector(".diagnostic-auto");chimeInput=host.querySelector(".diagnostic-chime");dialog=host.querySelector("dialog");dialogBody=host.querySelector(".diagnostic-dialog-body");
-      checkButton.addEventListener("click",manualCheck);autoInput.addEventListener("change",()=>{automatic=autoInput.checked;});chimeInput.addEventListener("change",()=>{chime=chimeInput.checked;});
+      host.innerHTML=`<div class="diagnostic-toolbar"><div class="diagnostic-options"><label><input class="diagnostic-auto" type="checkbox" checked>Автопроверка · каждые 30 с</label></div><button class="diagnostic-check">Проверить сейчас</button></div><p class="diagnostic-summary"></p><p class="diagnostic-inspection" role="status"></p><p class="diagnostic-error" role="alert" hidden></p><div class="diagnostic-list"></div><dialog class="diagnostic-dialog"><div class="diagnostic-dialog-header"><span>Диагностика источника</span><button class="diagnostic-close" aria-label="Закрыть диагностику">✕</button></div><div class="diagnostic-dialog-body"></div><div class="diagnostic-dialog-actions"><button class="diagnostic-dialog-check">Проверить сейчас</button><button class="diagnostic-map">Выбрать на карте</button></div></dialog>`;
+      list=host.querySelector(".diagnostic-list");summaryEl=host.querySelector(".diagnostic-summary");inspectionEl=host.querySelector(".diagnostic-inspection");errorEl=host.querySelector(".diagnostic-error");checkButton=host.querySelector(".diagnostic-check");autoInput=host.querySelector(".diagnostic-auto");dialog=host.querySelector("dialog");dialogBody=host.querySelector(".diagnostic-dialog-body");
+      checkButton.addEventListener("click",manualCheck);autoInput.addEventListener("change",()=>{automatic=autoInput.checked;});
       list.addEventListener("click",event=>{const row=event.target.closest("[data-sensor-id]");if(row)selectSensor(row.dataset.sensorId);});
       host.querySelector(".diagnostic-close").addEventListener("click",()=>dialog.close());
       host.querySelector(".diagnostic-dialog-check").addEventListener("click",manualCheck);
@@ -104,7 +102,7 @@
       render();
     }
     const timer=schedule(automaticCheck,30000);
-    return {update,manualCheck,automaticCheck,selectSensor,inspectSensor:selectSensor,setAutomatic:value=>{automatic=!!value;if(autoInput)autoInput.checked=automatic;},setChime:value=>{chime=!!value;if(chimeInput)chimeInput.checked=chime;},getState:()=>({sensors:sensors.map(s=>({...s})),history:history.map(h=>({...h})),lastInspection,lastError,automatic,chime,pending:!!pending}),destroy(){destroyed=true;cancel(timer);dialog?.close();}};
+    return {update,manualCheck,automaticCheck,selectSensor,inspectSensor:selectSensor,setAutomatic:value=>{automatic=!!value;if(autoInput)autoInput.checked=automatic;},getState:()=>({sensors:sensors.map(s=>({...s})),history:history.map(h=>({...h})),lastInspection,lastError,automatic,pending:!!pending}),destroy(){destroyed=true;cancel(timer);dialog?.close();}};
   }
   return {create,classify,summarize};
 });

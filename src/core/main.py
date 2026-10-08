@@ -139,7 +139,7 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
 
     @app.post("/api/demo/start")
     async def demo_start(body: dict = Body(...), x_demo_operator: str | None = Header(default=None)):
-        service.validate_operator(x_demo_operator)
+        service.validate_reader(x_demo_operator)
         if not demo:
             raise ApiError(503, "simulator_unavailable", "Симулятор подключает Гриша / второй агент")
         if set(body) != {"scenario"} or not isinstance(body.get("scenario"), str) or body["scenario"] not in scenarios:
@@ -152,7 +152,7 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
 
     @app.post("/api/demo/stop")
     async def demo_stop(body: dict = Body(default={}), x_demo_operator: str | None = Header(default=None)):
-        service.validate_operator(x_demo_operator)
+        service.validate_reader(x_demo_operator)
         if body:
             raise ApiError(422, "extra_parameters", "Операция stop не принимает параметры")
         if not demo:
@@ -180,8 +180,31 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
 
     @app.get("/api/incidents")
     def incidents(status: str | None = None, scope: str | None = None, site_area_id: str | None = None,
-                  x_demo_operator: str | None = Header(default=None)):
-        return service.list_incidents(status, scope, site_area_id, x_demo_operator)
+                  x_demo_operator: str | None = Header(default=None), include_closed: bool = False,
+                  limit: int = Query(default=80, ge=1, le=200), offset: int = Query(default=0, ge=0, le=100000)):
+        return service.list_incidents(status, scope, site_area_id, x_demo_operator, include_closed, limit, offset)
+
+    @app.post("/api/incidents/clear")
+    def clear_incidents(body: dict = Body(default={}), x_demo_operator: str | None = Header(default=None)):
+        if body:
+            raise ApiError(422, "extra_parameters", "Очистка списка не принимает параметры")
+        return service.clear_incidents(x_demo_operator)
+
+    def require_log_admin(request):
+        if getattr(request.state, 'user', {}).get('role') != 'admin':
+            raise ApiError(403, 'admin_required', 'Очистка общего журнала доступна администратору.')
+
+    @app.get('/api/admin/incident-log/preview')
+    def incident_log_preview(request: Request):
+        require_log_admin(request)
+        from src.core.incident_log import preview
+        return preview(service)
+
+    @app.post('/api/admin/incident-log/clear')
+    def clear_incident_log(request: Request, body: dict = Body(...)):
+        require_log_admin(request)
+        from src.core.incident_log import clear
+        return clear(service, body)
 
     @app.get("/api/incidents/{incident_id}")
     def incident(incident_id: str, x_demo_operator: str | None = Header(default=None)):
@@ -200,12 +223,12 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
         return service.operator_presence(x_demo_operator, body)
 
     @app.get("/api/dispatch-summary")
-    def summary():
-        return service.summary()
+    def summary(x_demo_operator: str | None = Header(default=None)):
+        return service.summary(operator=x_demo_operator)
 
     @app.get("/api/site-areas/summary")
-    def area_summary():
-        return service.summary(by_area=True)
+    def area_summary(x_demo_operator: str | None = Header(default=None)):
+        return service.summary(by_area=True, operator=x_demo_operator)
 
     @app.get("/api/dispatch-notifications")
     def notifications(after_seq: int = Query(default=0, ge=0), limit: int = Query(default=50, ge=1, le=100),
@@ -219,15 +242,15 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
     @app.get("/api/checkpoint/journal")
     def checkpoint_journal(q: str | None = Query(default=None, max_length=100), direction: str | None = None,
                            permission: str | None = None, since: str | None = None, until: str | None = None,
-                           limit: int = Query(default=50, ge=1, le=200), offset: int = Query(default=0, ge=0, le=100000)):
-        return operations.journal(q, direction, permission, since, until, limit, offset)
+                           sort: str = "newest", limit: int = Query(default=50, ge=1, le=200), offset: int = Query(default=0, ge=0, le=100000)):
+        return operations.journal(q, direction, permission, since, until, limit, offset, sort)
 
     @app.get("/api/checkpoint/export.csv")
     def checkpoint_export(q: str | None = Query(default=None, max_length=100), direction: str | None = None,
                           permission: str | None = None, since: str | None = None, until: str | None = None,
-                          limit: int = Query(default=200, ge=1, le=200), offset: int = Query(default=0, ge=0, le=100000)):
+                          sort: str = "newest", limit: int = Query(default=200, ge=1, le=200), offset: int = Query(default=0, ge=0, le=100000)):
         payload = operations.checkpoint_csv(q=q, direction=direction, permission=permission, since=since, until=until,
-                                             limit=limit, offset=offset)
+                                             limit=limit, offset=offset, sort=sort)
         return Response(payload, media_type="text/csv; charset=utf-8", headers={"Content-Disposition": "attachment; filename=checkpoint.csv; filename*=UTF-8''" + quote("Журнал_проходов_КПП.csv"),
                         "X-Export-Limit": str(limit), "X-Export-Offset": str(offset)})
 
@@ -237,7 +260,7 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
 
     @app.get("/api/operator-activity")
     def operator_activity(x_demo_operator: str | None = Header(default=None)):
-        return operations.dispatch_activity(service.validate_operator(x_demo_operator))
+        return operations.dispatch_activity(service.validate_reader(x_demo_operator))
 
     @app.get("/api/dispatch-history/export.csv")
     def dispatch_export(request: Request, scope: str = "mine", limit: int = Query(default=1000, ge=1, le=2000),
@@ -246,7 +269,7 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
             raise ApiError(422, "invalid_scope", "Укажите mine или all")
         if scope == "all" and getattr(request.state, "user", {}).get("role") != "admin":
             raise ApiError(403, "admin_required", "Общий журнал доступен администратору")
-        operator = service.validate_operator(x_demo_operator) if scope == "mine" else None
+        operator = service.validate_operator(x_demo_operator) if scope == "mine" and x_demo_operator != "admin" else None
         return Response(operations.dispatch_history_csv(operator, limit), media_type="text/csv; charset=utf-8",
                         headers={"Content-Disposition": "attachment; filename=dispatcher-actions.csv; filename*=UTF-8''" + quote("Журнал_действий_диспетчера.csv"), "X-Export-Limit": str(limit)})
 

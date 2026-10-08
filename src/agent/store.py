@@ -84,6 +84,11 @@ class JobStore:
         now = self.clock()
         with self.connection(write=True) as db:
             self._expire(db, now)
+            context = snapshot.data.get('incident_context')
+            if context is not None:
+                current = db.execute("SELECT value FROM metadata WHERE key='incident_log_epoch'").fetchone()
+                if context['log_epoch'] != (int(current[0]) if current else 0):
+                    raise AgentError('analysis_data_changed', 'Журнал очищен во время запроса. Запросите анализ заново.', 409)
             cached = self._cached(db, cache_key)
             if cached:
                 db.execute("INSERT OR IGNORE INTO b1_agent_requesters VALUES(?,?,?)", (cached["job_id"], operator_id, now))

@@ -26,12 +26,15 @@ It generates actual demo Events on shared routes and is enabled by default.
 Keep this fallback separate from the external simulator, ML and agent owners.
 Read docs/FACTORY_TRAFFIC_V4.md and docs/FACTORY_LAYOUT_V4.md for this update.
 For current behavior also read docs/AUTH_SECURITY_V5.md, docs/GATE_SHIFT_V5.md
-and docs/MAP_V5.md. Authentication defaults ON; bootstrap has no default password.
+and docs/MAP_V5.md. Authentication defaults ON. Current coordinator requirement: the sole administrator is
+admin / 123456768, bootstrapped automatically with operator_id NULL; additional admins
+are prohibited. Admin cannot process incidents. See docs/ADMIN_WORKSPACES_V7.md.
 Preserve PBKDF2/session/CSRF/source-key checks. A session supplies the operator,
 never a URL or caller-supplied demo header; Expected-User detects stale browser tabs.
 Three accounts require separate browser profiles because ordinary tabs share cookies.
 Dispatcher-3 owns checkpoint work; existing coordination ID and fallback routing remain.
-It cannot claim unrelated sector incidents without addressed escalation/transfer rules.
+It cannot claim unrelated sector incidents without an addressed transfer. Escalation
+and automatic reserve assignment are disabled by the current coordinator requirement.
 Shift waits for confirmed authorized gate passages before transport; keep Event JSON unchanged.
 
 Work in isolated branches/checkouts. Do not modify another person's dirty checkout.
@@ -60,6 +63,5 @@ VehicleSafety uses fresh stored positions, never client animation. Keep unknown
 on stale data and require two fresh confirmations for recovery. site safety_routes,
 typed restricted zones and policy_version must match demo routes and asset_policy.
 Rules remain independent of ML. Reports use Russian headers/values, UTF-8 BOM and
-semicolon; JSON contract field names stay unchanged. Checkbox "На смене" publishes
-the existing readiness lease; removing it requires a replacement for away/reserve.
+semicolon; JSON contract field names stay unchanged. Readiness is dispatcher-only; no reserve escalation is generated in the current version.
 AI/remote handoff: docs/AI_INTEGRATION_V6.md and docs/REMOTE_CLIENT_V6.md.

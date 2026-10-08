@@ -29,7 +29,7 @@ def report_time(value):
 
 
 OPERATOR_NAMES = {"dispatcher-1": "Диспетчер 1 — логистика", "dispatcher-2": "Диспетчер 2 — производство", "dispatcher-3": "Диспетчер 3 — КПП"}
-ACTION_NAMES = {"detected": "Обнаружено", "claim": "Принята ответственность", "record_response": "Записана реакция", "condition_restored": "Условие восстановлено", "close": "Обработка завершена", "request_transfer": "Предложена передача", "accept_transfer": "Передача принята", "cancel_transfer": "Передача отменена", "transfer_expired": "Срок передачи истёк", "reassign_unavailable": "Назначен резерв", "dismiss_model": "Подозрение модели отклонено", "escalation": "Эскалация"}
+ACTION_NAMES = {"detected": "Обнаружено", "claim": "Принята ответственность", "record_response": "Записана реакция", "condition_restored": "Условие восстановлено", "condition_repeated": "Повторное наблюдение в существующей карточке", "responsibility_updated": "Назначен профиль транспорта на общей дороге", "close": "Обработка завершена", "request_transfer": "Предложена передача", "accept_transfer": "Передача принята", "cancel_transfer": "Передача отменена", "transfer_expired": "Срок передачи истёк", "reassign_unavailable": "Назначен резерв", "dismiss_model": "Подозрение модели отклонено", "escalation": "Эскалация"}
 
 
 def correlate_event(db, shift_id, event):
@@ -129,12 +129,15 @@ class Operations:
                 "gate_source_online": bool(sensors) and all(sensor["status"] == "online" for sensor in sensors),
                 "note": "Начальное присутствие неизвестно; показано состояние по полученным проходам."}
 
-    def journal(self, q=None, direction=None, permission=None, since=None, until=None, limit=50, offset=0):
+    def journal(self, q=None, direction=None, permission=None, since=None, until=None, limit=50, offset=0, sort="newest"):
         self._page(limit, offset)
+        if sort not in ("newest", "oldest"):
+            raise ApiError(422, "invalid_sort", "Укажите newest или oldest")
+        order = "DESC" if sort == "newest" else "ASC"
         sql, parameters = self._checkpoint_sql(q, direction, permission, since, until)
         with self.service.store.read() as db:
             total = db.execute("SELECT count(*) FROM (" + sql + ")", parameters).fetchone()[0]
-            rows = db.execute(sql + " ORDER BY event_time DESC,event_id DESC LIMIT ? OFFSET ?", (*parameters, limit, offset))
+            rows = db.execute(sql + f" ORDER BY event_time {order},event_id {order} LIMIT ? OFFSET ?", (*parameters, limit, offset))
             return {"items": [dict(row) for row in rows], "total": total, "limit": limit, "offset": offset,
                     "as_of": stamp(self.service.clock()), "occupancy": self._occupancy(db)}
 
@@ -215,7 +218,9 @@ class Operations:
             return True
 
     def dispatch_activity(self, operator_id):
-        self.service.validate_operator(operator_id)
+        self.service.validate_reader(operator_id)
+        if operator_id == "admin":
+            return {"operator_id": None, "claimed": 0, "transferred": 0, "closed": 0, "responses": 0, "as_of": stamp(self.service.clock())}
         with self.service.store.read() as db:
             row = db.execute("""SELECT
                 coalesce(sum(json_extract(body,'$.action')='claim' AND json_extract(body,'$.actor_operator_id')=?),0) AS claimed,
