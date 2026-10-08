@@ -1,0 +1,36 @@
+{
+  "format": "contour-qwen-lfs-parts-v1",
+  "filename": "Qwen3-4B-Q4_K_M.gguf",
+  "sha256": "d0c2ac093a77c402f2ddc23a64f68b7c70cfef151899b33e3a6066247104ced3",
+  "size_bytes": 2497280704,
+  "chunk_bytes": 536870912,
+  "source": "lmstudio-community/Qwen3-4B-GGUF Q4_K_M",
+  "origin_license": "Apache-2.0 (verify upstream model card before redistribution)",
+  "parts": [
+    {
+      "name": "Qwen3-4B-Q4_K_M.gguf.part000",
+      "size_bytes": 536870912,
+      "sha256": "8a24ecda7db628531dd8c2ff246e85ffa7633daadec3e7671b5f350abe468f53"
+    },
+    {
+      "name": "Qwen3-4B-Q4_K_M.gguf.part001",
+      "size_bytes": 536870912,
+      "sha256": "8a5e34c3f7311ae3e8d27abff61902e1d76baa9c8b73f5a2933146890cce5795"
+    },
+    {
+      "name": "Qwen3-4B-Q4_K_M.gguf.part002",
+      "size_bytes": 536870912,
+      "sha256": "4fcfb9121f5f7bb506a86e073cdcee9f1dd73b3378158acf2f6f7344973eadd1"
+    },
+    {
+      "name": "Qwen3-4B-Q4_K_M.gguf.part003",
+      "size_bytes": 536870912,
+      "sha256": "76f79dd8fea5baa0e994a2bdb78930a07b5483cc51a4e0673319d47d5cdcb4d8"
+    },
+    {
+      "name": "Qwen3-4B-Q4_K_M.gguf.part004",
+      "size_bytes": 349797056,
+      "sha256": "3b98e8402c97e08f61f6df0f5b02a07c47b3b59f51349c7659999f4ce20d7ad5"
+    }
+  ]
+}
