@@ -67,7 +67,8 @@ def capture_snapshot(service, incident_id):
                     if row.get('id') in related and isinstance(row.get('name'), str)}
             for group in ('assets', 'zones', 'buildings', 'site_areas')}
         display_context.update(coordinate_system=dict(service.site.get('coordinate_system', {})),
-                               zone_exit_confirm_samples=service.config.get('zone_exit_confirm_samples'))
+                               zone_exit_confirm_samples=service.config.get('zone_exit_confirm_samples'),
+                               model_normal_windows=service.config.get('model_normal_windows'))
         return {"as_of": as_of, "rule_version": service.rule_version,
                 "model_version": service.model_version, "incident": incident,
                 "events": rows, "observations": observations, "policies": policies,

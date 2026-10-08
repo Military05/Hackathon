@@ -31,7 +31,7 @@ async function main(){
   const rows=[
     ["1 · Запрещённая зона — завершённый актуальный анализ",zone.job],
     ["2 · Та же зона — данные изменились после анализа",zone.stale_job],
-    ["3 · MLP — необычное движение",mlp.job]];
+    ["3 · Необычное движение",mlp.job]];
   const css=["styles.css","dispatch-view.css","product-v5.css"].map(file=>fs.readFileSync(path.join(root,"src/interface/web",file),"utf8")).join("\n");
   let html=`<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Контур — три варианта AI-анализа</title><style>${css}
     .preview-analysis-page main{max-width:1180px;margin:24px auto;padding:0 18px}
@@ -41,7 +41,7 @@ async function main(){
     .preview-card h3{font-size:17px}.preview-card p{overflow-wrap:anywhere}
     .preview-note{margin:16px 0 22px;color:var(--muted)}
     @media(max-width:760px){.preview-cards{grid-template-columns:1fr}}
-    </style></head><body class="preview-analysis-page"><header class="app-header"><div class="brand"><span class="brand-icon" aria-hidden="true">К</span><div><strong>КОНТУР</strong></div></div><span class="connection">Демонстрация · изолированная тестовая база</span></header><main><h1>AI-анализ для диспетчера</h1><p class="preview-note">Три карточки сформированы настоящим интерфейсом из тестов Qwen и MLP. Первая актуальна относительно данных тестовой базы на момент проверки. Во второй сервер подтвердил устаревание после нового измерения — сохранённый анализ не обновлён. Эти примеры не показывают текущее состояние рабочего сервера.</p><div class="preview-cards">`;
+    </style></head><body class="preview-analysis-page"><header class="app-header"><div class="brand"><span class="brand-icon" aria-hidden="true">К</span><div><strong>КОНТУР</strong></div></div><span class="connection">Демонстрация · тестовые происшествия</span></header><main><h1>Заключение для диспетчера</h1><p class="preview-note">Первая карточка показывает завершённый анализ. Во второй после проверки изменились данные: описание относится к прежнему состоянию. Третья объясняет обнаруженное необычное движение. Это тестовые примеры, а не текущее состояние рабочего сервера.</p><div class="preview-cards">`;
   for(const [title,job] of rows)html+=`<section class="detail preview-card"><div class="section-head"><h2>${esc(title)}</h2></div><div class="analysis">${await render(job)}</div></section>`;
   fs.writeFileSync(options["--output"],html+"</div></main></body></html>");
   console.log("Созданы три карточки: "+path.resolve(options["--output"]));

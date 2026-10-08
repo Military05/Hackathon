@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import sys
@@ -125,22 +126,30 @@ def main():
                     raise RuntimeError('Первый анализ уже устарел до тестового изменения данных')
                 presentation = job['result'].get('presentation', {})
                 readable = json.dumps(presentation, ensure_ascii=False)
-                if presentation.get('version') != 1 or presentation.get('entity') != 'Погрузчик 1':
+                if presentation.get('version') != 2 or presentation.get('entity') != 'Погрузчик 1':
                     raise RuntimeError('Нет понятного описания с зарегистрированным названием объекта')
                 if 'payload.' in readable or any(fact['id'] in readable for fact in job['result']['facts']):
                     raise RuntimeError('Технические поля попали в основной текст')
                 if job['result']['technical']['snapshot']['as_of'] != presentation.get('as_of'):
                     raise RuntimeError('Время отображения не совпадает с сохранённым срезом')
                 report['readable_presentation_checked'] = True
+                visible = ' '.join([presentation[key] for key in ('title', 'description', 'established', 'attention', 'unknown')]
+                                   + [presentation['state']['text']] + presentation['observations'] + presentation['recommendations'])
+                if re.search(r'MLP|Qwen|JSON|payload|порог|оценк|модель|алгоритм|\d+[.,]\d+|≈', visible, re.I):
+                    raise RuntimeError('Технический термин или числовая оценка попали в основной текст')
+                if not job['result']['technical'].get('semantic_check'):
+                    raise RuntimeError('Нет отдельной проверки смысла свободного текста модели')
                 if args.scenario == "d4":
                     verified = {fact["field"] for fact in job["result"]["facts"]
                                 if fact["source"] == "model_observation" and fact["id"] == observation["observation_id"]}
                     if not {"status", "score", "threshold"} <= verified:
                         raise RuntimeError("В отчёте нет обязательных фактов MLP")
-                    if 'достигла или превысила' not in readable or 'Причина движения моделью не подтверждена' not in readable:
+                    if presentation['title'] != 'Обнаружено необычное движение' or 'Наличие аварии не установлено' not in visible:
                         raise RuntimeError('Некорректное объяснение модельного подозрения')
-                    if 'Оценка необычности движения: ≈' not in readable or 'Порог срабатывания модели: ≈' not in readable:
-                        raise RuntimeError('Не отображены подтверждённые оценка и порог MLP')
+                    measured = {fact['field']: fact['value'] for fact in job['result']['technical']['verified_facts']
+                                if fact['source'] == 'model_observation' and fact['id'] == observation['observation_id']}
+                    if measured.get('score') != observation['score'] or measured.get('threshold') != observation['threshold']:
+                        raise RuntimeError('Не сохранены точные подтверждённые показатели в техническом разделе')
                     snapshot = job['result']['technical']['snapshot']
                     position = max((row for row in snapshot['events'] if row['type'] == 'position'
                                     and row['payload'].get('asset_id') == 'V1'), key=lambda row: row['event_time'])

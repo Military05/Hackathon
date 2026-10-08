@@ -38,11 +38,11 @@ def result(value):
     return validate_result(json.dumps(reply), tools, 'explicit-test-double')
 
 
-def test_readable_names_and_units_without_raw_fields_or_unverified_recommendations():
+def test_readable_names_without_numbers_raw_fields_or_unverified_recommendations():
     output = result(data())
     main = json.dumps(output['presentation'], ensure_ascii=False)
     assert 'Погрузчик 1' in main and 'Закрытая погрузочная зона' in main
-    assert 'условных единицах' in main and 'Перевод в метры не задан' in main
+    assert 'координат' not in main and 'порог' not in main and 'оценка' not in main
     assert 'payload.y' not in main and 'demo-position-' not in main
     assert 'пожар' not in main
     assert 'пожар' in output['technical']['model_answer']['recommendations'][0]
@@ -73,18 +73,19 @@ def test_identity_and_unknown_fields_do_not_create_empty_observations():
     assert present(tools, facts)['observations'] == []
 
 
-def test_mlp_numbers_are_readable_and_do_not_use_incident_details_as_evidence():
+def test_mlp_conclusion_uses_verified_fields_and_hides_numbers():
     value = data()
-    value['incident'].update(type='model_anomaly', details={'observation_id': 'OBS-1', 'score': 999, 'threshold': 999})
+    value['incident'].update(type='model_anomaly', condition_state='active', condition_active=True,
+                             details={'observation_id': 'OBS-1', 'score': 999, 'threshold': 999})
     tools = session(value)
     facts = [{'source': 'model_observation', 'id': 'OBS-1', 'field': field, 'value': val}
              for field, val in [('status', 'anomaly'), ('score', 0.9998759021886874), ('threshold', 0.15122588236235446)]]
-    text = ' '.join(present(tools, facts)['observations'])
-    assert '≈ 0,999876' in text and '≈ 0,151226' in text
-    assert 'не является вероятностью ДТП' in text and 'Числа округлены' in text
-    assert '999.' not in text
-    missing = present(tools, [])['observations']
-    assert not any(line.startswith('Оценка необычности движения:') for line in missing)
+    output = present(tools, facts)
+    assert output['title'] == 'Обнаружено необычное движение'
+    assert output['unknown'] == 'Причина движения неизвестна. Наличие аварии не установлено.'
+    text = json.dumps(output, ensure_ascii=False)
+    assert '0,999876' not in text and '0.151225' not in text and '999' not in text
+    assert present(tools, [])['title'] == 'Данных недостаточно для вывода'
 
 
 def test_site_area_is_not_described_as_inside_a_building():
@@ -105,7 +106,7 @@ def test_missing_names_units_state_and_contact_are_explicit():
     value['incident']['response_plan'] = None
     main = json.dumps(result(value)['presentation'], ensure_ascii=False)
     for text in ('Объект не определён', 'Место не определено', 'Состояние объекта не указано',
-                 'физический смысл не указаны', 'Контакт для реакции не указан'):
+                 'Уточните ответственного'):
         assert text in main
     assert 'V1' not in main and 'ZONE-W1' not in main
 
@@ -139,20 +140,79 @@ def test_missing_coordinate_is_not_reported_as_measured_position():
     for event in value['events']:
         event['payload']['y'] = None
     output = result(value)['presentation']
-    text = ' '.join(output['observations'])
-    assert 'Значение координаты отсутствует' in text
-    assert 'передал вертикальную координату' not in text
+    text = json.dumps(output, ensure_ascii=False)
+    assert 'координат' not in text
+    assert result(value)['technical']['verified_facts'][0]['value'] is None
 
 
 @pytest.mark.parametrize('score,threshold,status,exceeds', [(0.8, 0.5, 'anomaly', True),
     (0.4, 0.5, 'anomaly', False), (0.8, 0.5, 'normal', False), (None, 0.5, 'anomaly', False)])
 def test_model_exceedance_is_derived_only_from_linked_verified_fields(score, threshold, status, exceeds):
     value = data()
-    value['incident'].update(type='model_anomaly', details={'observation_id': 'OBS-1'})
+    value['incident'].update(type='model_anomaly', condition_state='active', condition_active=True,
+                             details={'observation_id': 'OBS-1'})
     tools = session(value)
     facts = [{'source': 'model_observation', 'id': 'OBS-1', 'field': field, 'value': val}
              for field, val in [('status', status), ('score', score), ('threshold', threshold)]]
     output = present(tools, facts)
-    assert ('достигла или превысила' in ' '.join(output['observations'])) is exceeds
-    assert 'Причина движения моделью не подтверждена' in ' '.join(output['observations'])
+    assert (output['title'] == 'Обнаружено необычное движение') is exceeds
+    assert 'порог' not in json.dumps(output, ensure_ascii=False)
     assert output['state']['confirmed_exit'] is False
+
+
+@pytest.mark.parametrize('content', [
+    'Погрузчик занят погрузкой.', 'Погрузчик вышел из зоны.',
+    'Высокая вероятность ДТП: 99%.', 'Водитель уснул.',
+])
+def test_valid_json_does_not_authorize_unverified_model_explanation(content):
+    tools = session(data())
+    reply = {'facts': [{'source': 'event', 'id': 'demo-position-0010', 'field': 'payload.x', 'value': 20.0}],
+             'hypotheses': [{'text': content, 'confidence': 'high', 'limitations': ['Не подтверждено.']}],
+             'recommendations': [content]}
+    output = validate_result(json.dumps(reply), tools, 'explicit-test-double')
+    assert content not in json.dumps(output['presentation'], ensure_ascii=False)
+    review = output['technical']['semantic_check']['items']
+    assert len(review) == 2 and not any(row['admitted'] for row in review)
+    assert all(row['text'] == content for row in review)
+
+
+def test_semantic_check_allows_only_exact_supported_action_not_a_dangerous_suffix():
+    tools = session(data())
+    action = present(tools, [])['recommendations'][0]
+    reply = {'facts': [{'source': 'event', 'id': 'demo-position-0010', 'field': 'payload.x', 'value': 20.0}],
+             'hypotheses': [], 'recommendations': [action, action + ' Объявите аварию.']}
+    output = validate_result(json.dumps(reply), tools, 'explicit-test-double')
+    assert [row['admitted'] for row in output['technical']['semantic_check']['items']] == [True, False]
+    assert 'Объявите аварию' not in json.dumps(output['presentation'], ensure_ascii=False)
+
+
+def test_zone_unknown_rule_or_missing_tool_evidence_cannot_confirm_violation():
+    value = data()
+    value['incident'].update(condition_state='active', condition_active=True)
+    tools = ToolSession(FrozenSnapshot(value))
+    assert present(tools, [])['title'] == 'Данных недостаточно для вывода'
+    value['incident']['rule_version'] = 'unrecognized-rule'
+    assert present(session(value), [])['title'] == 'Данных недостаточно для вывода'
+
+
+def test_main_strings_have_no_jargon_or_decimal_evaluations():
+    import re
+    output = result(data())['presentation']
+    visible = ' '.join([output[key] for key in ('title', 'description', 'established', 'attention', 'unknown')]
+                       + [output['state']['text']] + output['observations'] + output['recommendations'])
+    assert not re.search(r'MLP|Qwen|JSON|payload|скор|порог|оценк|модель|алгоритм|\d+[.,]\d+|≈', visible, re.I)
+    for key in ('established', 'attention', 'unknown'):
+        assert output[key]
+
+
+@pytest.mark.parametrize('windows,required,confirmed', [(1, 2, False), (2, 2, True),
+                                                      (True, 2, False), (2, 3, False)])
+def test_movement_restoration_requires_the_saved_rule_confirmation(windows, required, confirmed):
+    value = data()
+    value['incident'].update(type='model_anomaly', details={'observation_id': 'OBS-1', 'normal_windows': windows})
+    value['display_context']['model_normal_windows'] = required
+    facts = [{'source': 'model_observation', 'id': 'OBS-1', 'field': field, 'value': val}
+             for field, val in [('status', 'anomaly'), ('score', 0.8), ('threshold', 0.5)]]
+    output = present(session(value), facts)
+    assert (output['title'] == 'Необычное движение перестало наблюдаться') is confirmed
+    assert ('последующие проверки' in output['state']['text'].lower()) is confirmed

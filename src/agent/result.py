@@ -4,7 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .errors import AgentError
-from .presentation import present
+from .presentation import present, review_model_text
 from .providers import canonical, utc_now
 from .tools import Identifier, ToolSession
 
@@ -112,10 +112,11 @@ def validate_result(content, session: ToolSession, model_name):
                    f"score={canonical(linked['score'])}, threshold={canonical(linked['threshold'])}. "
                    "Это модельное подозрение, а не вероятность аварии. "
                    "Предлагаемое действие оператору: " + answer.recommendations[0])
-    return {"summary": presentation['description'], 'presentation': presentation,
+    return {"summary": presentation['title'] + '. ' + presentation['description'], 'presentation': presentation,
             'technical': {'snapshot': session.snapshot.export(), 'verified_facts': facts,
                           'model_answer': answer.model_dump(), 'tool_trace': list(session.trace),
-                          'legacy_summary': summary},
+                          'legacy_summary': summary,
+                          'semantic_check': review_model_text(answer, presentation)},
             "facts": facts, "hypotheses": [h.model_dump() for h in answer.hypotheses],
             "recommendations": answer.recommendations, "evidence_event_ids": sorted(event_ids),
             "evidence_refs": list(refs.values()), "tool_trace": list(session.trace),

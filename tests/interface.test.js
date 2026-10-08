@@ -46,9 +46,10 @@ function errorResponse(status,body){return {__response:true,ok:false,status,json
 
 function readableJob(extra={}){
   return {job_id:"J1",incident_id:"I1",status:"completed",stale:false,result:{
-    presentation:{version:1,title:"Въезд в зону с ограничением",description:"Погрузчик 1. Закрытая погрузочная зона.",
+    presentation:{version:2,title:"Нарушение зоны подтверждено",description:"Погрузчик 1. Закрытая погрузочная зона.",
       as_of:"2026-10-07T09:00:00Z",state:{text:"Условие происшествия наблюдалось."},
-      observations:["Координаты заданы в условных единицах плана."],recommendations:["Уточните допуск к зоне."]},
+      established:"Зафиксирован въезд в нарушение ограничения доступа.",attention:"Нужно проверить соблюдение доступа.",
+      unknown:"Причина въезда неизвестна.",observations:[],recommendations:["Уточните допуск к зоне."]},
     technical:{verified_facts:[{id:"long-event-id-123",field:"payload.y",value:27.0}],
       model_answer:{recommendations:["Непроверенное требование объявить пожар."]}}},...extra};
 }
@@ -79,7 +80,7 @@ test("stale analysis keeps captured state and names even when current card disag
 test("fresh analysis explains that snapshot is not current position confirmation",async()=>{
   const h=harness(async()=>readableJob());h.ui.S.selected="I1";h.ui.S.job="J1";
   await h.ui.renderJob();assert.match(h.$("analysis").innerHTML,/не подтверждение текущего положения/);
-  assert.match(h.$("analysis").innerHTML,/Время среза:/);
+  assert.match(h.$("analysis").innerHTML,/Данные на:/);
   assert.match(h.$("analysis").innerHTML,/analysis-freshness-current/);
   assert.doesNotMatch(h.$("analysis").innerHTML,/analysis-freshness-stale/);
 });
@@ -90,13 +91,26 @@ test("empty observations do not create a filler section",async()=>{
   assert.doesNotMatch(h.$("analysis").innerHTML.split("<details")[0],/Наблюдения|привязку/);
 });
 
-test("MLP numbers stay readable without percentages or invented accident probability",async()=>{
-  const job=readableJob();job.result.presentation.title="Необычное движение";
-  job.result.presentation.observations=["Оценка необычности движения: ≈ 0,999876.","Порог срабатывания модели: ≈ 0,151226.","Это не вероятность аварии."];
+test("MLP evaluations stay in technical data and main card answers dispatcher questions",async()=>{
+  const job=readableJob();job.result.presentation.title="Обнаружено необычное движение";
+  job.result.presentation.established="По проверенным данным обнаружено необычное движение объекта.";
+  job.result.presentation.unknown="Причина движения неизвестна. Наличие аварии не установлено.";
+  job.result.technical.evaluation={algorithm:"MLP",score:0.9998759021886874,threshold:0.15122588236235446};
   const h=harness(async()=>job);h.ui.S.selected="I1";h.ui.S.job="J1";await h.ui.renderJob();
-  const main=h.$("analysis").innerHTML.split("<details")[0];
-  assert.match(main,/0,999876/);assert.match(main,/0,151226/);assert.match(main,/не вероятность аварии/);
-  assert.doesNotMatch(main,/%|payload/);
+  const [main,technical]=h.$("analysis").innerHTML.split("<details");
+  assert.match(main,/Обнаружено необычное движение/);assert.match(main,/Наличие аварии не установлено/);
+  for(const question of ["Что установила система","Почему нужно обратить внимание","Что ещё неизвестно","Что сделать диспетчеру"])assert.ok(main.includes(question));
+  const withoutTime=main.replace(/<p class="muted">Данные на:[\s\S]*?<\/p>/g,"");
+  assert.doesNotMatch(withoutTime,/\d+[.,]\d+|≈|%|payload|MLP|Qwen|JSON|порог|оценк|модельный|скор/i);
+  assert.match(technical,/0.9998759021886874/);assert.match(technical,/0.15122588236235446/);
+});
+
+test("old numeric presentation is not displayed as a current plain conclusion",async()=>{
+  const job=readableJob();job.result.presentation={version:1,title:"MLP",observations:["score=0.99, threshold=0.15"]};
+  const h=harness(async()=>job);h.ui.S.selected="I1";h.ui.S.job="J1";await h.ui.renderJob();
+  const [main,technical]=h.$("analysis").innerHTML.split("<details");
+  assert.match(main,/Запросите новый анализ/);assert.doesNotMatch(main,/MLP|score|threshold|0.99/);
+  assert.match(technical,/threshold/);
 });
 
 test("missing presentation and missing snapshot time have safe explicit fallbacks",async()=>{
@@ -106,13 +120,13 @@ test("missing presentation and missing snapshot time have safe explicit fallback
   assert.doesNotMatch(h.$("analysis").innerHTML.split("<details")[0],/payload.y|long-event-id/);
   const job=readableJob();delete job.result.presentation.as_of;delete job.result.presentation.state;
   h.setFetch(async()=>job);await h.ui.renderJob();
-  assert.match(h.$("analysis").innerHTML,/Время среза: не указано/);
+  assert.match(h.$("analysis").innerHTML,/Данные на: не указано/);
   assert.match(h.$("analysis").innerHTML,/Состояние не указано/);
 });
 
 test("MLP display separates suspicion from cause and escapes all output",async()=>{
-  const job=readableJob();job.result.presentation={version:1,title:"Необычное движение",description:"Погрузчик 1",
-    state:{text:"Состояние объекта не подтверждено данными."},observations:["Порог модели превышен. Причина движения не подтверждена."],
+  const job=readableJob();job.result.presentation={version:2,title:"Необычное движение",description:"Погрузчик 1",
+    state:{text:"Состояние объекта не подтверждено данными."},unknown:"Причина движения не подтверждена.",observations:[],
     recommendations:["<script>alert(1)</script>"]};job.result.technical.raw="<img src=x onerror=alert(1)>";
   const h=harness(async()=>job);h.ui.S.selected="I1";h.ui.S.job="J1";await h.ui.renderJob();
   const html=h.$("analysis").innerHTML;
