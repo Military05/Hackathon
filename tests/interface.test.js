@@ -18,6 +18,19 @@ test("failed stale job describes changed input without presenting an outdated re
   assert.match(h.$("analysis").innerHTML,/УСТАРЕЛ/);
 });
 
+test("analysis errors explain model scope, timeout and retry without exposing JSON",async()=>{
+  for(const [code,text] of [["not_found",/вне выбранного происшествия/],["execution_timeout",/отведённое время/],["queue_timeout",/ожидания в очереди/],["invalid_evidence",/не подтверждены/],["model_reply_invalid",/корректный ответ/],["interrupted",/перезапуском/]]){
+    const h=harness(async()=>({job_id:"J1",incident_id:"I1",status:"failed",stale:true,error:{code,message:'{"private":"technical"}',details:{raw:"secret"}}}));
+    h.ui.S.selected="I1";h.ui.S.job="J1";
+    await h.ui.renderJob();
+    const markup=h.$("analysis").innerHTML;
+    assert.match(markup,text);
+    assert.match(markup,/отдельный признак актуальности/);
+    assert.doesNotMatch(markup,/private|technical|secret|УСТАРЕЛ/);
+    assert.doesNotMatch(markup.split('</strong>')[0],/Данные изменились/);
+  }
+});
+
 function harness(handler=async()=>({})){ 
   const nodes=new Map();
   class Element{

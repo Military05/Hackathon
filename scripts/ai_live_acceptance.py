@@ -163,6 +163,11 @@ def main():
                 if job['result']['technical']['snapshot']['as_of'] != presentation.get('as_of'):
                     raise RuntimeError('Время отображения не совпадает с сохранённым срезом')
                 report['readable_presentation_checked'] = True
+                cached_response = client.post(f"/api/incidents/{incident['incident_id']}/analysis", headers=headers)
+                cached_response.raise_for_status()
+                if cached_response.json()['job_id'] != job_id or not cached_response.json()['cached']:
+                    raise RuntimeError('Повтор неизменного среза не вернул сохранённый результат')
+                report['unchanged_repeat_cached_checked'] = True
                 visible = ' '.join([presentation[key] for key in ('title', 'description', 'established', 'attention', 'unknown')]
                                    + [presentation['state']['text']] + presentation['observations'] + presentation['recommendations'])
                 if re.search(r'MLP|Qwen|JSON|payload|порог|оценк|модель|алгоритм|\d+[.,]\d+|≈', visible, re.I):
@@ -211,6 +216,22 @@ def main():
                         raise RuntimeError('Изменение данных не пометило прежний срез как устаревший')
                     report.update(stale_job=stale_job, changed_event=changed,
                                   stale_after_actual_change_checked=True)
+                    retry = client.post(f"/api/incidents/{incident['incident_id']}/analysis", headers=headers)
+                    retry.raise_for_status()
+                    retry_id = retry.json()['job_id']
+                    if retry_id == job_id:
+                        raise RuntimeError('Новые данные повторно использовали старый анализ')
+                    deadline = time.monotonic() + 65
+                    while time.monotonic() < deadline:
+                        response = client.get(f'/api/agent-jobs/{retry_id}', headers={'X-Expected-User': headers['X-Expected-User']})
+                        response.raise_for_status()
+                        retry_job = response.json()
+                        if retry_job['status'] in ('completed', 'failed'):
+                            break
+                        time.sleep(.2)
+                    if retry_job['status'] != 'completed' or retry_job['stale']:
+                        raise RuntimeError('Повторный анализ нового среза не завершился свежим результатом')
+                    report.update(reanalysis_after_change_checked=True, retry_job=retry_job)
                 report["status"] = "PASS"
         except Exception as error:
             report["error"] = str(error)

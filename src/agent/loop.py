@@ -7,7 +7,22 @@ from .errors import AgentError
 from .result import ModelAnswer, validate_result
 from .tools import ToolSession, schemas
 
-PROMPT_VERSION = "dispatcher-v9-mlp-measured-references"
+PROMPT_VERSION = "dispatcher-v10-snapshot-tool-scope"
+
+
+def snapshot_tool_schemas(snapshot):
+    """Advertise only captured IDs; execution independently checks scope."""
+    scopes = {'get_incident': ('incident_id', [snapshot.incident_id]),
+              'get_event_history': ('asset_id', list(snapshot.policies)),
+              'get_asset_policy': ('asset_id', list(snapshot.policies)),
+              'get_sensor_health': ('sensor_id', list(snapshot.health))}
+    available = []
+    for tool in schemas():
+        field, identifiers = scopes[tool['function']['name']]
+        if identifiers:
+            tool['function']['parameters']['properties'][field]['enum'] = identifiers
+            available.append(tool)
+    return available
 
 
 def verified_claim_choices(session, visible_events=None):
@@ -200,7 +215,7 @@ async def run_analysis(client, snapshot, config):
                     reply = await client.chat(messages, [], deadline,
                                               response_schema=final_schema)
                 else:
-                    available_tools = schemas()
+                    available_tools = snapshot_tool_schemas(snapshot)
                     if not session.incident_read:
                         available_tools = [tool for tool in available_tools
                                            if tool["function"]["name"] == "get_incident"]
