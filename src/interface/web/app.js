@@ -283,15 +283,29 @@ async function renderJob(){
   const duration=seconds===null?"":seconds<60?`${seconds} сек.`:`${Math.floor(seconds/60)} мин. ${seconds%60} сек.`;
   const waiting=pending?`<div class="analysis-wait" role="status"><span class="analysis-wait-spinner" aria-hidden="true"></span><div><p>${j.status==="running"?"Проверка данных и подготовка вывода.":"Запрос в очереди. Анализы выполняются по одному."}</p>${duration?`<p class="analysis-elapsed">${j.status==="running"?"Анализ выполняется":"Ожидание"}: ${esc(duration)}</p>`:""}<small>Время завершения пока неизвестно. Карта и журнал продолжают работать.</small></div></div>`:"";
   const stale=j.stale||j.result?.stale;
-  const staleText=stale?(j.status==="completed"?"· УСТАРЕЛ — данные изменились":"· Данные изменились после начала запроса"):"";
+  const staleText=stale&&j.status==="completed"?"· УСТАРЕЛ — данные изменились":"";
   const list=(title,values)=>Array.isArray(values)&&values.length?`<strong>${title}</strong><ul class="analysis-list">${values.map(v=>`<li>${esc(v)}</li>`).join("")}</ul>`:"";
   const p=j.result?.presentation;
   const capturedTime=p?.as_of&&Number.isFinite(Date.parse(p.as_of))?new Date(p.as_of).toLocaleString("ru-RU"):"не указано";
     const freshness=stale?"После анализа данные изменились. Ниже описано прежнее состояние. Состояние объекта сейчас может отличаться — проверьте свежие показания или запросите новый анализ.":"После проверки данные не изменились. Заключение описывает состояние во время анализа, а не подтверждение текущего положения.";
-  const errorText=j.error?.code==="unavailable"&&j.error?.details?.http_status===400?"Локальная модель отклонила запрос. Анализ не завершён; обратитесь к ответственному за ИИ.":{model_reply_invalid:"Модель не сформировала корректный ответ. Запросите анализ повторно.",model_reply_truncated:"Ответ модели получен не полностью. Запросите анализ повторно.",invalid_evidence:"Утверждения модели не подтверждены прочитанными данными. Результат не опубликован.",unavailable:"ИИ недоступен. Мониторинг и ручная обработка продолжают работать.",execution_timeout:"Анализ не завершился за отведённое время. Запросите его повторно."}[j.error?.code]||"Не удалось завершить анализ. Подробности сохранены на сервере.";
+  const errorText=j.error?.code==="unavailable"&&j.error?.details?.http_status===400?"Локальная модель отклонила запрос. Анализ не завершён; обратитесь к ответственному за ИИ.":{
+    not_found:"Модель запросила данные вне выбранного происшествия. Результат не опубликован; запросите анализ повторно.",
+    invalid_tool_arguments:"Модель неверно запросила исходные данные. Запросите анализ повторно.",
+    unknown_tool:"Модель запросила недоступный инструмент. Результат не опубликован.",
+    tool_budget_exceeded:"Модель превысила допустимое число запросов. Запросите анализ повторно.",
+    queue_timeout:"Время ожидания в очереди истекло. Запросите анализ повторно.",
+    interrupted:"Анализ прерван перезапуском. Запросите анализ повторно.",
+    configuration_changed:"Настройки ИИ изменились. Запросите анализ повторно.",
+    snapshot_invalid:"Не удалось проверить исходные данные. Обратитесь к ответственному за систему.",
+    model_reply_invalid:"Модель не сформировала корректный ответ. Запросите анализ повторно.",
+    model_reply_truncated:"Ответ модели получен не полностью. Запросите анализ повторно.",
+    invalid_evidence:"Утверждения модели не подтверждены прочитанными данными. Результат не опубликован.",
+    unavailable:"ИИ недоступен. Мониторинг и ручная обработка продолжают работать.",
+    execution_timeout:"Анализ не завершился за отведённое время. Запросите его повторно."
+  }[j.error?.code]||"Не удалось завершить анализ. Подробности сохранены на сервере.";
     const freshnessBlock=p?.version===2?`<div class="analysis-freshness ${stale?"analysis-freshness-stale":"analysis-freshness-current"}" role="status"><span class="muted">Актуальность результата</span><br><strong>${stale?"Анализ устарел — данные изменились":"Анализ завершён · данные после проверки не изменились"}</strong><p>${esc(freshness)}</p></div>`:"";
     const body=p?.version===2?`${freshnessBlock}<h3>${esc(p.title)}</h3><p>${esc(p.description)}</p><p><strong>Что установила система</strong><br>${esc(p.established)}</p>${list("Дополнительно установлено",p.observations)}<p><strong>Состояние на момент анализа</strong><br>${esc(p.state?.text||"Состояние не указано.")}</p><p class="muted">Данные на: ${esc(capturedTime)} (местное время)</p><p><strong>Почему нужно обратить внимание</strong><br>${esc(p.attention)}</p><p><strong>Что ещё неизвестно</strong><br>${esc(p.unknown)}</p>${p.history_summary?`<p><strong>Похожие случаи</strong><br>${esc(p.history_summary)}</p>`:""}${list("Записи диспетчера",p.dispatcher_notes)}${list("Что сделать диспетчеру",p.recommendations)}`:j.result?"<p>Для этого результата понятное описание недоступно. Запросите новый анализ; исходные данные сохранены на сервере.</p>":"";
-  setMarkup("analysis",`<strong>Анализ: ${esc({pending:"Ожидается",queued:"Ожидает очереди",running:"Выполняется",completed:"Готов",failed:"Ошибка"}[j.status]||"Статус не определён")} ${esc(staleText)}</strong>${waiting}${j.error?`<p>${esc(errorText)}</p>`:""}${body}`);
+  setMarkup("analysis",`<strong>Анализ: ${esc({pending:"Ожидается",queued:"Ожидает очереди",running:"Выполняется",completed:"Готов",failed:"Ошибка"}[j.status]||"Статус не определён")} ${esc(staleText)}</strong>${waiting}${j.error?`<p role="alert">${esc(errorText)}</p>`:""}${stale&&j.status!=="completed"?"<p class='muted'>Данные изменились после начала запроса. Это отдельный признак актуальности; причина ошибки указана выше. Новый анализ прочитает свежий снимок.</p>":""}${body}`);
 }
 function renderSensors(){if(S.diagnostics){S.diagnostics.update(S.sensors.filter(ownSensor));return;}setMarkup("sensors",S.sensors.filter(ownSensor).map(s=>`<div class="sensor-row"><div><strong>${esc(s.sensor_id)}</strong><small> · ${esc(s.type)} ${esc(s.asset_id||s.building_id||"")}</small><br><small>${esc(age(s.last_received_at))}</small></div><span class="${esc(s.status)}">${esc(labels[s.status]||s.status)}</span></div>`).join(""));}
 function noticeKey(n){return String(n.seq??`${n.incident_id}:${n.kind}:${n.created_at}`);}

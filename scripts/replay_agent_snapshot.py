@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import sys
 import time
+import sqlite3
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -21,6 +22,12 @@ async def replay(args):
     if not database.is_absolute() or database.exists():
         raise ValueError('Укажите абсолютный путь к новой тестовой базе; существующие базы запрещены')
     snapshot = FrozenSnapshot(json.loads(Path(args.snapshot).read_text(encoding='utf-8')))
+    # Reproduce the captured journal epoch only in the new disposable database.
+    database.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(database) as db:
+        db.execute('CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+        db.execute('INSERT INTO metadata VALUES (?, ?)', ('incident_log_epoch',
+                   str(snapshot.data.get('incident_context', {}).get('log_epoch', 0))))
     async def capture(incident_id):
         if incident_id != snapshot.incident_id:
             raise ValueError('Неверное происшествие')
