@@ -25,6 +25,8 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
     service = Service(db_path or os.environ.get("DISPATCH_DB", str(ROOT / "data/runtime/dispatch.db")),
                       site_path or ROOT / "data/demo/site.json", **service_kwargs)
     operations = Operations(service)
+    from src.core.logistics import LogisticsNetwork, make_logistics_router
+    logistics = LogisticsNetwork(service)
     demo = None
     scenarios = ()
     demo_lock = asyncio.Lock()
@@ -88,6 +90,7 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
     async def lifespan(application):
         if manager:
             await manager.start()
+        await logistics.start()
         timer = asyncio.create_task(scheduler()) if enable_scheduler else None
         if demo and enable_scheduler and os.environ.get("DEMO_AUTOSTART", "1") == "1":
             try:
@@ -97,6 +100,7 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
         try:
             yield
         finally:
+            await logistics.shutdown()
             if demo:
                 await getattr(demo, "shutdown", demo.stop)()
             if timer:
@@ -112,6 +116,7 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
     app.state.agent = manager
     app.state.ml = model
     app.state.demo = demo
+    app.state.logistics = logistics
     service.agent = manager
     from src.core.auth import add_auth
     auth_enabled = (os.environ.get("DISPATCH_ENABLE_AUTH", "1") != "0") if enable_auth is None else bool(enable_auth)
@@ -319,6 +324,7 @@ def create_app(db_path=None, site_path=None, enable_scheduler=True, clock=None, 
             service.get_incident(incident_id)
             raise ApiError(503, "unavailable", "Local model provider is unavailable")
 
+    app.include_router(make_logistics_router(logistics))
     web = ROOT / "src/interface/web"
     if web.exists():
         app.mount("/", StaticFiles(directory=str(web), html=True), name="interface")

@@ -410,6 +410,7 @@ async function boot(){
     if(typeof OperationsView!=="undefined")OperationsView.bind(api,showError);
     if(typeof SensorDiagnostics!=="undefined")S.diagnostics=SensorDiagnostics.create({elementId:"sensors",getSensors:()=>S.sensors.filter(ownSensor),requestCheck:async()=>array(await api("/sensors"),"sensors").filter(ownSensor),positionStaleSeconds:S.site.dispatch_config?.position_stale_seconds||5,serverTime:()=>Date.now()+S.serverOffset,onSelectSensor:id=>{showSensor(id);if(!S.mapRenderer.showIncident({sensor_id:id}))showError(Error("У датчика нет подтверждённой позиции."));}});
     await presence();await notifications(true);await refresh();focusSector();
+    window.dispatchEvent(new Event("contour:ready"));
     setInterval(presence,3000);const loop=async()=>{await refresh();setTimeout(loop,1000);};setTimeout(loop,1000);
   }catch(e){showError(e);}
 }

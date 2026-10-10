@@ -1,0 +1,78 @@
+<section id="logistics-view" class="logistics-view" hidden aria-labelledby="lg-title">
+  <header class="lg-heading">
+    <div class="lg-heading-copy"><span class="lg-eyebrow">КОНТУР · управление перевозками</span><h1 id="lg-title">Логистическая сеть</h1><p>Маршруты, транспорт и поставки в едином пространстве</p></div>
+    <div class="lg-heading-actions"><span class="lg-demo-label"><span class="lg-status-dot"></span>Учебная симуляция</span><button id="lg-export" type="button" class="lg-button lg-button--quiet"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 15v5h14v-5"/></svg>Скачать журнал</button></div>
+  </header>
+  <div class="lg-control-bar" aria-label="Управление симуляцией">
+    <label class="lg-scenario-control" for="lg-scenario"><span>Сценарий</span><select id="lg-scenario"><option value="normal">Штатная работа</option></select></label>
+    <div class="lg-playback-controls">
+      <button id="lg-start" type="button" class="lg-button lg-button--primary"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z"/></svg>Запустить</button>
+      <button id="lg-pause" type="button" class="lg-button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>Пауза</button>
+      <button id="lg-resume" type="button" class="lg-button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z"/></svg>Продолжить</button>
+      <button id="lg-reset" type="button" class="lg-button lg-button--quiet"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 2 8M4 4v6h6"/></svg>Сбросить</button>
+    </div>
+    <label class="lg-speed-control" for="lg-speed"><span>Скорость</span><select id="lg-speed"><option value="1">×1</option><option value="2">×2</option><option value="5">×5</option><option value="10">×10</option></select></label>
+    <div class="lg-clock"><span>Время симуляции</span><strong id="lg-clock">00:00:00</strong></div>
+  </div>
+  <p id="lg-message" class="lg-message" role="status" aria-live="polite" hidden></p>
+  <div id="lg-kpis" class="lg-kpis" aria-label="Сводка логистики">
+    <article class="lg-kpi"><small>Транспорт в движении</small><strong>—</strong><span>Ожидание данных</span></article>
+    <article class="lg-kpi"><small>Выполненные рейсы</small><strong>—</strong><span>За текущий сценарий</span></article>
+    <article class="lg-kpi"><small>Доставлено груза</small><strong>—</strong><span>За текущий сценарий</span></article>
+    <article class="lg-kpi"><small>Активные происшествия</small><strong>—</strong><span>Ожидание данных</span></article>
+  </div>
+  <div class="lg-workspace">
+    <div class="lg-map-column">
+      <section class="lg-panel lg-map-panel" aria-labelledby="lg-map-heading">
+        <div class="lg-panel-heading lg-map-heading"><div><span class="lg-eyebrow">География перевозок</span><h2 id="lg-map-heading">Региональная сеть</h2></div><button id="lg-fit" type="button" class="lg-button lg-button--quiet"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/></svg>Вся сеть</button></div>
+        <div class="lg-map-toolbar"><span id="lg-routing-status" class="lg-routing-status" role="status">Загрузка дорожной сети…</span><div class="lg-map-actions"><button id="lg-add-facility" type="button" class="lg-button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Добавить объект</button><button id="lg-add-closure" type="button" class="lg-button lg-button--warning"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="m6.5 6.5 11 11"/></svg>Перекрыть участок</button><button id="lg-recalculate" type="button" class="lg-button lg-button--quiet" title="Перестроить маршруты с учётом текущих перекрытий"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 16h5V8h9M16 5l3 3-3 3"/><circle cx="5" cy="16" r="2"/></svg>Перестроить маршруты</button></div></div>
+        <div id="lg-map" class="lg-map" aria-label="Интерактивная карта логистической сети"></div>
+        <div class="lg-map-legend" aria-label="Обозначения на карте"><span><i class="lg-legend-line"></i>Маршрут</span><span><i class="lg-legend-line lg-legend-line--selected"></i>Выбранный рейс</span><span><i class="lg-legend-building"></i>Склад / производство</span><span><i class="lg-legend-closure"></i>Перекрытие</span><small>Выберите транспорт или объект, чтобы открыть подробности</small></div>
+      </section>
+      <section class="lg-panel lg-facilities-panel" aria-labelledby="lg-facilities-heading">
+        <div class="lg-panel-heading"><div><span class="lg-eyebrow">Точки отправки и приёма</span><h2 id="lg-facilities-heading">Объекты сети</h2></div><span class="lg-heading-hint">Склад · запасы · погрузка</span></div>
+        <div id="lg-facilities" class="lg-facilities lg-scroll"><p class="lg-empty">Объекты появятся после загрузки сети.</p></div>
+      </section>
+    </div>
+    <aside class="lg-operations-column" aria-label="Оперативное управление">
+      <section class="lg-panel lg-fleet-panel" aria-labelledby="lg-vehicles-heading">
+        <div class="lg-panel-heading"><div><span class="lg-eyebrow">На линии</span><h2 id="lg-vehicles-heading">Транспорт</h2></div><span class="lg-live-label"><span class="lg-status-dot"></span>Состояние рейсов</span></div>
+        <div id="lg-vehicles" class="lg-vehicles lg-scroll"><p class="lg-empty">Транспорт появится после загрузки сценария.</p></div>
+      </section>
+      <section class="lg-panel lg-selection-panel" aria-labelledby="lg-selection-heading">
+        <div class="lg-panel-heading"><h2 id="lg-selection-heading">Подробности</h2><span class="lg-heading-hint">Транспорт / объект</span></div>
+        <div id="lg-selection" class="lg-selection"><p class="lg-empty">Выберите транспорт или объект на карте либо в списке.</p></div>
+      </section>
+      <details class="lg-panel lg-trip-panel" open>
+        <summary class="lg-panel-summary"><span><span class="lg-eyebrow">Управление перевозками</span><strong>Новый рейс</strong></span><span class="lg-summary-chevron" aria-hidden="true"></span></summary>
+        <form id="lg-trip-form" class="lg-trip-form">
+          <label class="lg-field lg-field--full" for="lg-trip-vehicle">Транспорт<select id="lg-trip-vehicle" required><option value="">Выберите транспорт</option></select></label>
+          <label class="lg-field" for="lg-trip-origin">Откуда<select id="lg-trip-origin" required><option value="">Объект отправления</option></select></label>
+          <label class="lg-field" for="lg-trip-destination">Куда<select id="lg-trip-destination" required><option value="">Объект назначения</option></select></label>
+          <label class="lg-field lg-field--full" for="lg-trip-cargo">Груз<input id="lg-trip-cargo" type="text" maxlength="120" placeholder="Например, комплектующие" value="Комплектующие" required></label>
+          <label class="lg-field" for="lg-trip-weight">Масса, кг<input id="lg-trip-weight" type="number" min="1" max="40000" step="1" value="1000" required inputmode="numeric"></label>
+          <label class="lg-field" for="lg-trip-quantity">Количество, ед.<input id="lg-trip-quantity" type="number" min="1" max="100000" step="1" value="10" required inputmode="numeric"></label>
+          <button id="lg-trip-create" type="submit" class="lg-button lg-button--primary lg-field--full"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h11v11H3ZM14 9h4l3 4v3h-7"/><circle cx="7" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></svg>Создать рейс</button>
+        </form>
+      </details>
+      <details class="lg-panel lg-closures-panel">
+        <summary class="lg-panel-summary"><span><strong>Перекрытые участки</strong><small>Ограничения дорожной сети</small></span><span class="lg-summary-chevron" aria-hidden="true"></span></summary>
+        <div id="lg-closures" class="lg-closures lg-scroll"><p class="lg-empty">Перекрытых участков нет.</p></div>
+      </details>
+    </aside>
+  </div>
+  <div class="lg-journals">
+    <section class="lg-panel lg-incidents-panel" aria-labelledby="lg-incidents-heading"><div class="lg-panel-heading"><div><span class="lg-eyebrow">Требует внимания</span><h2 id="lg-incidents-heading">Происшествия</h2></div><span class="lg-heading-hint">Текущий сценарий</span></div><div id="lg-incidents" class="lg-incidents lg-scroll" role="log"><p class="lg-empty">Активных происшествий нет.</p></div></section>
+    <section class="lg-panel lg-events-panel" aria-labelledby="lg-events-heading"><div class="lg-panel-heading"><div><span class="lg-eyebrow">Ход работы сети</span><h2 id="lg-events-heading">Журнал событий</h2></div><span class="lg-heading-hint">Последние события</span></div><div id="lg-events" class="lg-events lg-scroll" role="log"><p class="lg-empty">События появятся после запуска симуляции.</p></div></section>
+  </div>
+  <dialog id="lg-facility-dialog" class="lg-dialog" aria-labelledby="lg-facility-title">
+    <div class="lg-dialog-heading"><span class="lg-eyebrow">Расширение сети</span><h2 id="lg-facility-title">Новый объект</h2><p>Выберите место на карте и укажите параметры объекта.</p></div>
+    <div class="lg-dialog-fields"><label class="lg-field" for="lg-facility-name">Название<input id="lg-facility-name" type="text" maxlength="80" placeholder="Например, Северный склад" required autocomplete="off"></label><label class="lg-field" for="lg-facility-kind">Тип объекта<select id="lg-facility-kind"><option value="warehouse">Склад</option><option value="factory">Производство</option></select></label></div>
+    <div class="lg-dialog-actions"><button id="lg-facility-cancel" type="button" class="lg-button lg-button--quiet">Отмена</button><button id="lg-facility-save" type="button" class="lg-button lg-button--primary">Добавить объект</button></div>
+  </dialog>
+  <dialog id="lg-closure-dialog" class="lg-dialog" aria-labelledby="lg-closure-title">
+    <div class="lg-dialog-heading"><span class="lg-eyebrow">Ограничение движения</span><h2 id="lg-closure-title">Перекрыть участок</h2><p>Выбранная точка на карте задаёт центр перекрытия.</p></div>
+    <div class="lg-dialog-fields"><label class="lg-field" for="lg-closure-reason">Причина<input id="lg-closure-reason" type="text" maxlength="160" value="Дорожные работы" placeholder="Например, дорожные работы" required></label><label class="lg-field" for="lg-closure-radius">Радиус участка, м<input id="lg-closure-radius" type="number" min="50" max="5000" step="50" value="300" required inputmode="numeric"><small>От 50 до 5 000 метров</small></label></div>
+    <div class="lg-dialog-actions"><button id="lg-closure-cancel" type="button" class="lg-button lg-button--quiet">Отмена</button><button id="lg-closure-save" type="button" class="lg-button lg-button--warning">Создать перекрытие</button></div>
+  </dialog>
+</section>

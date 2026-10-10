@@ -1,0 +1,18 @@
+[hidden]{display:none!important}
+.network-navigation{display:flex;gap:4px;padding:4px;border-radius:12px;background:#101f2c;border:1px solid #314454}
+.network-navigation button{border:0;background:transparent;padding:8px 12px;white-space:nowrap}
+.network-navigation button[aria-pressed="true"]{background:#17465c;color:#8fdcff;border-radius:8px}
+.facility-context{padding:14px 18px;margin:0 0 12px;border:1px solid #376471;border-radius:14px;background:linear-gradient(110deg,#13323c,#142330);display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.facility-context-heading{flex:1;min-width:240px}
+.facility-context-heading strong{font-size:17px;display:block;margin-bottom:5px}
+.facility-context-heading small{display:block;color:#adbecb;margin-top:5px}
+#facility-context-trips{display:flex;gap:6px;flex-wrap:wrap;width:100%}
+.facility-context-trip{font-size:12px;padding:6px 9px;border:1px solid #365568;border-radius:8px;background:#102332}
+@media(max-width:850px){.network-navigation{order:4;width:100%}.network-navigation button{flex:1}}
+
+.logistics-view .lg-progress{height:auto;min-height:24px;background:transparent;overflow:visible;color:#adbecb;font-size:12px}
+.logistics-view .lg-progress>span{height:auto;background:transparent;margin-bottom:5px}
+.logistics-view .lg-progress progress{display:block;width:100%;height:6px;accent-color:#5bceae}
+.logistics-view .lg-details dl{display:grid;grid-template-columns:minmax(90px,1fr) 1.5fr;gap:8px 12px;margin:12px 0}
+.logistics-view .lg-details dt{color:#9eafbb}.logistics-view .lg-details dd{margin:0;overflow-wrap:anywhere}
+.lg-truck-marker{border-color:var(--lg-truck-color,#73c5ed)}

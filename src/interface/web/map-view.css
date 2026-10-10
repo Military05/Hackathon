@@ -42,3 +42,23 @@
 #map .enterprise-vehicle-marker.foreign .enterprise-vehicle-symbol,#map .enterprise-sensor-marker.foreign .enterprise-sensor-glyph{opacity:.65}
 #map .enterprise-vehicle-marker.alarm .enterprise-vehicle-symbol{border-color:#ff8585;border-style:double;border-width:3px;filter:drop-shadow(0 0 3px #ff8585)}
 #map .enterprise-sensor-marker.offline .enterprise-sensor-glyph{border-color:#ff8585;border-style:double;border-width:3px;filter:drop-shadow(0 0 3px #ff8585)}
+
+/* RTS map treatment stays inside the map; marker state borders remain intact. */
+#map{background:radial-gradient(ellipse at 35% 25%,#3f5638 0%,#30452e 55%,#243725 100%)}
+#map .enterprise-building-label{color:#fff6dc;font-weight:700;text-shadow:0 1px 2px #0b160d}
+#map .enterprise-building-name{box-sizing:border-box;padding:2px 4px;border-radius:4px;background:#152019d9;box-shadow:0 1px 3px #09120b66}
+#map .enterprise-sector-label{color:#dae2c7;text-shadow:0 1px 3px #172218}
+#map .enterprise-vehicle-symbol{height:30px;background:transparent;box-shadow:0 2px 3px #0d190d99}
+#map .enterprise-vehicle-body{display:block;width:27px;height:30px;overflow:visible;filter:drop-shadow(0 2px 1px #09120bbb)}
+#map .leaflet-tooltip{background:#202b20f2;border:1px solid #8c9872;border-radius:5px;color:#fff6dc;box-shadow:0 3px 10px #10190a66;font:12px/1.4 'Segoe UI',sans-serif}
+#map .leaflet-tooltip-top:before{border-top-color:#8c9872}
+#map .leaflet-tooltip-bottom:before{border-bottom-color:#8c9872}
+#map .leaflet-tooltip-left:before{border-left-color:#8c9872}
+#map .leaflet-tooltip-right:before{border-right-color:#8c9872}
+
+/* Shortest-angle turning is visual only; server positions remain authoritative. */
+#map .enterprise-vehicle-body{transform-origin:50% 50%;transition:transform .45s ease-out}
+#map .enterprise-front-wheels{transform-box:fill-box;transform-origin:center;transform:rotate(var(--steering-angle,0deg));transition:transform .3s ease-out}
+#map .enterprise-brake-lights{opacity:.35;transition:opacity .2s}
+#map .enterprise-vehicle-marker.is-stopped .enterprise-brake-lights{opacity:1;stroke:#ff7065}
+@media(prefers-reduced-motion:reduce){#map .enterprise-vehicle-body,#map .enterprise-front-wheels,#map .enterprise-brake-lights{transition:none}}

@@ -81,7 +81,7 @@
     const rectangleBounds=r=>[xy(r.x,r.y+r.height),xy(r.x+r.width,r.y)];
     const map=Leaflet.map(elementId,{crs:Leaflet.CRS.Simple,minZoom:0,maxZoom:5,zoomSnap:.1,attributionControl:false});
     const pane=(name,z)=>{map.createPane(name).style.zIndex=z;};
-    pane("enterpriseGrid",220);pane("enterpriseSectors",260);pane("enterpriseRoads",300);pane("enterprisePedestrians",310);pane("enterpriseRoutes",320);pane("enterpriseZones",330);pane("enterpriseObjects",360);pane("enterpriseLabels",420);pane("enterpriseHighlight",450);pane("enterpriseSensors",620);
+    pane("enterpriseTerrain",180);pane("enterpriseArchitecture",350);pane("enterpriseGrid",220);pane("enterpriseSectors",260);pane("enterpriseRoads",300);pane("enterpriseRoadTexture",305);pane("enterprisePedestrians",310);pane("enterpriseRoutes",320);pane("enterpriseZones",330);pane("enterpriseObjects",360);pane("enterpriseLabels",420);pane("enterpriseHighlight",450);pane("enterpriseSensors",620);
     const roads=[],pedestrians=[],personalRoutes=new Map(),buildings=new Map(),zones=new Map(),assets=new Map(),sensors=new Map(),sensorDefinitions=new Map((site.sensors||[]).map(s=>[s.id||s.sensor_id,s]));
     const grid=Leaflet.layerGroup().addTo(map),highlightLayer=Leaflet.layerGroup().addTo(map);
     let state={assets:[],sensors:[],incidents:[],serverOffset:0},selection=null,selectedAsset=null,followedAsset=null,routesVisible=true,gridSignature="",destroyed=false,viewMode="all",focusedSectorId=null,settingView=false,animationFrame=null,lastPaint=0,geometryUnit=1,followPosition=null,sectorHighlightId=null,sectorHighlightTimer=null;
@@ -92,12 +92,99 @@
     function sensorOperator(definition){return definition.asset_id?assetOperator(definition.asset_id):areaOperator(definition.site_area_id);}
     const visibleOwner=id=>currentRole==="admin"||currentOperator==="admin"||!currentOperator||currentOperator===id;
     const ownershipColor=id=>visibleOwner(id)?operatorColors[id]||"#bca3ed":"#87929d";
-    function buildingStyle(record){const color=ownershipColor(record.control.operatorId);return {color,fillColor:color,fillOpacity:visibleOwner(record.control.operatorId) ? 0.31 : 0.16};}
-    function setOperator(id,nextRole="dispatcher"){clearFollow();clearSectorHighlight();currentOperator=id;currentRole=nextRole;for(const record of buildings.values())record.layer.setStyle(buildingStyle(record));update(state);}
+    function buildingStyle(record){const color=ownershipColor(record.control.operatorId);return {color,fillColor:color,fillOpacity:visibleOwner(record.control.operatorId) ? 0.09 : 0.05};}
+    function setOperator(id,nextRole="dispatcher"){clearFollow();clearSectorHighlight();currentOperator=id;currentRole=nextRole;for(const record of buildings.values())record.layer.setStyle(buildingStyle(record));roofOverlay.setUrl(roofArt());update(state);}
     const hatchId=`enterprise-forbidden-hatch-${++instanceSequence}`;
     const motionClock=()=>typeof performance!=="undefined"?performance.now():Date.now();
     const reducedMotion=typeof matchMedia!=="undefined"&&matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const frame=[xy(minimum,maximum),xy(maximum,minimum)];
+    const sceneryBounds=[xy(minimum-16,maximum+16),xy(maximum+16,minimum-16)];
+    const svgUrl=body=>`data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 -16 132 132">${body}</svg>`)}`;
+    let photoMaterials=null;
+    const materialPattern=(name,id,size)=>{
+      const image=photoMaterials?.[name]?.data;
+      if(typeof image!=="string"||!/^data:image\/(jpeg|png);base64,/.test(image))return "";
+      return `<pattern id="${id}" width="${size}" height="${size}" patternUnits="userSpaceOnUse"><image href="${image}" width="${size}" height="${size}" preserveAspectRatio="none"/></pattern>`;
+    };
+    function terrainArt(){
+      const parts=[`<defs><pattern id="grass" width="5" height="5" patternUnits="userSpaceOnUse"><rect width="5" height="5" fill="#304b38"/><path d="M1 2l.3-.8M3 4l.4-.6" stroke="#527350" stroke-width=".16" opacity=".5"/></pattern><pattern id="yard" width="6" height="6" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#626c61"/><path d="M0 0h6v6" fill="none" stroke="#889086" stroke-width=".07"/></pattern><g id="tree"><ellipse cy=".9" rx="1.3" ry=".65" fill="#16291d" opacity=".7"/><path d="M-.15 0h.3v1.1h-.3" fill="#856546"/><circle cx="-.5" cy="-.3" r=".9" fill="#294931"/><circle cx=".4" cy="-.6" r="1" fill="#416c42"/><circle cy="-1" r=".85" fill="#557e4d"/><circle cx="-.3" cy="-1.3" r=".45" fill="#6a9254"/></g></defs><rect x="-16" y="-16" width="132" height="132" fill="url(#grass)"/><rect x="2" y="3" width="96" height="97" rx="2" fill="url(#yard)"/><path d="M2 3H98V100H44M26 100H2V3" fill="none" stroke="#1b272b" stroke-width=".9"/><path d="M2 3H98V100H44M26 100H2V3" fill="none" stroke="#a4aaa3" stroke-width=".35"/>`];
+      let seed=781;const random=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};
+      for(let y=-12;y<=112;y+=4.3)for(let x=-12;x<=112;x+=4.3){const px=x+(random()-.5)*2,py=y+(random()-.5)*2;if(px>-.5&&px<101&&py>0&&py<103)continue;if(py>98&&px>23&&px<47)continue;parts.push(`<use href="#tree" transform="translate(${px.toFixed(2)} ${py.toFixed(2)}) scale(${(.9+random()*.65).toFixed(2)})"/>`);}
+      for(let n=3;n<=98;n+=3){parts.push(`<path d="M${n} 2.6v.9M${n} 99.6v.9" stroke="#c3c8bd" stroke-width=".3"/>`);}
+      for(let n=5;n<=98;n+=3){parts.push(`<path d="M1.6 ${n}h.9M97.6 ${n}h.9" stroke="#c3c8bd" stroke-width=".3"/>`);}
+      parts.push('<path d="M26 100v2M44 100v2" stroke="#d2c29a" stroke-width=".8"/><path d="M27 102H43" stroke="#c5b48b" stroke-width=".25" stroke-dasharray="1 1"/>');
+      // Decorative loading aprons and parked cars do not create sensor objects.
+      for(const building of site.buildings||[]){
+        const r=building.rectangle;if(!r||!/^W/.test(building.id))continue;
+        const x=r.x+r.width*.25,y=r.y+r.height+.35,w=r.width*.5;
+        parts.push(`<rect x="${x}" y="${y}" width="${w}" height="1.25" fill="#778075" stroke="#d0b568" stroke-width=".16"/><path d="M${x+.3} ${y+.3}h${w-.6}" stroke="#dcc17b" stroke-width=".2" stroke-dasharray=".6 .5"/>`);
+      }
+      parts.push('<rect x="6" y="80.9" width="17" height="2.3" fill="#454f4c" stroke="#929c8e" stroke-width=".12"/><text x="6.4" y="82.4" font-family="sans-serif" font-size="1.2" fill="#e4e8cb">P</text>');
+      for(let n=0;n<6;n++){
+        const x=8.2+n*2.25;parts.push(`<path d="M${x} 81.05v1.85h1.9" stroke="#d4d9bf" stroke-width=".1" fill="none"/>`);
+        if(n%3!==1)parts.push(`<rect x="${x+.4}" y="81.25" width="1.15" height="1.5" rx=".25" fill="${n%2?'#c4b7a1':'#acb8b4'}" stroke="#253735" stroke-width=".12"/><rect x="${x+.58}" y="81.5" width=".8" height=".35" fill="#3c565c"/>`);
+      }
+      parts.push('<path d="M44.3 100.5v-1.2" stroke="#d3c2a0" stroke-width=".5"/><path d="M44.3 99.3l.9-2.1" stroke="#eadbb0" stroke-width=".35"/><path d="M44.3 99.3l.9-2.1" stroke="#b76452" stroke-width=".35" stroke-dasharray=".3 .4"/>');
+      let art=parts.join('');
+      if(photoMaterials){
+        art=art.replace('<defs>','<defs>'+materialPattern('grass','photo-grass',12)+materialPattern('concrete','photo-concrete',9)+materialPattern('grass','photo-canopy',3));
+        if(photoMaterials.grass)art=art.replace('fill="url(#grass)"','fill="url(#photo-grass)"').replace(/fill="#(416c42|557e4d)"/g,'fill="url(#photo-canopy)"');
+        if(photoMaterials.concrete)art=art.replace('fill="url(#yard)"','fill="url(#photo-concrete)"');
+      }
+      return svgUrl(art);
+    }
+    function roofArt(){
+      const parts=[`<defs>${materialPattern('metal','photo-metal',5)}<filter id="metal-neutral"><feColorMatrix type="saturate" values="0"/></filter></defs>`];
+      for(const building of site.buildings||[]){
+        const r=building.rectangle;if(!r)continue;
+        const color=ownershipColor(buildingControl(site,building).operatorId),x=r.x,y=r.y,w=r.width,h=r.height;
+        parts.push(`<rect x="${x+.8}" y="${y+1}" width="${w}" height="${h}" rx=".4" fill="#132323" opacity=".55"/><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${photoMaterials?.metal?'url(#photo-metal)':'#384c52'}" filter="url(#metal-neutral)"/><rect x="${x+.3}" y="${y+.3}" width="${w-.6}" height="${h-.6}" fill="${color}" fill-opacity=".42"/><path d="M${x} ${y+h}H${x+w}V${y}" fill="none" stroke="#1e3039" stroke-width=".65"/><path d="M${x} ${y+h}V${y}H${x+w}" fill="none" stroke="#ced9d8" stroke-opacity=".65" stroke-width=".23"/>`);
+        const industrial=/^[WP]/.test(building.id);
+        if(industrial){
+          // Roof facets add depth without changing collision footprints.
+          const ridge=y+h*.45;
+          parts.push(`<path d="M${x+.35} ${y+.35}H${x+w-.35}L${x+w-.7} ${ridge}H${x+.7}Z" fill="#e5ede6" fill-opacity=".16"/><path d="M${x+.7} ${ridge}H${x+w-.7}L${x+w-.35} ${y+h-.45}H${x+.35}Z" fill="#162f3a" fill-opacity=".23"/><path d="M${x+.7} ${ridge}H${x+w-.7}" stroke="#d4e0dc" stroke-width=".22"/>`);
+          if(/^P/.test(building.id))for(let n=1;n<w-2;n+=4)parts.push(`<path d="M${x+n} ${y+2.3}l1.5-1.1 1.5 1.1Z" fill="#bdc9c6" fill-opacity=".8"/><path d="M${x+n} ${y+2.3}h3" stroke="#233a40" stroke-width=".16"/>`);
+          for(let n=2;n<w-1;n+=2.4)parts.push(`<path d="M${x+n} ${y+.4}V${y+h-.5}" stroke="#142c36" stroke-opacity=".28" stroke-width=".16"/>`);
+          for(let n=1.5;n<w-1.5;n+=5)parts.push(`<rect x="${x+n}" y="${y+1}" width="2.6" height=".8" fill="#b8d6d7" fill-opacity=".78" stroke="#253b44" stroke-width=".15"/>`);
+          parts.push(`<rect x="${x+w*.4}" y="${y+h-.45}" width="${w*.2}" height=".65" fill="#a1a9a8"/><path d="M${x+w*.42} ${y+h}h${w*.16}" stroke="#303e43" stroke-width=".2"/>`);
+        }else{
+          for(let n=1;n<w-1;n+=2.2)parts.push(`<rect x="${x+n}" y="${y+h-.7}" width="1.2" height=".4" fill="#bcd8da"/>`);
+          parts.push(`<rect x="${x+w-2.8}" y="${y+1}" width="1.8" height="1.1" fill="#c1c8c2" stroke="#536368" stroke-width=".15"/><path d="M${x+w-2.6} ${y+1.4}h1.3" stroke="#526367" stroke-width=".18"/>`);
+        }
+        if(building.id==='O1'){
+          parts.push(`<rect x="${x+1}" y="${y+.8}" width="${w-2}" height="1.8" fill="#b2beb7" fill-opacity=".35"/><path d="M${x+1} ${y+2.6}H${x+w-1}" stroke="#243c44" stroke-width=".2"/>`);
+          for(let n=1.2;n<w-1;n+=2.1)parts.push(`<rect x="${x+n}" y="${y+.9}" width="1.2" height="1.5" fill="#b9d3d5" stroke="#3e5964" stroke-width=".15"/>`);
+          for(let n=0;n<3;n++)parts.push(`<rect x="${x+w*.38-.2*n}" y="${y+h+.2*n}" width="${w*.24+.4*n}" height=".22" fill="#adb8ae" stroke="#475950" stroke-width=".05"/>`);
+        }
+        if(building.id==='G1'){
+          parts.push(`<rect x="${x+.8}" y="${y+.5}" width="${w-1.6}" height="1.5" fill="#b1cecc" stroke="#2e4850" stroke-width=".18"/><path d="M${x+w/2} ${y+.5}v1.5" stroke="#435d65" stroke-width=".2"/><rect x="${x+.8}" y="${y+h-1.2}" width="1.4" height="1.1" fill="#b9c5b6"/>`);
+        }
+        if(building.id==='E2'){
+          for(let n=0;n<2;n++){const cx=x+1.8+n*3.1;parts.push(`<ellipse cx="${cx+.25}" cy="${y+1.3}" rx="1.1" ry=".8" fill="#263d43"/><rect x="${cx-1}" y="${y+.6}" width="2" height="1.4" fill="#8ca6a5"/><ellipse cx="${cx}" cy="${y+.6}" rx="1" ry=".45" fill="#c7d4cc" stroke="#506b73" stroke-width=".15"/>`);}
+        }
+        if(building.id==='M1')parts.push(`<rect x="${x+.9}" y="${y+.7}" width="2.4" height="2.4" rx=".3" fill="#415d56"/><path d="M${x+2.1} ${y+1.1}v1.6m-.8-.8h1.6" stroke="#e1e8dc" stroke-width=".45"/>`);
+        if(building.id==='F1')for(let n=0;n<2;n++)parts.push(`<rect x="${x+.7+n*3.4}" y="${y+h-1.8}" width="2.6" height="1.4" fill="#9aa8a7" stroke="#3c5359" stroke-width=".15"/><path d="M${x+.9+n*3.4} ${y+h-1.35}h2.2" stroke="#51696d" stroke-width=".15"/>`);
+        if(building.id==='C1')for(let n=0;n<3;n++)parts.push(`<path d="M${x+.9+n*2.8} ${y+.8}h1.8l-.3 1.1h-1.5Z" fill="#748a77" stroke="#d0d9c7" stroke-width=".15"/>`);
+        if(building.id==='E1'){
+          parts.push(`<path d="M${x+1} ${y+1.3}h${w-4}v1.1" fill="none" stroke="#b8beb2" stroke-width=".5"/><path d="M${x+1} ${y+1.3}h${w-4}v1.1" fill="none" stroke="#7b8d85" stroke-width=".15"/>`);
+          for(let n=0;n<2;n++)parts.push(`<circle cx="${x+1.8+n*2.7}" cy="${y+1.5}" r=".75" fill="#859791" stroke="#cad3c5" stroke-width=".2"/>`);
+        }
+        if(building.id==='E1')parts.push(`<ellipse cx="${x+w-1.5}" cy="${y-1}" rx=".85" ry=".4" fill="#182b2d"/><path d="M${x+w-2.3} ${y-1}v3h1.6v-3" fill="#89908a"/><ellipse cx="${x+w-1.5}" cy="${y-1}" rx=".8" ry=".35" fill="#c0c4bc"/>`);
+      }
+      return svgUrl(parts.join(''));
+    }
+    const terrainOverlay=Leaflet.imageOverlay(terrainArt(),sceneryBounds,{pane:"enterpriseTerrain",interactive:false}).addTo(map);
+    const roadPhotoOverlay=Leaflet.imageOverlay(svgUrl(''),sceneryBounds,{pane:"enterpriseRoadTexture",interactive:false}).addTo(map);
+    if(typeof fetch==="function")fetch('/map-materials.json',{cache:'force-cache'}).then(response=>response.ok?response.json():null).then(materials=>{
+      if(destroyed||!materials)return;
+      photoMaterials=materials;terrainOverlay.setUrl(terrainArt());roofOverlay.setUrl(roofArt());
+      if(materials.asphalt){
+        const paths=(site.roads||[]).map(road=>{const points=(road.points||road.path||[]).map(point).filter(validPoint);if(points.length<2)return '';return `<path d="M${points.map(p=>`${p.x} ${p.y}`).join('L')}" fill="none" stroke="url(#photo-asphalt)" stroke-width="${Number(road.width)||4}" stroke-linecap="${road.entrance_building_id?'butt':'round'}" stroke-linejoin="round"/>`;});
+        roadPhotoOverlay.setUrl(svgUrl(`<defs>${materialPattern('asphalt','photo-asphalt',8)}</defs>${paths.join('')}`));
+      }
+    }).catch(()=>{});
+    const roofOverlay=Leaflet.imageOverlay(roofArt(),sceneryBounds,{pane:"enterpriseArchitecture",interactive:false}).addTo(map);
+    const frame=[xy(minimum-11,maximum+11),xy(maximum+11,minimum-11)];
     // Wide map panels need room outside the square plan to center the western/eastern sector.
     map.setMaxBounds?.([xy(minimum-100,maximum+100),xy(maximum+100,minimum-100)]);
     for(const sector of site.sectors||[]){
@@ -109,11 +196,11 @@
       const points=source.map(point).filter(validPoint).map(p=>xy(p.x,p.y));
       if(points.length<2)continue;
       const style={pane:"enterpriseRoads",interactive:false,lineCap:road.entrance_building_id?"butt":"round",lineJoin:"round",smoothFactor:0};
-      const edge=Leaflet.polyline(points,{...style,color:"#425462",opacity:1}).addTo(map);
+      const edge=Leaflet.polyline(points,{...style,color:"#a6afa6",opacity:1}).addTo(map);
       roads.push({road,edge,points,style});
     }
     // All road edges precede all road fills: a junction remains one continuous surface.
-    for(const road of roads)road.fill=Leaflet.polyline(road.points,{...road.style,color:"#293f4d",opacity:1}).addTo(map);
+    for(const road of roads)road.fill=Leaflet.polyline(road.points,{...road.style,color:"#394348",opacity:1}).addTo(map);
     for(const path of site.pedestrian_paths||[]){
       const points=(path.points||[]).map(point).filter(validPoint).map(p=>xy(p.x,p.y));if(points.length<2)continue;
       const layer=Leaflet.polyline(points,{pane:"enterprisePedestrians",color:"#c6d2bc",opacity:.72,weight:1.5,dashArray:"3 5",lineCap:"butt",interactive:false,smoothFactor:0,className:"enterprise-pedestrian-path"}).addTo(map);
@@ -139,7 +226,7 @@
       const r=building.rectangle;if(!r)continue;
       const control=buildingControl(site,building),controlTitle=`${building.name} · Под контролем: ${control.label}`;
       const borderColor=ownershipColor(control.operatorId),fillColor=borderColor;
-      const layer=Leaflet.rectangle(rectangleBounds(r),{pane:"enterpriseObjects",color:borderColor,weight:1.5,fillColor,fillOpacity:visibleOwner(control.operatorId) ? 0.31 : 0.16});
+      const layer=Leaflet.rectangle(rectangleBounds(r),{pane:"enterpriseObjects",color:borderColor,weight:1.5,fillColor,fillOpacity:visibleOwner(control.operatorId) ? 0.09 : 0.05});
       layer.addTo(map).bindTooltip(`${escape(controlTitle)} · ${escape(building.id)}`);
       layer.on("click",()=>{clearFollow();onBuilding(building.id);});
       const label=Leaflet.marker(xy(r.x+r.width/2,r.y+r.height/2),{pane:"enterpriseLabels",interactive:false,keyboard:false,icon:Leaflet.divIcon({className:"enterprise-label-marker",html:"",iconSize:[0,0]})}).addTo(map);
@@ -189,7 +276,7 @@
       const left=Math.floor(west/step)*step,right=Math.ceil(east/step)*step,bottom=Math.floor(south/step)*step,top=Math.ceil(north/step)*step;
       const signature=[left,right,bottom,top,step].join(":");if(signature===gridSignature)return;
       gridSignature=signature;grid.clearLayers();
-      const style={pane:"enterpriseGrid",color:"#2c4555",weight:1,opacity:.35,interactive:false};
+      const style={pane:"enterpriseGrid",color:"#83947d",weight:1,opacity:.10,interactive:false};
       for(let x=left;x<=right;x+=step)Leaflet.polyline([[bottom,x],[top,x]],style).addTo(grid);
       for(let y=bottom;y<=top;y+=step)Leaflet.polyline([[y,left],[y,right]],style).addTo(grid);
     }
@@ -197,7 +284,8 @@
     function vehicleIcon(asset,alarm,stale,deviation){
       const owner=assetOperator(asset.asset_id||asset.id),ownerColor=ownershipColor(owner),foreign=!visibleOwner(owner);
       const color=stale?"stale":alarm?"alarm":"normal",id=asset.asset_id||asset.id;
-      const symbol=asset.vehicle_type==="forklift"?"П":"С",name=symbol==="П"?"Погрузчик":"Служебный транспорт";
+      const forklift=asset.vehicle_type==="forklift",name=forklift?"Погрузчик":"Служебный транспорт";
+      const symbol=`<svg class="enterprise-vehicle-body" style="transform:rotate(var(--vehicle-heading,0deg))" viewBox="0 0 28 34" aria-hidden="true"><ellipse cx="15" cy="19" rx="10" ry="12" fill="#101b20" opacity=".45"/><path class="enterprise-front-wheels" d="M5 12v6m18-6v6" stroke="#152328" stroke-width="4" stroke-linecap="round"/><path d="M5 25v5m18-5v5" stroke="#152328" stroke-width="4" stroke-linecap="round"/>${forklift?'<path d="M9 10V2m10 8V2" stroke="#c3c9c4" stroke-width="2"/><rect x="7" y="9" width="14" height="23" rx="3" fill="currentColor"/><rect x="9" y="13" width="10" height="10" rx="1" fill="#243941" stroke="#bfd2cf" stroke-width="1"/><path d="M10 14v8m8-8v8" stroke="#b8c7b8" stroke-width="1.2"/><rect x="10" y="26" width="8" height="3" fill="#cad4c7"/>':'<rect x="6" y="3" width="16" height="29" rx="4" fill="currentColor"/><path d="M8 10h12l-1-4H9zM9 25h10v4H9z" fill="#243b49"/><rect x="8" y="12" width="12" height="11" rx="1" fill="#d0d8cf" fill-opacity=".65"/><path d="M7 5h3m8 0h3" stroke="#f0e4ae" stroke-width="1.5"/>'}<path class="enterprise-brake-lights" d="M7 30h3m8 0h3" stroke="#cf665e" stroke-width="1.6"/></svg>`;
       return Leaflet.divIcon({className:`enterprise-vehicle-marker ${color}${deviation?" route-deviation":""}${foreign?" foreign":""}`,html:`<span class="enterprise-vehicle-glyph" style="--marker-color:${ownerColor}"><span class="enterprise-vehicle-symbol" title="${name}">${symbol}</span><b>${escape(id)}</b><time class="enterprise-signal-time" title="Последняя позиция: ${escape(asset.last_seen||"нет сигнала")}">${escape(signalTime(asset.last_seen))}</time>${stale?'<small class="enterprise-stale-badge" title="Последняя известная позиция">?</small>':alarm?`<small class="${deviation?"enterprise-route-warning":"enterprise-alarm-badge"}" title="${deviation?"Отклонение от личного маршрута":"Активное происшествие"}">!</small>`:""}</span>`,iconSize:[36,50],iconAnchor:[18,20]});
     }
     function sensorIcon(sensor,status,mounted){
@@ -242,6 +330,12 @@
         if(!record){const layer=Leaflet.marker(xy(asset.x,asset.y),{icon:vehicleIcon(asset,alarm,stale,deviation),riseOnHover:true}).addTo(map);layer.on("click",()=>{selectAsset(id);onAsset(id);});record={layer,signature,display:{x:asset.x,y:asset.y},received:{x:asset.x,y:asset.y},stamp:asset.last_seen};assets.set(id,record);}
         if(record.signature!==signature){record.layer.setIcon(vehicleIcon(asset,alarm,stale,deviation));record.signature=signature;}
         const changed=record.received.x!==asset.x||record.received.y!==asset.y;
+        let turn=0;
+        if(changed){const dx=asset.x-record.received.x,dy=asset.y-record.received.y,target=Math.atan2(dy,dx)*180/Math.PI+90;const prior=record.heading??target;turn=(((target-prior)%360)+540)%360-180;record.heading=prior+turn;}
+        const vehicleElement=record.layer.getElement();
+        vehicleElement?.style.setProperty("--vehicle-heading",`${record.heading||0}deg`);
+        vehicleElement?.style.setProperty("--steering-angle",`${Math.max(-16,Math.min(16,turn*.25))}deg`);
+        vehicleElement?.classList.toggle("is-stopped",!changed||Boolean(asset.monitoring_paused));
         if(asset.monitoring_paused){record.motion=null;record.received={x:asset.x,y:asset.y};}
         else if(changed||stale){
           if(changed&&!stale&&!reducedMotion&&typeof requestAnimationFrame!=="undefined"){

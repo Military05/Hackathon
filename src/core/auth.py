@@ -346,7 +346,7 @@ def add_auth(app, service, enabled=True):
                     if path.startswith("/api/admin/") and session["user"]["role"] != "admin":
                         raise ApiError(403, "admin_required", "Операция доступна администратору")
                     if session["user"]["role"] == "admin" and request.method not in ("GET", "HEAD", "OPTIONS"):
-                        permitted = (path.startswith("/api/admin/") or path in
+                        permitted = (path.startswith("/api/admin/") or path.startswith("/api/logistics/") or path in
                                      {"/api/auth/logout", "/api/demo/start", "/api/demo/stop", "/api/demo/resume", "/api/incidents/clear"})
                         if not permitted:
                             raise ApiError(403, "dispatcher_required", "Администратор наблюдает происшествия, но не выполняет действия диспетчера")
@@ -374,7 +374,7 @@ def add_auth(app, service, enabled=True):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "same-origin"
-        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tiles.openfreemap.org; connect-src 'self' https://tiles.openfreemap.org; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
         if request.url.scheme == "https":
             response.headers["Strict-Transport-Security"] = "max-age=86400"
         if request.url.path.startswith("/api/"):
